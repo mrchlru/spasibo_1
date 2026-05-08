@@ -435,9 +435,13 @@ function App() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [user?.id, user?.status, refreshUser]);
 
-  /** Обновляем данные пользователя при переходе на профиль или магазин. */
+  /** Обновляем данные пользователя при переходе на профиль.
+   *  Раньше это срабатывало и для «Магазина», но баланс там и так актуализируется
+   *  при каждой покупке через onPurchaseSuccess → updateUser, а лишний
+   *  checkUserStatus только замедлял открытие тяжёлой вкладки.
+   */
   useEffect(() => {
-    if (user?.status === 'approved' && (page === 'profile' || page === 'marketplace')) {
+    if (user?.status === 'approved' && page === 'profile') {
       refreshUser();
     }
   }, [page, user?.status, refreshUser]);

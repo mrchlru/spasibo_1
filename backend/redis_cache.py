@@ -197,6 +197,62 @@ class RedisCache:
                 logger.info(f"Очищен кеш для ключа '{key}' у всех пользователей: {len(keys)} ключей")
         except Exception as e:
             logger.error(f"Ошибка при очистке кеша ключа '{key}' у всех пользователей: {e}")
+
+    # ---------------------------------------------------------------------
+    # Публичный кеш (одинаковый ответ для всех пользователей).
+    # Используется для тяжёлых, но user-agnostic ответов (например, список
+    # товаров /market/items), чтобы не выгружать одно и то же из БД на каждого.
+    # ---------------------------------------------------------------------
+
+    @staticmethod
+    def _public_key(key: str) -> str:
+        return f"public:{key}"
+
+    async def get_public_raw(self, key: str) -> Optional[str]:
+        """Возвращает «сырое» строковое значение публичного ключа без JSON-парсинга.
+
+        Удобно, когда нужно отдать готовый JSON-ответ клиенту без повторной сериализации.
+        """
+        if not settings.REDIS_ENABLED:
+            return None
+        if not self.redis_client:
+            await self.connect()
+        if not self.redis_client:
+            return None
+
+        try:
+            return await self.redis_client.get(self._public_key(key))
+        except Exception as e:
+            logger.error(f"Ошибка при чтении публичного кеша '{key}': {e}")
+            return None
+
+    async def set_public_raw(self, key: str, raw_value: str, ttl: int = 60) -> None:
+        """Сохраняет уже сериализованную строку (JSON) в публичный кеш с TTL."""
+        if not settings.REDIS_ENABLED:
+            return
+        if not self.redis_client:
+            await self.connect()
+        if not self.redis_client:
+            return
+
+        try:
+            await self.redis_client.setex(self._public_key(key), ttl, raw_value)
+        except Exception as e:
+            logger.error(f"Ошибка при записи публичного кеша '{key}': {e}")
+
+    async def delete_public(self, key: str) -> None:
+        """Инвалидирует публичный кеш по ключу (вызывается при изменении данных)."""
+        if not settings.REDIS_ENABLED:
+            return
+        if not self.redis_client:
+            await self.connect()
+        if not self.redis_client:
+            return
+
+        try:
+            await self.redis_client.delete(self._public_key(key))
+        except Exception as e:
+            logger.error(f"Ошибка при удалении публичного кеша '{key}': {e}")
     
     async def exists(self, user_id: int, key: str) -> bool:
         """

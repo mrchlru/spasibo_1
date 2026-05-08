@@ -1,41 +1,54 @@
 // frontend/src/storage.js
 
-// --- ИЗМЕНЯЕМ ИМПОРТЫ: используем Redis API вместо CloudStorage ---
-import { getFeed, getMarketItems, getLeaderboard, getCache, setCache as setCacheAPI, deleteCache as deleteCacheAPI } from './api';
+// Кеш живёт в трёх уровнях:
+// 1) memoryCache — синхронный быстрый доступ из компонентов (stale-while-revalidate)
+// 2) localStorage — переживает перезагрузку страницы/вкладки
+// 3) Redis (только в Telegram WebApp) — синхронизация между устройствами/сессиями
 
-// Получаем Telegram ID для работы с кешем
+import {
+  getFeed,
+  getMarketItems,
+  getLeaderboard,
+  getCache,
+  setCache as setCacheAPI,
+  deleteCache as deleteCacheAPI,
+} from './api';
+
 const getTelegramId = () => {
-    return window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+  return window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
 };
 
-// Fallback на localStorage для случаев, когда Redis недоступен или пользователь не авторизован
+// localStorage всегда есть и работает синхронно — это лучший быстрый кеш
+// для первого рендера в браузере.
 const fallbackStorage = {
-    getItem: (key) => {
-        try {
-            const value = localStorage.getItem(`cache_${key}`);
-            return value ? JSON.parse(value) : null;
-        } catch (error) {
-            console.error('Ошибка чтения из localStorage:', error);
-            return null;
-        }
-    },
-    setItem: (key, value) => {
-        try {
-            localStorage.setItem(`cache_${key}`, JSON.stringify(value));
-        } catch (error) {
-            console.error('Ошибка записи в localStorage:', error);
-        }
-    },
-    removeItem: (key) => {
-        try {
-            localStorage.removeItem(`cache_${key}`);
-        } catch (error) {
-            console.error('Ошибка удаления из localStorage:', error);
-        }
+  getItem: (key) => {
+    try {
+      const value = localStorage.getItem(`cache_${key}`);
+      return value ? JSON.parse(value) : null;
+    } catch (error) {
+      console.error('Ошибка чтения из localStorage:', error);
+      return null;
     }
+  },
+  setItem: (key, value) => {
+    try {
+      localStorage.setItem(`cache_${key}`, JSON.stringify(value));
+    } catch (error) {
+      console.error('Ошибка записи в localStorage:', error);
+    }
+  },
+  removeItem: (key) => {
+    try {
+      localStorage.removeItem(`cache_${key}`);
+    } catch (error) {
+      console.error('Ошибка удаления из localStorage:', error);
+    }
+  },
 };
 
-// Локальная переменная для мгновенного доступа после первой загрузки
+// Memory cache используется для синхронного доступа из компонентов:
+// при заходе на страницу мы мгновенно отрисовываем то, что лежит здесь,
+// а свежие данные подтягиваем в фоне.
 const memoryCache = {
   feed: null,
   market: null,
@@ -45,180 +58,157 @@ const memoryCache = {
 };
 
 /**
- * Асинхронно получает значение из Redis кеша или fallback хранилища.
- * @param {string} key Ключ, по которому нужно найти данные.
- * @returns {Promise<any|null>} Распарсенный JSON-объект или null.
+ * Чтение значения из Redis (только в Telegram) с фолбэком на localStorage.
+ * Синхронные данные кешируются в memoryCache — туда мы их и положим.
+ * @param {string} key
+ * @returns {Promise<any|null>}
  */
 const getStoredValue = async (key) => {
-    const telegramId = getTelegramId();
-    
-    // Если есть Telegram ID, используем Redis API
-    if (telegramId) {
-        try {
-            const response = await getCache(key);
-            if (response.data && response.data.exists && response.data.value !== null) {
-                return response.data.value;
-            }
-        } catch (error) {
-            console.warn(`Не удалось получить кеш из Redis для ключа ${key}, используем fallback:`, error);
-        }
+  const telegramId = getTelegramId();
+
+  if (telegramId) {
+    try {
+      const response = await getCache(key);
+      if (response.data && response.data.exists && response.data.value !== null) {
+        return response.data.value;
+      }
+    } catch (error) {
+      console.warn(`Не удалось получить кеш из Redis для ключа ${key}, используем fallback:`, error);
     }
-    
-    // Fallback на localStorage
-    return fallbackStorage.getItem(key);
+  }
+
+  return fallbackStorage.getItem(key);
 };
 
 /**
  * Инициализирует кэш при запуске приложения.
- * Загружает данные из локального хранилища в память для быстрого доступа.
- * Оптимизировано для параллельной загрузки и неблокирующего UI.
+ *
+ * Цель — максимально быстро заполнить memoryCache из синхронного localStorage
+ * (это нулевая задержка первого рендера), а Redis-чтение и фоновое обновление
+ * данных вынести в idle-фазу, чтобы они не конкурировали за сеть со стартовыми
+ * запросами App.jsx (checkUserStatus, getFeed, getBanners, getAppSettings).
  */
 export const initializeCache = async () => {
-  console.log('Initializing cache...');
-  
-  try {
-    // 1. Параллельная загрузка всех данных из кеша (быстро, не блокирует UI)
-    const [feed, market, leaderboard, banners] = await Promise.all([
-      getStoredValue('feed').catch(() => null),
-      getStoredValue('market').catch(() => null),
-      getStoredValue('leaderboard').catch(() => null),
-      getStoredValue('banners').catch(() => null)
-    ]);
-    
-    // 2. Заполняем memory cache синхронно (мгновенный доступ)
-    memoryCache.feed = feed;
-    memoryCache.market = market;
-    memoryCache.leaderboard = leaderboard;
-    memoryCache.banners = banners;
+  // 1. Синхронно подтягиваем localStorage — это мгновенно и работает офлайн.
+  for (const key of Object.keys(memoryCache)) {
+    const cached = fallbackStorage.getItem(key);
+    if (cached !== null) {
+      memoryCache[key] = cached;
+    }
+  }
 
-    console.log('Cache initialized from storage');
-    
-    // 3. Обновляем данные в фоне (не блокирует UI)
-    // Используем setTimeout для отложенного запуска, чтобы не мешать первоначальной загрузке
-    setTimeout(() => {
-      refreshAllData().catch(err => {
-        console.warn('Background cache refresh failed:', err);
+  const telegramId = getTelegramId();
+
+  // 2. В Telegram-режиме можно дополнительно прогреть memoryCache из Redis,
+  //    но строго в idle-фазе и без блокировки UI — старт приложения от этого
+  //    больше не зависит (раньше 4 запроса /cache/* шли при инициализации,
+  //    что в браузере выливалось в задержку загрузки приложения).
+  if (telegramId) {
+    scheduleIdle(() => {
+      const keys = Object.keys(memoryCache);
+      keys.forEach((key) => {
+        getStoredValue(key)
+          .then((value) => {
+            if (value !== null) {
+              memoryCache[key] = value;
+            }
+          })
+          .catch(() => {});
       });
-    }, 100); // Небольшая задержка для приоритизации критических запросов
-    
-  } catch (error) {
-    console.error('Cache initialization failed:', error);
-    // Продолжаем работу даже при ошибке инициализации кеша
+    });
   }
 };
 
 /**
+ * Запускает callback в свободное время браузера. Если requestIdleCallback
+ * недоступен (Safari), используем setTimeout с небольшой задержкой.
+ */
+function scheduleIdle(callback, timeout = 2000) {
+  if (typeof window === 'undefined') return;
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(callback, { timeout });
+  } else {
+    setTimeout(callback, 200);
+  }
+}
+
+/**
  * Получает данные из кэша в памяти (синхронно).
- * @param {'feed' | 'market' | 'leaderboard' | 'history' | 'banners'} key Ключ данных.
+ * @param {'feed' | 'market' | 'leaderboard' | 'history' | 'banners'} key
  */
 export const getCachedData = (key) => {
   return memoryCache[key];
 };
 
 /**
- * Устанавливает данные в кэш памяти и Redis (с fallback на localStorage).
- * @param {'feed' | 'market' | 'leaderboard' | 'history' | 'banners'} key Ключ данных.
- * @param {any} data Данные для сохранения.
+ * Кладёт данные в memoryCache + localStorage (+ Redis в Telegram).
+ * Запись в Redis идёт фоном и не блокирует вызов.
+ * @param {'feed' | 'market' | 'leaderboard' | 'history' | 'banners'} key
+ * @param {any} data
  */
 export const setCachedData = async (key, data) => {
-    // Обновляем кеш в памяти синхронно
-    memoryCache[key] = data;
-    
-    const telegramId = getTelegramId();
-    
-    // Если есть Telegram ID, используем Redis API
-    if (telegramId && data !== null) {
-        try {
-            await setCacheAPI(key, data);
-        } catch (error) {
-            console.warn(`Не удалось сохранить кеш в Redis для ключа ${key}, используем fallback:`, error);
-            // Fallback на localStorage
-            fallbackStorage.setItem(key, data);
-        }
-    } else if (data !== null) {
-        // Fallback на localStorage если нет Telegram ID
-        fallbackStorage.setItem(key, data);
-    }
+  memoryCache[key] = data;
+
+  if (data === null) return;
+
+  // localStorage обновляем всегда — он работает и в браузере, и в Telegram,
+  // и нужен, чтобы переживать перезагрузку страницы.
+  fallbackStorage.setItem(key, data);
+
+  const telegramId = getTelegramId();
+  if (telegramId) {
+    // Redis-запись делаем «fire and forget», чтобы не задерживать рендер.
+    setCacheAPI(key, data).catch((error) => {
+      console.warn(`Не удалось сохранить кеш в Redis для ключа ${key}:`, error);
+    });
+  }
 };
 
 /**
- * Полностью обновляет все кэшируемые данные, запрашивая их с сервера
- * и сохраняя как в локальное хранилище, так и в память.
- * Оптимизировано для параллельной загрузки и обработки ошибок.
+ * Опционально обновляет основные кешируемые данные. Старая версия запускалась
+ * автоматически при старте через setTimeout(100ms) и делала 3 тяжёлых запроса
+ * (feed/market/leaderboard) даже если пользователь не собирался открывать эти
+ * страницы — это и было одной из причин долгой загрузки приложения, особенно
+ * в браузере. Теперь функция оставлена как явный инструмент: каждая страница
+ * сама загружает свои данные через stale-while-revalidate.
  */
 export const refreshAllData = async () => {
-  console.log('Refreshing all data from API...');
-  try {
-    // Параллельная загрузка всех данных с сервера
-    const [feedRes, marketRes, leaderboardRes] = await Promise.allSettled([
-      getFeed(),
-      getMarketItems(),
-      getLeaderboard({ period: 'current_month', type: 'received' })
-    ]);
-    
-    // Обрабатываем результаты независимо (если один запрос упал, остальные сохраняются)
-    const updatePromises = [];
-    
-    if (feedRes.status === 'fulfilled' && feedRes.value?.data) {
-      memoryCache.feed = feedRes.value.data;
-      updatePromises.push(setCachedData('feed', feedRes.value.data).catch(err => 
-        console.warn('Failed to cache feed:', err)
-      ));
-    } else if (feedRes.status === 'rejected') {
-      console.warn('Failed to refresh feed:', feedRes.reason);
-    }
-    
-    if (marketRes.status === 'fulfilled' && marketRes.value?.data) {
-      memoryCache.market = marketRes.value.data;
-      updatePromises.push(setCachedData('market', marketRes.value.data).catch(err => 
-        console.warn('Failed to cache market:', err)
-      ));
-    } else if (marketRes.status === 'rejected') {
-      console.warn('Failed to refresh market:', marketRes.reason);
-    }
-    
-    if (leaderboardRes.status === 'fulfilled' && leaderboardRes.value?.data) {
-      memoryCache.leaderboard = leaderboardRes.value.data;
-      updatePromises.push(setCachedData('leaderboard', leaderboardRes.value.data).catch(err => 
-        console.warn('Failed to cache leaderboard:', err)
-      ));
-    } else if (leaderboardRes.status === 'rejected') {
-      console.warn('Failed to refresh leaderboard:', leaderboardRes.reason);
-    }
-    
-    // Сохраняем кеш параллельно
-    await Promise.all(updatePromises);
-    
-    console.log('All data refreshed and saved to storage.');
+  const [feedRes, marketRes, leaderboardRes] = await Promise.allSettled([
+    getFeed(),
+    getMarketItems(),
+    getLeaderboard({ period: 'current_month', type: 'received' }),
+  ]);
 
-  } catch (error) {
-    console.error('Failed to refresh data:', error);
+  const updates = [];
+
+  if (feedRes.status === 'fulfilled' && feedRes.value?.data) {
+    updates.push(setCachedData('feed', feedRes.value.data));
   }
+  if (marketRes.status === 'fulfilled' && marketRes.value?.data) {
+    updates.push(setCachedData('market', marketRes.value.data));
+  }
+  if (leaderboardRes.status === 'fulfilled' && leaderboardRes.value?.data) {
+    updates.push(setCachedData('leaderboard', leaderboardRes.value.data));
+  }
+
+  await Promise.all(updates);
 };
 
 /**
  * Очищает кэш для определенного ключа.
  * Используется после действий, которые делают данные неактуальными (например, покупка).
- * @param {'feed' | 'market' | 'leaderboard' | 'history' | 'banners'} key Ключ данных для очистки.
+ * @param {'feed' | 'market' | 'leaderboard' | 'history' | 'banners'} key
  */
 export const clearCache = async (key) => {
-    // Очищаем из памяти
-    memoryCache[key] = null;
-    
-    const telegramId = getTelegramId();
-    
-    // Если есть Telegram ID, очищаем из Redis
-    if (telegramId) {
-        try {
-            await deleteCacheAPI(key);
-            console.log(`Кеш "${key}" очищен из Redis.`);
-        } catch (error) {
-            console.warn(`Не удалось очистить кеш из Redis для ключа ${key}, используем fallback:`, error);
-            // Fallback на localStorage
-            fallbackStorage.removeItem(key);
-        }
-    } else {
-        // Fallback на localStorage
-        fallbackStorage.removeItem(key);
+  memoryCache[key] = null;
+  fallbackStorage.removeItem(key);
+
+  const telegramId = getTelegramId();
+  if (telegramId) {
+    try {
+      await deleteCacheAPI(key);
+    } catch (error) {
+      console.warn(`Не удалось очистить кеш из Redis для ключа ${key}:`, error);
     }
+  }
 };
