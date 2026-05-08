@@ -2,31 +2,88 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    
+
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
-    
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" />
     <link rel="icon" type="image/avif" href="/favicon.avif" />
     <link rel="alternate icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    
+
     <title>HR App</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    
+
+    <!--
+      Telegram WebApp SDK раздаём через наш backend-прокси /telegram/webapp-sdk:
+        Браузер РФ → backend РФ (Timeweb) → Railway relay (зарубеж) → telegram.org
+      Backend кеширует SDK в памяти на час и поддерживает ETag/304, поэтому
+      реально внешний запрос идёт раз в час на процесс. Прямая ссылка на
+      telegram.org из Яндекс/российских сетей подвисала на десятки секунд и
+      замораживала всю загрузку — теперь этого нет.
+
+      defer + параллельная загрузка: main.jsx стартует только после парсинга
+      HTML, но скрипт скачивается параллельно и не блокирует ничего.
+
+      %VITE_API_URL% подставляется Vite при сборке. Если переменная не задана
+      (фронт и API на одном домене), останется относительный путь — он тоже
+      корректен.
+    -->
+    <script defer src="%VITE_API_URL%/telegram/webapp-sdk"></script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500&display=swap" rel="stylesheet">
-    
+    <!--
+      Неблокирующая загрузка шрифта (media=print + onload swap). Если
+      fonts.googleapis.com медленный, рендер не ждёт его — на странице
+      сразу применяется системный fallback, а Inter подменяется когда
+      загрузится.
+    -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@500&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500&display=swap" media="print" onload="this.media='all'">
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500&display=swap">
+    </noscript>
+
     <!-- Preload критических изображений для ускорения загрузки -->
     <link rel="preload" as="image" href="https://i.postimg.cc/YqcmJB37/6.webp">
     <link rel="preload" as="image" href="https://i.postimg.cc/bvMHvzWv/Line-18.webp">
     <link rel="preload" as="image" href="https://i.postimg.cc/6psSrhnR/sapka-ost-razdelov-sinaa.webp">
     <link rel="preload" as="image" href="https://i.postimg.cc/RVsHnPHk/LOGO-SP-SIN.webp">
     <link rel="preconnect" href="https://i.postimg.cc" crossorigin>
+
+    <style>
+      /* Минимальный inline-лоадер, чтобы пользователь видел индикатор пока
+         JS-бандл и API-данные ещё едут — белый экран на 30+ секунд (особенно
+         при холодном старте бэкенда) воспринимается как «приложение зависло». */
+      html, body { margin: 0; padding: 0; background: #f7f7f8; }
+      #initial-loader {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f7f7f8;
+        z-index: 9999;
+        transition: opacity 0.2s ease;
+      }
+      #initial-loader[data-hidden="true"] {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #initial-loader .spinner {
+        width: 36px;
+        height: 36px;
+        border: 3px solid rgba(0, 0, 0, 0.08);
+        border-top-color: #5CA14A;
+        border-radius: 50%;
+        animation: il-spin 0.9s linear infinite;
+      }
+      @keyframes il-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="initial-loader" aria-label="Загрузка"><div class="spinner"></div></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
