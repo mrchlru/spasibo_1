@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -151,6 +152,10 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(CacheControlMiddleware)
+
+# GZip-сжатие ответов > 500 байт ощутимо ускоряет загрузку приложения и тяжёлых
+# JSON-эндпоинтов (лента, рейтинг, список товаров) по медленным каналам.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 origins = [
     "https://mugle-h-rbot-top-managment-m11i.vercel.app",

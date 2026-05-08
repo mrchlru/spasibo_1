@@ -531,32 +531,53 @@ async def get_market_items(db: AsyncSession):
     )
     return result.scalars().all()
 
-async def get_active_items(db: AsyncSession):
-    """Возвращает список всех активных товаров с корректно посчитанным остатком."""
-    
-    # 1. Запрашиваем все товары И сразу же подгружаем связанные с ними коды
-    result = await db.execute(
-        select(models.MarketItem)
-        .where(models.MarketItem.is_archived == False)
-        .options(selectinload(models.MarketItem.codes)) 
+async def get_active_items(db: AsyncSession, include_codes: bool = False):
+    """Возвращает список всех активных товаров с корректно посчитанным остатком.
+
+    Раньше для каждого товара через ``selectinload`` вытягивались все его коды
+    (включая выданные), а остаток считался в Python циклом. На больших объёмах
+    кодов это давало многосекундную задержку при открытии вкладки «Магазин».
+
+    Теперь количество доступных (не выданных) кодов считается одним SQL-агрегатом,
+    а связанная коллекция ``codes`` подгружается только когда это явно запрошено
+    (например, в админ-панели). Публичная вкладка «Магазин» при этом получает
+    компактный ответ без выгрузки самих кодов.
+    """
+
+    available_codes_subq = (
+        select(
+            models.ItemCode.market_item_id.label("item_id"),
+            func.count(models.ItemCode.id).label("available_count"),
+        )
+        .where(models.ItemCode.is_issued.is_(False))
+        .group_by(models.ItemCode.market_item_id)
+        .subquery()
     )
-    items = result.scalars().unique().all()
-    
-    # 2. Теперь считаем остаток в коде, а не в базе
-    for item in items:
+
+    stmt = (
+        select(models.MarketItem, available_codes_subq.c.available_count)
+        .outerjoin(
+            available_codes_subq,
+            available_codes_subq.c.item_id == models.MarketItem.id,
+        )
+        .where(models.MarketItem.is_archived == False)
+    )
+    if include_codes:
+        stmt = stmt.options(selectinload(models.MarketItem.codes))
+
+    result = await db.execute(stmt)
+
+    items: list[models.MarketItem] = []
+    for item, available_count in result.all():
         if item.is_auto_issuance:
-            # Считаем только НЕвыданные коды
-            available_codes = sum(1 for code in item.codes if not code.is_issued)
-            item.stock = available_codes
+            item.stock = int(available_count or 0)
         elif item.is_local_purchase:
-            # Для локальных покупок остаток берем из базы данных (они не используют коды)
-            # Если остаток не установлен или равен 0, устанавливаем его в большое значение
-            # чтобы товар всегда был доступен для покупки
-            # Но если остаток установлен и больше 0, используем его
+            # Локальные подарки не используют коды; если админ не задал остаток —
+            # считаем товар «безлимитным», но не перезаписываем явное значение из БД.
             if item.stock is None or item.stock <= 0:
-                item.stock = 999999  # Неограниченный остаток для локальных покупок по умолчанию
-            # Иначе используем значение из базы данных
-            
+                item.stock = 999999
+        items.append(item)
+
     return items
     
 async def create_market_item(db: AsyncSession, item: schemas.MarketItemCreate):
@@ -1275,7 +1296,12 @@ async def _invalidate_market_cache(reason: str):
     try:
         await redis_cache.clear_all_users_key("market")
     except Exception as e:
-        logger.warning(f"Не удалось очистить кеш market ({reason}): {e}")
+        logger.warning(f"Не удалось очистить пользовательский кеш market ({reason}): {e}")
+    # Серверный публичный кеш списка товаров — общий для всех пользователей.
+    try:
+        await redis_cache.delete_public("market:items")
+    except Exception as e:
+        logger.warning(f"Не удалось очистить публичный кеш market:items ({reason}): {e}")
 
 
 async def _invalidate_feed_and_leaderboard(reason: str):
