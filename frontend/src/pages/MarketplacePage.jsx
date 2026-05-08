@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getMarketItems, purchaseItem, purchaseLocalItem, createSharedGiftInvitation } from '../api';
+import { getCachedData, setCachedData } from '../storage';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 import { useConfirmation } from '../contexts/ConfirmationContext';
 import PageLayout from '../components/PageLayout';
@@ -13,8 +14,13 @@ import { FaStar, FaCopy, FaUsers } from 'react-icons/fa';
 import PurchaseSuccessModal from '../components/PurchaseSuccessModal';
 
 function MarketplacePage({ user, onPurchaseSuccess }) {
-  const [items, setItems] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // stale-while-revalidate: если в memoryCache уже есть товары — мгновенно
+  // показываем их и обновляем в фоне. Это убирает «белое окно» при заходе
+  // на вкладку «Магазин» — раньше каждый клик ждал тяжёлый сетевой запрос.
+  const cachedItems = getCachedData('market');
+  const hasCachedItems = Array.isArray(cachedItems) && cachedItems.length > 0;
+  const [items, setItems] = useState(hasCachedItems ? cachedItems : []);
+  const [isLoading, setIsLoading] = useState(!hasCachedItems);
   const [purchaseSuccessData, setPurchaseSuccessData] = useState(null);
   const [showColleagueSelector, setShowColleagueSelector] = useState(false);
   const [showLocalGiftModal, setShowLocalGiftModal] = useState(false);
@@ -23,20 +29,32 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
   const { confirm } = useConfirmation();
 
   useEffect(() => {
+    let cancelled = false;
     const fetchItems = async () => {
       try {
         const response = await getMarketItems();
+        if (cancelled) return;
         setItems(response.data);
+        // Сразу прогреваем кеш, чтобы следующий вход на страницу был мгновенным.
+        setCachedData('market', response.data);
       } catch (error) {
+        if (cancelled) return;
         console.error("Failed to fetch market items", error);
-        showAlert("Не удалось загрузить товары. Попробуйте позже.", 'error');
+        // Не показываем алерт, если уже есть закешированный список —
+        // пользователь видит товары, а проблема будет залогирована.
+        if (!hasCachedItems) {
+          showAlert("Не удалось загрузить товары. Попробуйте позже.", 'error');
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
     fetchItems();
-    // showAlert стабильная функция из контекста, но лучше убрать зависимость
-    // чтобы избежать лишних запросов при изменении контекста
+    return () => {
+      cancelled = true;
+    };
+    // showAlert/hasCachedItems стабильны на момент монтирования; намеренно не
+    // включаем их в зависимости, чтобы не делать повторных запросов.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -62,13 +80,19 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
     try {
       const response = await purchaseItem(user.telegram_id, item.id);
       const { new_balance, issued_code } = response.data;
-      
+
       onPurchaseSuccess({ balance: new_balance });
       setPurchaseSuccessData({ ...item, issued_code });
-      
-      const updatedItems = await getMarketItems();
-      setItems(updatedItems.data);
 
+      // Локально уменьшаем остаток выбранного товара, чтобы не дёргать заново
+      // тяжёлый /market/items — публичный кеш на бэкенде сам обновится по TTL.
+      setItems(prev => {
+        const next = prev.map(it =>
+          it.id === item.id ? { ...it, stock: Math.max(0, (it.stock ?? 0) - 1) } : it
+        );
+        setCachedData('market', next);
+        return next;
+      });
     } catch (error) {
       console.error("Purchase failed:", error);
       showAlert(error.response?.data?.detail || "Произошла ошибка при покупке.", 'error');
@@ -91,20 +115,17 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
           websiteUrl
         );
         const { new_balance, reserved_balance } = response.data;
-        
+
         onPurchaseSuccess({ balance: new_balance, reserved_balance });
         setShowLocalGiftModal(false);
         setSelectedItem(null);
-        
+
         showAlert(
           `Заявка на локальный подарок создана! Зарезервировано ${reserved_balance} спасибок. Ожидайте решения администратора.`,
           'success'
         );
-
-        // Обновляем список товаров
-        const updatedItems = await getMarketItems();
-        setItems(updatedItems.data);
-
+        // Список товаров не перетягиваем: локальные подарки имеют «безлимитный»
+        // остаток, а тяжёлый /market/items обновится по TTL публичного кеша.
       } catch (error) {
         console.error("Local gift failed:", error);
         showAlert(error.response?.data?.detail || "Произошла ошибка при создании заявки.", 'error');
@@ -131,11 +152,9 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
           `Приглашение отправлено ${colleague.first_name} ${colleague.last_name}!`,
           'success'
         );
-
-        // Обновляем список товаров
-        const updatedItems = await getMarketItems();
-        setItems(updatedItems.data);
-
+        // Не перезапрашиваем /market/items: приглашение само по себе не меняет
+        // остатки до подтверждения коллеги, а актуальные данные подтянутся
+        // при следующем входе на страницу или по TTL публичного кеша.
       } catch (error) {
         console.error("Failed to create shared gift invitation:", error);
         showAlert(error.response?.data?.detail || "Ошибка при отправке приглашения.", 'error');
