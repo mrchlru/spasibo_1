@@ -14,9 +14,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 
-    <!-- Иконки вкладки и ярлыка: замените файлы в frontend/public/ на фирменный знак (см. site.webmanifest). -->
-    <link rel="icon" type="image/avif" href="/favicon.avif" />
+    <!--
+      Порядок важен: вкладка на ПК (Chrome / Edge / Firefox / Яндекс) часто берёт
+      первый подходящий rel=icon. AVIF первым ломает отображение у части десктопных
+      сборок — они не подставляют следующий вариант. Сначала ICO и PNG, AVIF в конце.
+    -->
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/avif" href="/favicon.avif" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
 
