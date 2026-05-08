@@ -220,6 +220,31 @@ def _register_spa_assets() -> None:
 _register_spa_assets()
 
 
+def _safe_dist_static_file(relative: str) -> Path | None:
+    """Возвращает путь к существующему файлу в каталоге сборки SPA, если путь безопасен.
+
+    Vite кладёт в корень ``dist`` не только ``index.html``, но и файлы из
+    ``frontend/public`` (favicon, ``apple-touch-icon.png``, ``site.webmanifest``).
+    Раньше ``spa_fallback`` подставлял ``index.html`` на **любой** путь — браузер
+    при запросе ``/apple-touch-icon.png`` получал HTML и не мог показать иконку
+    ярлыка на главном экране.
+    """
+    if not relative or not relative.strip():
+        return None
+    rel = relative.strip().replace("\\", "/").lstrip("/")
+    if not rel or ".." in rel.split("/"):
+        return None
+    root = _static_root().resolve()
+    candidate = (root / rel).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    if candidate.is_file():
+        return candidate
+    return None
+
+
 def _liveness_response() -> dict[str, str]:
     """Тело ответа для проверок «процесс жив» (Timeweb, балансировщики)."""
     return {"status": "ok"}
@@ -292,12 +317,16 @@ def read_root(request: Request):
     return {"message": "Welcome to the HR Spasibo API"}
 
 
-@app.get("/{full_path:path}")
-async def spa_fallback(full_path: str):
-    """Клиентские маршруты React — отдаём index.html при SERVE_SPA."""
-    del full_path
+@app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
+def spa_fallback(full_path: str):
+    """Статика из корня dist (иконки, manifest) или index.html для маршрутов SPA."""
     if not settings.SERVE_SPA:
         raise HTTPException(status_code=404, detail="Not found")
+
+    dist_file = _safe_dist_static_file(full_path)
+    if dist_file is not None:
+        return FileResponse(dist_file)
+
     index = _static_root() / "index.html"
     if index.is_file():
         return FileResponse(index)
