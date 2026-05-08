@@ -1,17 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8" />
 
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#ffffff" />
-    <link rel="icon" type="image/avif" href="/favicon.avif" />
-    <link rel="alternate icon" href="/favicon.ico" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Ярлык на главный экран, статус-бар PWA, цвет браузера -->
+    <meta name="theme-color" content="#5CA14A" />
+    <meta name="application-name" content="Спасибо" />
+    <meta name="apple-mobile-web-app-title" content="Спасибо" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 
-    <title>HR App</title>
+    <!-- Иконки вкладки и ярлыка: замените файлы в frontend/public/ на фирменный знак (см. site.webmanifest). -->
+    <link rel="icon" type="image/avif" href="/favicon.avif" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <title>Спасибо</title>
 
     <!--
       Telegram WebApp SDK раздаём через наш backend-прокси /telegram/webapp-sdk:
