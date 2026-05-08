@@ -29,3 +29,18 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </ConfirmationProvider>
   </React.StrictMode>,
 );
+
+// Прячем inline-лоадер из index.html, как только React смонтировал дерево.
+// Это короткая задержка через rAF — чтобы первый кадр приложения уже был
+// отрисован к моменту скрытия и не было «мигания» белым.
+if (typeof window !== 'undefined') {
+  const hideInitialLoader = () => {
+    const loader = document.getElementById('initial-loader');
+    if (loader) {
+      loader.setAttribute('data-hidden', 'true');
+      // Удаляем из DOM после анимации, чтобы он не перехватывал клики.
+      setTimeout(() => loader.remove(), 250);
+    }
+  };
+  requestAnimationFrame(() => requestAnimationFrame(hideInitialLoader));
+}
