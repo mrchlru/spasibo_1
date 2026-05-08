@@ -151,6 +151,27 @@ class MarketItemResponse(OrmBase):
     is_local_purchase: bool
     codes: List[ItemCodeResponse] = []
 
+
+class MarketItemPublic(OrmBase):
+    """Облегчённая схема товара для публичного списка (без выгрузки кодов).
+
+    Кодами оперирует только админ-панель. Список кодов на каждой карточке товара
+    в /market/items раздувал JSON в десятки раз и тормозил вкладку «Магазин».
+    """
+
+    id: int
+    name: str
+    description: Optional[str]
+    price: int
+    stock: int
+    price_rub: int
+    image_url: Optional[str] = None
+    is_archived: bool
+    original_price: Optional[int] = None
+    is_auto_issuance: bool
+    is_shared_gift: bool
+    is_local_purchase: bool
+
 class LoginRequest(BaseModel):
     login: str  # Логин для входа
     password: str

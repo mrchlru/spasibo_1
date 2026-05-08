@@ -107,7 +107,8 @@ async def get_archived_items_route(db: AsyncSession = Depends(get_db)):
 
 @router.get("/market-items", response_model=List[schemas.MarketItemResponse])
 async def get_all_active_items_route(db: AsyncSession = Depends(get_db)):
-    return await crud.get_active_items(db)
+    # Админу нужны полные данные с кодами — публичной странице магазина нет.
+    return await crud.get_active_items(db, include_codes=True)
 
 @router.post("/market-items/{item_id}/restore", response_model=schemas.MarketItemResponse)
 async def restore_item_route(
