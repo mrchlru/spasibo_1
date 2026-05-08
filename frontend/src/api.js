@@ -15,8 +15,13 @@ export const getTelegramPhotoProxyUrl = (photoUrl) => {
   return `${base}/telegram/photo-proxy?url=${encodeURIComponent(photoUrl)}`;
 };
 
+// Таймаут axios предохраняет UI от «вечно крутящегося» состояния, если
+// какой-то API-запрос завис (например, при холодном старте бэкенда или
+// проблемах с сетью). 20 секунд достаточно даже для тяжёлых отчётов и
+// первого старта с миграциями, но при этом UI не виснет минутами.
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 20000,
 });
 
 /**
