@@ -27,3 +27,9 @@ frontend/dist/
 # Logs
 *.log
 npm-debug.log*
+
+# Crash dumps / debug logs (never commit)
+core
+core.*
+09_*.txt
+*_net.txt
