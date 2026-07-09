@@ -25,6 +25,7 @@ from routers import (
     market,
     media_upload,
     notifications,
+    push,
     roulette,
     scheduler,
     sessions,
@@ -57,6 +58,7 @@ def _is_protected_api_path(path: str) -> bool:
         "/cache",
         "/app-settings",
         "/notifications",
+        "/push",
         "/points",
         "/leaderboard",
     )
@@ -191,6 +193,7 @@ app.include_router(shared_gifts.router)
 app.include_router(cache.router)
 app.include_router(app_settings.router)
 app.include_router(notifications.router)
+app.include_router(push.router)
 app.include_router(media_upload.router)
 
 

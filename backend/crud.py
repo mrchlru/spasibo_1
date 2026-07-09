@@ -44,8 +44,10 @@ async def _create_notification(
     type: str,
     title: str,
     message: str,
+    *,
+    click_url: str | None = None,
 ) -> None:
-    """Сохраняет уведомление в БД для отображения в веб-интерфейсе."""
+    """Сохраняет уведомление в БД и отправляет Web Push при наличии подписки."""
     try:
         notification = models.Notification(
             user_id=user_id,
@@ -57,6 +59,21 @@ async def _create_notification(
         await db.flush()
     except Exception as e:
         logger.warning("Не удалось создать уведомление для user_id=%s: %s", user_id, e)
+        return
+
+    try:
+        from push_service import send_user_web_push
+
+        await send_user_web_push(
+            db,
+            user_id,
+            title=title,
+            body=message,
+            url=click_url or "/",
+            tag=f"serdce-{type}",
+        )
+    except Exception as e:
+        logger.warning("Web Push для user_id=%s не отправлен: %s", user_id, e)
 
 
 # --- УТИЛИТЫ ДЛЯ РАБОТЫ С ПАРОЛЯМИ ---
@@ -332,6 +349,7 @@ async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
         db, receiver.id, "transfer",
         "Вам начислена спасибка",
         f"От: {sender_name}. Сообщение: {tr.message or '—'}",
+        click_url="/?panel=notifications",
     )
     await db.commit()
     await _invalidate_feed_and_leaderboard("перевод спасибки")
@@ -755,7 +773,7 @@ async def create_purchase(db: AsyncSession, pr: schemas.PurchaseRequest):
     notif_msg = f'Вы приобрели "{item_name}"'
     if issued_code_value:
         notif_msg += f"\n[code]{issued_code_value}[/code]"
-    await _create_notification(db, user.id, "purchase", "Покупка совершена", notif_msg)
+    await _create_notification(db, user.id, "purchase", "Покупка совершена", notif_msg, click_url="/?panel=notifications")
     await db.commit()
 
     return {"new_balance": user.balance, "issued_code": issued_code_value}

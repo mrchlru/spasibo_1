@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -52,6 +53,8 @@ class Settings(BaseSettings):
     # Пароль для входа в /admin по email из ADMIN_EMAILS (без записи в БД). Пусто — вход отключён.
     ADMIN_PANEL_PASSWORD: str = ""
     WEB_APP_LOGIN_URL: str = ""  # URL страницы входа в веб-приложение (опционально)
+    # False — самостоятельная регистрация через /users/auth/register отключена (концепции «Сердце»).
+    SELF_REGISTRATION_ENABLED: bool = True
 
     # Object Storage S3 (Timeweb Cloud по умолчанию; совместимо с любым S3 API)
     S3_ENDPOINT_URL: str = "https://s3.twcstorage.ru"
@@ -71,6 +74,22 @@ class Settings(BaseSettings):
     STATIC_ROOT: str = ""
     # Дополнительные origins для CORS (через запятую), кроме встроенного списка в app.py
     CORS_ORIGINS: str = ""
+
+    # Web Push (VAPID). Пустой приватный ключ — push отключён.
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_CONTACT_EMAIL: str = "mailto:admin@serdce.local"
+    WEB_PUSH_ENABLED: bool = True
+    # Базовый URL PWA для deep link в push (например https://pure-harmony...railway.app)
+    PWA_PUBLIC_BASE_URL: str = ""
+
+    @field_validator("VAPID_PRIVATE_KEY", mode="before")
+    @classmethod
+    def _decode_vapid_private_key(cls, value: object) -> object:
+        """Поддерживает PEM в одной строке с \\n из Railway."""
+        if isinstance(value, str):
+            return value.replace("\\n", "\n")
+        return value
 
     class Config:
         env_file = ".env"

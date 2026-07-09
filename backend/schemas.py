@@ -669,6 +669,33 @@ class NotificationListResponse(BaseModel):
     total: int
     unread_count: int
 
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscribeRequest(BaseModel):
+    endpoint: str = Field(..., min_length=10)
+    keys: PushSubscriptionKeys
+    concept_slug: Optional[str] = None
+
+
+class PushUnsubscribeRequest(BaseModel):
+    endpoint: str = Field(..., min_length=10)
+
+
+class PushVapidPublicKeyResponse(BaseModel):
+    public_key: str
+    enabled: bool
+
+
+class PushTestRequest(BaseModel):
+    title: str = "Тестовое уведомление"
+    body: str = "Push-канал «Сердце» работает"
+    url: str = "/"
+
+
 class UnifiedPurchaseResponse(BaseModel):
     id: int
     purchase_type: str
@@ -705,3 +732,40 @@ class AdminMediaStatusResponse(BaseModel):
     """Доступность загрузки в S3-совместимое хранилище."""
 
     enabled: bool
+
+
+class BulkUserImportRowResult(BaseModel):
+    """Результат обработки одной строки Excel."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    row_number: int
+    status: str
+    last_name: str = ""
+    first_name: str = ""
+    email: str = ""
+    phone_number: str = ""
+    position: str = ""
+    department: str = ""
+    login: Optional[str] = None
+    password: Optional[str] = None
+    user_id: Optional[int] = None
+    email_sent: bool = False
+    message: str = ""
+
+
+class BulkUserImportResponse(BaseModel):
+    """Ответ массового импорта пользователей."""
+
+    total_rows: int
+    created_count: int
+    skipped_count: int
+    error_count: int
+    emails_sent_count: int
+    rows: List[BulkUserImportRowResult]
+
+
+class BulkUserImportReportRequest(BaseModel):
+    """Тело запроса для выгрузки отчёта после импорта."""
+
+    rows: List[BulkUserImportRowResult]

@@ -1,0 +1,30 @@
+"""Генерация VAPID-ключей для Web Push (Railway / .env)."""
+
+from __future__ import annotations
+
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from py_vapid import Vapid
+from py_vapid.utils import b64urlencode
+
+
+def main() -> None:
+    """Печатает переменные окружения для serdce-api."""
+    vapid = Vapid()
+    vapid.generate_keys()
+
+    public_bytes = vapid.public_key.public_bytes(
+        Encoding.X962,
+        PublicFormat.UncompressedPoint,
+    )
+    public_key = b64urlencode(public_bytes)
+    private_pem = vapid.private_pem().decode().replace("\n", "\\n")
+
+    print("WEB_PUSH_ENABLED=true")
+    print(f"VAPID_PUBLIC_KEY={public_key}")
+    print(f"VAPID_PRIVATE_KEY={private_pem}")
+    print("VAPID_CONTACT_EMAIL=mailto:admin@serdce.app")
+    print("PWA_PUBLIC_BASE_URL=https://pure-harmony-production-dc7f.up.railway.app")
+
+
+if __name__ == "__main__":
+    main()
