@@ -17,6 +17,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from config import settings
 from redis_cache import redis_cache
 from routers import (
+    achievements,
     admin,
     admin_auth,
     app_settings,
@@ -50,6 +51,7 @@ def _is_protected_api_path(path: str) -> bool:
         "/transactions",
         "/market",
         "/banners",
+        "/achievements",
         "/roulette",
         "/scheduler",
         "/telegram",
@@ -185,6 +187,7 @@ app.include_router(market.router)
 app.include_router(admin_auth.router)
 app.include_router(admin.router)
 app.include_router(banners.router)
+app.include_router(achievements.router)
 app.include_router(roulette.router)
 app.include_router(scheduler.router)
 app.include_router(telegram.router)

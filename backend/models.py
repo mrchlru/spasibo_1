@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, BigInteger, Boolean, Date, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, BigInteger, Boolean, Date, Text, UniqueConstraint, func
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -43,6 +43,7 @@ class User(Base):
 
     has_seen_onboarding: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
     has_interacted_with_bot: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
+    notification_preferences = Column(JSON, nullable=True)
     sent_transactions = relationship(
         "Transaction",
         back_populates="sender",
@@ -229,6 +230,20 @@ class PushSubscription(Base):
 
     user = relationship("User")
 
+class AndroidFcmToken(Base):
+    __tablename__ = "android_fcm_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token = Column(String, unique=True, nullable=False, index=True)
+    concept_slug = Column(String(64), nullable=True)
+    device_name = Column(String(128), nullable=True)
+    is_active = Column(Boolean, default=True, server_default="true", nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+
 class AppSettings(Base):
     __tablename__ = "app_settings"
 
@@ -237,3 +252,30 @@ class AppSettings(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     # URL картинок интерфейса (лето/зима), JSON: { "summer": {...}, "winter": {...} }
     theme_assets = Column(JSON, nullable=True)
+
+
+class Achievement(Base):
+    __tablename__ = "achievements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    how_to_obtain = Column(Text, nullable=False)
+    image_url = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True, server_default="true", nullable=False)
+    sort_order = Column(Integer, default=0, server_default="0", nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class UserAchievement(Base):
+    __tablename__ = "user_achievements"
+    __table_args__ = (UniqueConstraint("user_id", "achievement_id", name="uq_user_achievement"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    achievement_id = Column(Integer, ForeignKey("achievements.id", ondelete="CASCADE"), nullable=False, index=True)
+    earned_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User")
+    achievement = relationship("Achievement")

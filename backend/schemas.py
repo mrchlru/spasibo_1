@@ -36,6 +36,7 @@ class UserResponse(UserBase):
     balance: int
     reserved_balance: int = 0
     daily_transfer_count: int
+    daily_transfer_count_for_date: Optional[date] = None
     is_admin: bool
     status: Optional[str] = 'approved' 
     telegram_photo_url: Optional[str] = None
@@ -180,6 +181,24 @@ class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
 
+class NotificationPreferencesResponse(BaseModel):
+    birthdays: bool = True
+    likesReceived: bool = True
+    purchases: bool = True
+    sharedGifts: bool = True
+    profileUpdates: bool = True
+    achievements: bool = True
+    systemNews: bool = True
+
+class NotificationPreferencesUpdate(BaseModel):
+    birthdays: Optional[bool] = None
+    likesReceived: Optional[bool] = None
+    purchases: Optional[bool] = None
+    sharedGifts: Optional[bool] = None
+    profileUpdates: Optional[bool] = None
+    achievements: Optional[bool] = None
+    systemNews: Optional[bool] = None
+
 class RegisterRequest(BaseModel):
     telegram_id: Optional[str] = None
     first_name: str
@@ -252,6 +271,7 @@ class MarketItemUpdate(BaseModel):
     new_item_codes: Optional[List[str]] = []
 
 class UserUpdate(BaseModel):
+    first_name: Optional[str] = None
     last_name: Optional[str] = None
     department: Optional[str] = None
     position: Optional[str] = None
@@ -260,6 +280,7 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
 
 class ProfileUpdateRequest(BaseModel):
+    first_name: Optional[str] = None
     last_name: Optional[str] = None
     department: Optional[str] = None
     position: Optional[str] = None
@@ -327,6 +348,7 @@ class MyRankResponse(BaseModel):
     total_participants: int
 
 class GeneralStatsResponse(BaseModel):
+    total_users_count: int = 0
     new_users_count: int
     transactions_count: int
     active_users_count: int
@@ -402,6 +424,7 @@ class SessionResponse(SessionBase):
 
 class AverageSessionDurationStats(BaseModel):
     average_duration_minutes: float
+    session_count: int = 0
 
 class StatixBonusItemResponse(OrmBase):
     id: int
@@ -696,6 +719,20 @@ class PushTestRequest(BaseModel):
     url: str = "/"
 
 
+class AndroidPushRegisterRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=4096)
+    concept_slug: Optional[str] = None
+    device_name: Optional[str] = Field(None, max_length=128)
+
+
+class AndroidPushUnregisterRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=4096)
+
+
+class AndroidPushConfigResponse(BaseModel):
+    enabled: bool
+
+
 class UnifiedPurchaseResponse(BaseModel):
     id: int
     purchase_type: str
@@ -769,3 +806,36 @@ class BulkUserImportReportRequest(BaseModel):
     """Тело запроса для выгрузки отчёта после импорта."""
 
     rows: List[BulkUserImportRowResult]
+
+
+class AchievementBase(OrmBase):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1)
+    how_to_obtain: str = Field(..., min_length=1)
+    image_url: Optional[str] = None
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class AchievementCreate(AchievementBase):
+    pass
+
+
+class AchievementUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = Field(default=None, min_length=1)
+    how_to_obtain: Optional[str] = Field(default=None, min_length=1)
+    image_url: Optional[str] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class AchievementResponse(AchievementBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserAchievementResponse(AchievementResponse):
+    status: Literal["locked", "earned"]
+    earned_at: Optional[datetime] = None
