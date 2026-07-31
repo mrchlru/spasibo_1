@@ -16,10 +16,10 @@ async def get_user_achievements_route(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Каталог активных ачивок со статусом получения для текущего пользователя."""
+    """Каталог активных ачивок со статусом уровней для текущего пользователя."""
     achievements = await crud.get_active_achievements(db)
-    earned_map = await crud.get_user_earned_achievement_ids(db, current_user.id)
-    return crud.build_user_achievement_responses(achievements, earned_map)
+    earned_level_map = await crud.get_user_earned_level_map(db, current_user.id)
+    return crud.build_user_achievement_responses(achievements, earned_level_map)
 
 
 @router.get("/admin/achievements", response_model=List[schemas.AchievementResponse])
@@ -27,7 +27,8 @@ async def get_all_achievements_route(
     admin_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await crud.get_all_achievements(db)
+    achievements = await crud.get_all_achievements(db)
+    return [crud._achievement_to_response(achievement) for achievement in achievements]
 
 
 @router.post(
@@ -40,7 +41,8 @@ async def create_achievement_route(
     admin_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await crud.create_achievement(db, achievement)
+    created = await crud.create_achievement(db, achievement)
+    return crud._achievement_to_response(created)
 
 
 @router.put("/admin/achievements/{achievement_id}", response_model=schemas.AchievementResponse)
@@ -50,10 +52,13 @@ async def update_achievement_route(
     admin_user: User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    updated = await crud.update_achievement(db, achievement_id, achievement_data)
+    try:
+        updated = await crud.update_achievement(db, achievement_id, achievement_data)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Achievement not found")
-    return updated
+    return crud._achievement_to_response(updated)
 
 
 @router.delete("/admin/achievements/{achievement_id}")

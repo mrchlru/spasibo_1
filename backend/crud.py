@@ -1057,37 +1057,117 @@ async def delete_banner(db: AsyncSession, banner_id: int):
 
 # --- CRUD ДЛЯ АЧИВОК ---
 
+def _achievement_levels_query():
+    """Базовый запрос ачивок с уровнями."""
+    return select(models.Achievement).options(selectinload(models.Achievement.levels))
+
+
 async def get_all_achievements(db: AsyncSession):
     """Возвращает все ачивки для админки."""
     result = await db.execute(
-        select(models.Achievement).order_by(
+        _achievement_levels_query().order_by(
             models.Achievement.sort_order.asc(),
             models.Achievement.id.asc(),
         )
     )
-    return result.scalars().all()
+    return result.scalars().unique().all()
 
 
 async def get_active_achievements(db: AsyncSession):
     """Возвращает активные ачивки для каталога в приложении."""
     result = await db.execute(
-        select(models.Achievement)
+        _achievement_levels_query()
         .where(models.Achievement.is_active == True)
         .order_by(
             models.Achievement.sort_order.asc(),
             models.Achievement.id.asc(),
         )
     )
-    return result.scalars().all()
+    return result.scalars().unique().all()
+
+
+async def get_achievement_by_id(db: AsyncSession, achievement_id: int):
+    """Возвращает ачивку по id с уровнями."""
+    result = await db.execute(
+        _achievement_levels_query().where(models.Achievement.id == achievement_id)
+    )
+    return result.scalars().first()
+
+
+def _achievement_to_response(achievement: models.Achievement) -> schemas.AchievementResponse:
+    """Преобразует модель ачивки в ответ админки."""
+    return schemas.AchievementResponse(
+        id=achievement.id,
+        title=achievement.title,
+        description=achievement.description,
+        is_active=achievement.is_active,
+        sort_order=achievement.sort_order,
+        created_at=achievement.created_at,
+        updated_at=achievement.updated_at,
+        levels=[
+            schemas.AchievementLevelResponse(
+                id=level.id,
+                level_number=level.level_number,
+                tier_key=level.tier_key,
+                image_url=level.image_url,
+                how_to_obtain=level.how_to_obtain,
+            )
+            for level in sorted(achievement.levels, key=lambda item: item.level_number)
+        ],
+    )
 
 
 async def create_achievement(db: AsyncSession, achievement: schemas.AchievementCreate):
-    """Создаёт ачивку."""
-    db_achievement = models.Achievement(**achievement.model_dump())
+    """Создаёт ачивку с уровнями."""
+    payload = achievement.model_dump(exclude={"levels"})
+    db_achievement = models.Achievement(**payload)
     db.add(db_achievement)
+    await db.flush()
+    for level in achievement.levels:
+        db.add(
+            models.AchievementLevel(
+                achievement_id=db_achievement.id,
+                **level.model_dump(),
+            )
+        )
     await db.commit()
-    await db.refresh(db_achievement)
-    return db_achievement
+    return await get_achievement_by_id(db, db_achievement.id)
+
+
+async def _sync_achievement_levels(
+    db: AsyncSession,
+    db_achievement: models.Achievement,
+    levels: list[schemas.AchievementLevelUpsert],
+) -> None:
+    """Синхронизирует уровни ачивки при обновлении."""
+    existing_by_id = {level.id: level for level in db_achievement.levels}
+    keep_ids: set[int] = set()
+
+    for level_data in levels:
+        if level_data.id and level_data.id in existing_by_id:
+            db_level = existing_by_id[level_data.id]
+            for key, value in level_data.model_dump(exclude={"id"}).items():
+                setattr(db_level, key, value)
+            keep_ids.add(db_level.id)
+            continue
+        db.add(
+            models.AchievementLevel(
+                achievement_id=db_achievement.id,
+                **level_data.model_dump(exclude={"id"}),
+            )
+        )
+
+    for level in db_achievement.levels:
+        if level.id in keep_ids:
+            continue
+        earned_count = await db.execute(
+            select(func.count())
+            .select_from(models.UserAchievement)
+            .where(models.UserAchievement.achievement_level_id == level.id)
+        )
+        if earned_count.scalar_one() > 0:
+            raise ValueError("Нельзя удалить уровень, который уже получили сотрудники")
+        await db.delete(level)
 
 
 async def update_achievement(
@@ -1095,28 +1175,27 @@ async def update_achievement(
     achievement_id: int,
     achievement_data: schemas.AchievementUpdate,
 ):
-    """Обновляет ачивку."""
-    result = await db.execute(
-        select(models.Achievement).where(models.Achievement.id == achievement_id)
-    )
-    db_achievement = result.scalars().first()
+    """Обновляет ачивку и её уровни."""
+    db_achievement = await get_achievement_by_id(db, achievement_id)
     if not db_achievement:
         return None
 
-    for key, value in achievement_data.model_dump(exclude_unset=True).items():
+    update_fields = achievement_data.model_dump(exclude_unset=True, exclude={"levels"})
+    for key, value in update_fields.items():
         setattr(db_achievement, key, value)
 
+    if achievement_data.levels is not None:
+        if not achievement_data.levels:
+            raise ValueError("У ачивки должен быть хотя бы один уровень")
+        await _sync_achievement_levels(db, db_achievement, achievement_data.levels)
+
     await db.commit()
-    await db.refresh(db_achievement)
-    return db_achievement
+    return await get_achievement_by_id(db, achievement_id)
 
 
 async def delete_achievement(db: AsyncSession, achievement_id: int) -> bool:
     """Удаляет ачивку."""
-    result = await db.execute(
-        select(models.Achievement).where(models.Achievement.id == achievement_id)
-    )
-    db_achievement = result.scalars().first()
+    db_achievement = await get_achievement_by_id(db, achievement_id)
     if db_achievement:
         await db.delete(db_achievement)
         await db.commit()
@@ -1124,37 +1203,60 @@ async def delete_achievement(db: AsyncSession, achievement_id: int) -> bool:
     return False
 
 
-async def get_user_earned_achievement_ids(db: AsyncSession, user_id: int) -> dict[int, datetime]:
-    """Возвращает id ачивок, полученных пользователем."""
+async def get_user_earned_level_map(db: AsyncSession, user_id: int) -> dict[int, datetime]:
+    """Возвращает id уровней ачивок, полученных пользователем."""
     result = await db.execute(
-        select(models.UserAchievement.achievement_id, models.UserAchievement.earned_at).where(
-            models.UserAchievement.user_id == user_id
-        )
+        select(
+            models.UserAchievement.achievement_level_id,
+            models.UserAchievement.earned_at,
+        ).where(models.UserAchievement.user_id == user_id)
     )
-    return {row.achievement_id: row.earned_at for row in result.all()}
+    return {row.achievement_level_id: row.earned_at for row in result.all()}
 
 
 def build_user_achievement_responses(
     achievements: list[models.Achievement],
-    earned_map: dict[int, datetime],
+    earned_level_map: dict[int, datetime],
 ) -> list[schemas.UserAchievementResponse]:
-    """Собирает ответ каталога ачивок со статусом для пользователя."""
+    """Собирает ответ каталога ачивок со статусом уровней для пользователя."""
     responses: list[schemas.UserAchievementResponse] = []
     for achievement in achievements:
-        earned_at = earned_map.get(achievement.id)
+        sorted_levels = sorted(achievement.levels, key=lambda item: item.level_number)
+        level_responses: list[schemas.UserAchievementLevelResponse] = []
+        highest_earned_level: int | None = None
+
+        for level in sorted_levels:
+            earned_at = earned_level_map.get(level.id)
+            if earned_at is not None:
+                highest_earned_level = level.level_number
+            level_responses.append(
+                schemas.UserAchievementLevelResponse(
+                    id=level.id,
+                    level_number=level.level_number,
+                    tier_key=level.tier_key,
+                    image_url=level.image_url,
+                    how_to_obtain=level.how_to_obtain,
+                    status="earned" if earned_at else "locked",
+                    earned_at=earned_at,
+                )
+            )
+
+        display_level = next(
+            (level for level in reversed(sorted_levels) if level.id in earned_level_map),
+            sorted_levels[0] if sorted_levels else None,
+        )
+
         responses.append(
             schemas.UserAchievementResponse(
                 id=achievement.id,
                 title=achievement.title,
                 description=achievement.description,
-                how_to_obtain=achievement.how_to_obtain,
-                image_url=achievement.image_url,
                 is_active=achievement.is_active,
                 sort_order=achievement.sort_order,
-                created_at=achievement.created_at,
-                updated_at=achievement.updated_at,
-                status="earned" if earned_at else "locked",
-                earned_at=earned_at,
+                levels=level_responses,
+                highest_earned_level=highest_earned_level,
+                display_image_url=display_level.image_url if display_level else None,
+                status="earned" if highest_earned_level is not None else "locked",
             )
         )
     return responses

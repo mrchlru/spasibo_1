@@ -808,34 +808,59 @@ class BulkUserImportReportRequest(BaseModel):
     rows: List[BulkUserImportRowResult]
 
 
+class AchievementLevelBase(OrmBase):
+    level_number: int = Field(..., ge=1, le=20)
+    tier_key: str = Field(..., min_length=1, max_length=32)
+    image_url: Optional[str] = None
+    how_to_obtain: str = Field(..., min_length=1)
+
+
+class AchievementLevelCreate(AchievementLevelBase):
+    pass
+
+
+class AchievementLevelUpsert(AchievementLevelBase):
+    id: Optional[int] = None
+
+
+class AchievementLevelResponse(AchievementLevelBase):
+    id: int
+
+
 class AchievementBase(OrmBase):
     title: str = Field(..., min_length=1, max_length=255)
     description: str = Field(..., min_length=1)
-    how_to_obtain: str = Field(..., min_length=1)
-    image_url: Optional[str] = None
     is_active: bool = True
     sort_order: int = 0
 
 
 class AchievementCreate(AchievementBase):
-    pass
+    levels: List[AchievementLevelCreate] = Field(..., min_length=1)
 
 
 class AchievementUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     description: Optional[str] = Field(default=None, min_length=1)
-    how_to_obtain: Optional[str] = Field(default=None, min_length=1)
-    image_url: Optional[str] = None
     is_active: Optional[bool] = None
     sort_order: Optional[int] = None
+    levels: Optional[List[AchievementLevelUpsert]] = None
 
 
 class AchievementResponse(AchievementBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    levels: List[AchievementLevelResponse]
 
 
-class UserAchievementResponse(AchievementResponse):
+class UserAchievementLevelResponse(AchievementLevelResponse):
     status: Literal["locked", "earned"]
     earned_at: Optional[datetime] = None
+
+
+class UserAchievementResponse(AchievementBase):
+    id: int
+    levels: List[UserAchievementLevelResponse]
+    highest_earned_level: Optional[int] = None
+    display_image_url: Optional[str] = None
+    status: Literal["locked", "earned"]

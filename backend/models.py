@@ -260,22 +260,46 @@ class Achievement(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
-    how_to_obtain = Column(Text, nullable=False)
-    image_url = Column(String, nullable=True)
     is_active = Column(Boolean, default=True, server_default="true", nullable=False)
     sort_order = Column(Integer, default=0, server_default="0", nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
+    levels = relationship(
+        "AchievementLevel",
+        back_populates="achievement",
+        cascade="all, delete-orphan",
+        order_by="AchievementLevel.level_number",
+    )
+
+
+class AchievementLevel(Base):
+    __tablename__ = "achievement_levels"
+    __table_args__ = (UniqueConstraint("achievement_id", "level_number", name="uq_achievement_level_number"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    achievement_id = Column(Integer, ForeignKey("achievements.id", ondelete="CASCADE"), nullable=False, index=True)
+    level_number = Column(Integer, nullable=False)
+    tier_key = Column(String(32), nullable=False, server_default="bronze")
+    image_url = Column(String, nullable=True)
+    how_to_obtain = Column(Text, nullable=False)
+
+    achievement = relationship("Achievement", back_populates="levels")
+
 
 class UserAchievement(Base):
     __tablename__ = "user_achievements"
-    __table_args__ = (UniqueConstraint("user_id", "achievement_id", name="uq_user_achievement"),)
+    __table_args__ = (UniqueConstraint("user_id", "achievement_level_id", name="uq_user_achievement_level"),)
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    achievement_id = Column(Integer, ForeignKey("achievements.id", ondelete="CASCADE"), nullable=False, index=True)
+    achievement_level_id = Column(
+        Integer,
+        ForeignKey("achievement_levels.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     earned_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     user = relationship("User")
-    achievement = relationship("Achievement")
+    achievement_level = relationship("AchievementLevel")
