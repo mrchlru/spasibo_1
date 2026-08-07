@@ -1910,6 +1910,8 @@ async def admin_update_user(db: AsyncSession, user_id: int, user_data: schemas.A
     
     update_data = user_data.model_dump(exclude_unset=True)
     changes_log = []
+    login_changed = False
+    password_changed = False
 
     # Проходим по всем полям, которые пришли с фронтенда
     for key, new_value in update_data.items():
@@ -1956,7 +1958,11 @@ async def admin_update_user(db: AsyncSession, user_id: int, user_data: schemas.A
 
         if is_changed:
             changes_log.append(f"  - {key}: `{old_value}` -> `{new_value}`")
-        
+            if key == "login":
+                login_changed = True
+            elif key == "password" and new_value:
+                password_changed = True
+
         # Применяем изменения к объекту пользователя (конвертируя дату)
         if key == 'date_of_birth' and new_value:
             try:
@@ -1993,10 +1999,6 @@ async def admin_update_user(db: AsyncSession, user_id: int, user_data: schemas.A
         else:
             setattr(user, key, new_value)
     
-    # Отслеживаем, были ли установлены логин и пароль для отправки email
-    login_was_set = 'login' in update_data and (update_data.get('login') is not None and update_data.get('login') != '')
-    password_was_set = 'password' in update_data and update_data.get('password') is not None
-    
     # Автоматически включаем browser_auth_enabled, если есть логин и пароль
     if user.login and user.password_hash:
         if not user.browser_auth_enabled:
@@ -2023,20 +2025,31 @@ async def admin_update_user(db: AsyncSession, user_id: int, user_data: schemas.A
             message_thread_id=settings.TELEGRAM_ADMIN_LOG_TOPIC_ID,
         )
         
-        # Отправляем email с учетными данными, если были установлены логин и пароль
-        if (login_was_set or password_was_set) and user.email and user.login and user.password_plain:
+        # Письмо с логином/паролем — только если их реально изменили, а не при смене email и т.п.
+        if (login_changed or password_changed) and user.email and user.login and user.password_plain:
             try:
                 from email_service import send_credentials_to_user
                 login_url = getattr(settings, 'WEB_APP_LOGIN_URL', None)
                 user_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Пользователь"
-                await send_credentials_to_user(
+                sent = await send_credentials_to_user(
                     user_email=user.email,
                     user_name=user_name,
                     login=user.login,
                     password=user.password_plain,
                     login_url=login_url
                 )
-                logger.info(f"Email с учетными данными отправлен пользователю {user.email} (ID: {user.id})")
+                if sent:
+                    logger.info(
+                        "Email с учетными данными отправлен пользователю %s (ID: %s)",
+                        user.email,
+                        user.id,
+                    )
+                else:
+                    logger.warning(
+                        "Email с учетными данными не отправлен пользователю %s (ID: %s)",
+                        user.email,
+                        user.id,
+                    )
             except Exception as e:
                 logger.error(f"Ошибка при отправке учетных данных на email {user.email}: {e}")
                 import traceback
