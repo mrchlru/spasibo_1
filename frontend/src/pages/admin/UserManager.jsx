@@ -10,19 +10,67 @@ import { useModalAlert } from '../../contexts/ModalAlertContext';
 import { useConfirmation } from '../../contexts/ConfirmationContext';
 import { formatDateForDisplay } from '../../utils/dateFormatter';
 
-// Модальное окно для редактирования (остается без изменений)
+/** Поля, которые админ может менять через PUT /admin/users/{id}. */
+const ADMIN_USER_UPDATE_FIELDS = [
+    'first_name',
+    'last_name',
+    'department',
+    'position',
+    'phone_number',
+    'date_of_birth',
+    'balance',
+    'tickets',
+    'ticket_parts',
+    'status',
+    'is_admin',
+    'login',
+    'email',
+    'password',
+    'browser_auth_enabled',
+];
+
+function buildEditUserFormState(user) {
+    return {
+        first_name: user.first_name || '',
+        last_name: user.last_name || '',
+        department: user.department || '',
+        position: user.position || '',
+        phone_number: user.phone_number || '',
+        email: user.email || '',
+        date_of_birth: formatDateForDisplay(user.date_of_birth),
+        balance: user.balance ?? 0,
+        tickets: user.tickets ?? 0,
+        ticket_parts: user.ticket_parts ?? 0,
+        status: user.status || 'approved',
+        login: user.login || '',
+        password: '',
+        browser_auth_enabled: user.browser_auth_enabled || false,
+    };
+}
+
+function pickAdminUserUpdatePayload(formData) {
+    const payload = {};
+    for (const key of ADMIN_USER_UPDATE_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(formData, key)) {
+            payload[key] = formData[key];
+        }
+    }
+    return payload;
+}
+
+// Модальное окно для редактирования
 function EditUserModal({ user, onClose, onSave, onDelete, onChangePassword, onDeletePassword }) {
     const { confirm } = useConfirmation();
     const { showAlert } = useModalAlert();
-    const [formData, setFormData] = useState({
-        ...user,
-        date_of_birth: formatDateForDisplay(user.date_of_birth),
-        login: user.login || '',
-        password: '', // Пароль не показываем, только для изменения
-        browser_auth_enabled: user.browser_auth_enabled || false,
-    });
+    const [formData, setFormData] = useState(() => buildEditUserFormState(user));
     const [newPassword, setNewPassword] = useState('');
     const [showPasswordChange, setShowPasswordChange] = useState(false);
+
+    useEffect(() => {
+        setFormData(buildEditUserFormState(user));
+        setNewPassword('');
+        setShowPasswordChange(false);
+    }, [user.id]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -96,7 +144,7 @@ function EditUserModal({ user, onClose, onSave, onDelete, onChangePassword, onDe
                         <input name="department" value={formData.department || ''} onChange={handleChange} placeholder="Подразделение" className={styles.input} />
                         <input name="position" value={formData.position || ''} onChange={handleChange} placeholder="Должность" className={styles.input} />
                         <input type="tel" name="phone_number" value={formData.phone_number || ''} onChange={handleChange} placeholder="Номер телефона" className={styles.input} />
-                        <input type="email" name="email" value={formData.email || ''} onChange={handleChange} placeholder="Email (при наличии)" className={styles.input} />
+                        <input type="email" name="email" value={formData.email || ''} onChange={handleChange} placeholder="Email (при наличии)" className={styles.input} autoComplete="off" />
                         <input type="text" name="date_of_birth" value={formData.date_of_birth || ''} onChange={handleChange} placeholder="Дата (ДД.ММ.ГГГГ)" className={styles.input} />
                         <input type="number" name="balance" value={formData.balance || 0} onChange={handleChange} placeholder="Баланс" className={styles.input} />
                         <input type="number" name="tickets" value={formData.tickets || 0} onChange={handleChange} placeholder="Билеты" className={styles.input} />
@@ -249,17 +297,25 @@ function UserManager() {
     };
 
     const handleSaveUser = async (userId, userData) => {
-        const dateParts = userData.date_of_birth.split('.');
+        const dateParts = (userData.date_of_birth || '').split('.');
         let apiDate = null;
         if (dateParts.length === 3) {
             apiDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
         }
-        
-        const dataToSend = { ...userData, date_of_birth: apiDate };
-        
+
+        const dataToSend = {
+            ...pickAdminUserUpdatePayload(userData),
+            date_of_birth: apiDate,
+        };
+
         // Если пароль пустой, не отправляем его (чтобы не перезаписывать существующий)
-        if (!dataToSend.password || dataToSend.password.trim() === '') {
+        if (!dataToSend.password || String(dataToSend.password).trim() === '') {
             delete dataToSend.password;
+        }
+
+        // Пустой email — явно сброс в null на бэкенде
+        if (dataToSend.email !== undefined && String(dataToSend.email).trim() === '') {
+            dataToSend.email = null;
         }
 
         try {
@@ -367,6 +423,7 @@ function UserManager() {
         <>
             {editingUser && (
                 <EditUserModal 
+                    key={editingUser.id}
                     user={editingUser} 
                     onClose={() => setEditingUser(null)} 
                     onSave={handleSaveUser}

@@ -1,5 +1,22 @@
+import base64
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+
+def _normalize_vapid_private_key(raw_value: str) -> str:
+    """Приводит VAPID private key к валидному PEM независимо от формата env."""
+    raw = raw_value.strip()
+    if not raw:
+        return ""
+
+    if "BEGIN" in raw:
+        return raw.replace("\\n", "\n").replace("\r", "").strip()
+
+    padding = "=" * ((4 - len(raw) % 4) % 4)
+    pem_bytes = base64.urlsafe_b64decode(raw + padding)
+    return pem_bytes.decode("utf-8").strip()
+
 
 class Settings(BaseSettings):
     DATABASE_URL: str
@@ -83,13 +100,25 @@ class Settings(BaseSettings):
     # Базовый URL PWA для deep link в push (например https://pure-harmony...railway.app)
     PWA_PUBLIC_BASE_URL: str = ""
 
+    # Встроенный планировщик push по заданиям (Europe/Moscow), без внешнего cron
+    TASK_SCHEDULER_ENABLED: bool = True
+    TASK_MORNING_HOUR: int = 9
+    TASK_MORNING_MINUTE: int = 0
+    TASK_EVENING_HOUR: int = 20
+    TASK_EVENING_MINUTE: int = 0
+
+    # Firebase Cloud Messaging (Android-приложение)
+    FCM_ENABLED: bool = True
+    # JSON service account целиком (удобно для Railway)
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = ""
+
     @field_validator("VAPID_PRIVATE_KEY", mode="before")
     @classmethod
     def _decode_vapid_private_key(cls, value: object) -> object:
-        """Поддерживает PEM в одной строке с \\n из Railway."""
-        if isinstance(value, str):
-            return value.replace("\\n", "\n")
-        return value
+        """Поддерживает PEM и base64url (одна строка для Railway)."""
+        if not isinstance(value, str):
+            return value
+        return _normalize_vapid_private_key(value)
 
     class Config:
         env_file = ".env"

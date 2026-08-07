@@ -7,11 +7,24 @@ import models
 import schemas
 from database import get_db
 from dependencies import get_current_user
+from notification_preferences import user_allows_notification
 
 router = APIRouter(
     prefix="/notifications",
     tags=["notifications"],
 )
+
+
+def _filter_notifications_for_user(
+    user: models.User,
+    items: list[models.Notification],
+) -> list[models.Notification]:
+    """Оставляет только уведомления, разрешённые настройками пользователя."""
+    return [
+        item
+        for item in items
+        if user_allows_notification(user.notification_preferences, item.type, item.title)
+    ]
 
 
 @router.get("", response_model=schemas.NotificationListResponse)
@@ -26,30 +39,22 @@ async def list_notifications(
     base_filter = models.Notification.user_id == user.id
     type_filter = models.Notification.type == type if type else True
 
-    total_result = await db.execute(
-        select(func.count(models.Notification.id)).where(base_filter, type_filter)
-    )
-    total = total_result.scalar() or 0
-
-    unread_result = await db.execute(
-        select(func.count(models.Notification.id)).where(
-            base_filter, models.Notification.is_read == False  # noqa: E712
-        )
-    )
-    unread_count = unread_result.scalar() or 0
-
-    offset = (page - 1) * per_page
     items_result = await db.execute(
         select(models.Notification)
         .where(base_filter, type_filter)
         .order_by(models.Notification.created_at.desc())
-        .offset(offset)
-        .limit(per_page)
     )
-    items = items_result.scalars().all()
+    all_items = items_result.scalars().all()
+    filtered_items = _filter_notifications_for_user(user, all_items)
+
+    total = len(filtered_items)
+    unread_count = sum(1 for item in filtered_items if not item.is_read)
+
+    offset = (page - 1) * per_page
+    page_items = filtered_items[offset : offset + per_page]
 
     return schemas.NotificationListResponse(
-        items=[schemas.NotificationResponse.model_validate(n) for n in items],
+        items=[schemas.NotificationResponse.model_validate(n) for n in page_items],
         total=total,
         unread_count=unread_count,
     )
@@ -62,12 +67,13 @@ async def get_unread_count(
 ) -> dict:
     """Возвращает количество непрочитанных уведомлений."""
     result = await db.execute(
-        select(func.count(models.Notification.id)).where(
+        select(models.Notification).where(
             models.Notification.user_id == user.id,
             models.Notification.is_read == False,  # noqa: E712
         )
     )
-    return {"unread_count": result.scalar() or 0}
+    items = _filter_notifications_for_user(user, result.scalars().all())
+    return {"unread_count": len(items)}
 
 
 @router.put("/{notification_id}/read")
@@ -80,6 +86,8 @@ async def mark_as_read(
     notification = await db.get(models.Notification, notification_id)
     if not notification or notification.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    if not user_allows_notification(user.notification_preferences, notification.type, notification.title):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
     notification.is_read = True
     await db.commit()
     return {"ok": True}
@@ -91,13 +99,21 @@ async def mark_all_as_read(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Помечает все уведомления пользователя как прочитанные."""
-    await db.execute(
-        update(models.Notification)
-        .where(
+    result = await db.execute(
+        select(models.Notification).where(
             models.Notification.user_id == user.id,
             models.Notification.is_read == False,  # noqa: E712
         )
-        .values(is_read=True)
     )
-    await db.commit()
+    allowed_ids = [
+        item.id
+        for item in _filter_notifications_for_user(user, result.scalars().all())
+    ]
+    if allowed_ids:
+        await db.execute(
+            update(models.Notification)
+            .where(models.Notification.id.in_(allowed_ids))
+            .values(is_read=True)
+        )
+        await db.commit()
     return {"ok": True}

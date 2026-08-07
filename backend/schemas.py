@@ -188,6 +188,7 @@ class NotificationPreferencesResponse(BaseModel):
     sharedGifts: bool = True
     profileUpdates: bool = True
     achievements: bool = True
+    tasks: bool = True
     systemNews: bool = True
 
 class NotificationPreferencesUpdate(BaseModel):
@@ -197,6 +198,7 @@ class NotificationPreferencesUpdate(BaseModel):
     sharedGifts: Optional[bool] = None
     profileUpdates: Optional[bool] = None
     achievements: Optional[bool] = None
+    tasks: Optional[bool] = None
     systemNews: Optional[bool] = None
 
 class RegisterRequest(BaseModel):
@@ -864,3 +866,66 @@ class UserAchievementResponse(AchievementBase):
     highest_earned_level: Optional[int] = None
     display_image_url: Optional[str] = None
     status: Literal["locked", "earned"]
+
+
+TaskPeriodType = Literal["daily", "weekly", "monthly"]
+
+
+class TaskQuotaSettingsResponse(OrmBase):
+    max_daily_tasks: int
+    max_weekly_tasks: int
+    max_monthly_tasks: int
+
+
+class TaskQuotaSettingsUpdate(BaseModel):
+    max_daily_tasks: Optional[int] = Field(default=None, ge=1, le=10)
+    max_weekly_tasks: Optional[int] = Field(default=None, ge=0, le=10)
+    max_monthly_tasks: Optional[int] = Field(default=None, ge=0, le=10)
+
+
+class TaskBase(OrmBase):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    period_type: TaskPeriodType
+    target_count: int = Field(default=1, ge=1, le=100)
+    reward_likes: int = Field(default=1, ge=0, le=100)
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class TaskCreate(TaskBase):
+    pass
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    period_type: Optional[TaskPeriodType] = None
+    target_count: Optional[int] = Field(default=None, ge=1, le=100)
+    reward_likes: Optional[int] = Field(default=None, ge=0, le=100)
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class TaskResponse(TaskBase):
+    id: int
+    is_system: bool
+    system_key: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserTaskProgressResponse(BaseModel):
+    current_count: int
+    target_count: int
+    completed: bool
+    completed_at: Optional[datetime] = None
+    progress_percent: int
+
+
+class UserTaskResponse(TaskResponse):
+    progress: UserTaskProgressResponse
+
+
+class AdminCompleteTaskRequest(BaseModel):
+    user_id: int

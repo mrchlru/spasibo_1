@@ -31,12 +31,14 @@ from routers import (
     scheduler,
     sessions,
     shared_gifts,
+    tasks,
     telegram,
     transactions,
     users,
 )
 from dual_database_sync import start_dual_db_sync_background
 from startup_background import run_background_startup
+from task_scheduler import start_task_notification_scheduler, stop_task_notification_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,7 @@ def _is_protected_api_path(path: str) -> bool:
         "/market",
         "/banners",
         "/achievements",
+        "/tasks",
         "/roulette",
         "/scheduler",
         "/telegram",
@@ -80,6 +83,7 @@ async def lifespan(app: FastAPI):
         try:
             await run_background_startup()
             app.state.startup_ready = True
+            start_task_notification_scheduler(app)
             start_dual_db_sync_background(app)
         except Exception:
             logger.exception("Фоновая инициализация не удалась")
@@ -89,6 +93,8 @@ async def lifespan(app: FastAPI):
     app.state._startup_task = task
 
     yield
+
+    await stop_task_notification_scheduler(app)
 
     db_sync_task = getattr(app.state, "_db_sync_task", None)
     if db_sync_task is not None:
@@ -188,6 +194,7 @@ app.include_router(admin_auth.router)
 app.include_router(admin.router)
 app.include_router(banners.router)
 app.include_router(achievements.router)
+app.include_router(tasks.router)
 app.include_router(roulette.router)
 app.include_router(scheduler.router)
 app.include_router(telegram.router)

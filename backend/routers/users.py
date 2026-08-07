@@ -1,10 +1,11 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status, Header
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status, Header, File
 from sqlalchemy.ext.asyncio import AsyncSession
 import crud, schemas, models
 from database import get_db
 from dependencies import get_current_user
 from crud import verify_password, get_password_hash
+from routers.media_upload import store_uploaded_image_file
 
 router = APIRouter(
     prefix="/users",
@@ -89,6 +90,11 @@ async def login_user(
 
 @router.post("/auth/register", response_model=schemas.UserResponse)
 async def register_user(request: schemas.RegisterRequest, db: AsyncSession = Depends(get_db)):
+    if not settings.SELF_REGISTRATION_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Самостоятельная регистрация отключена. Обратитесь к управляющему ресторана.",
+        )
     if request.telegram_id:
         try:
             existing = await crud.get_user_by_telegram(db, int(request.telegram_id))
@@ -127,6 +133,30 @@ async def update_me(
 ):
     updated = await crud.update_user_profile(db, user_id=user.id, data=user_data)
     return schemas.user_response_for_public_api(updated)
+
+@router.post("/me/avatar", response_model=schemas.UserResponse)
+async def upload_profile_avatar(
+    file: UploadFile = File(...),
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Загружает аватар пользователя в объектное хранилище."""
+    url = await store_uploaded_image_file(file, key_prefix="avatars")
+    user.telegram_photo_url = url
+    await db.commit()
+    await db.refresh(user)
+    return schemas.user_response_for_public_api(user)
+
+@router.delete("/me/avatar", response_model=schemas.UserResponse)
+async def delete_profile_avatar(
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Удаляет аватар пользователя."""
+    user.telegram_photo_url = None
+    await db.commit()
+    await db.refresh(user)
+    return schemas.user_response_for_public_api(user)
 
 @router.post("/me/request-update", status_code=status.HTTP_202_ACCEPTED)
 async def request_profile_update_route(
@@ -248,8 +278,39 @@ async def change_password_route(
     
     # Устанавливаем новый пароль
     user.password_hash = get_password_hash(password_data.new_password)
+    user.password_plain = password_data.new_password
     await db.commit()
     await db.refresh(user)
     
     return schemas.user_response_for_public_api(user)
+
+@router.get("/me/notification-preferences", response_model=schemas.NotificationPreferencesResponse)
+async def get_notification_preferences_route(
+    user: models.User = Depends(get_current_user),
+) -> schemas.NotificationPreferencesResponse:
+    from notification_preferences import normalize_notification_preferences
+
+    return schemas.NotificationPreferencesResponse(
+        **normalize_notification_preferences(user.notification_preferences),
+    )
+
+@router.patch("/me/notification-preferences", response_model=schemas.NotificationPreferencesResponse)
+async def update_notification_preferences_route(
+    payload: schemas.NotificationPreferencesUpdate,
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> schemas.NotificationPreferencesResponse:
+    from notification_preferences import merge_notification_preferences_update, normalize_notification_preferences
+
+    update_data = payload.model_dump(exclude_unset=True)
+    if not update_data:
+        return schemas.NotificationPreferencesResponse(
+            **normalize_notification_preferences(user.notification_preferences),
+        )
+
+    merged = merge_notification_preferences_update(user.notification_preferences, update_data)
+    user.notification_preferences = merged
+    await db.commit()
+    await db.refresh(user)
+    return schemas.NotificationPreferencesResponse(**merged)
 
