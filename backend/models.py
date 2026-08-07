@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, BigInteger, Boolean, Date, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, BigInteger, Boolean, Date, Text, UniqueConstraint, func
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -43,6 +43,7 @@ class User(Base):
 
     has_seen_onboarding: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
     has_interacted_with_bot: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
+    notification_preferences = Column(JSON, nullable=True)
     sent_transactions = relationship(
         "Transaction",
         back_populates="sender",
@@ -229,6 +230,20 @@ class PushSubscription(Base):
 
     user = relationship("User")
 
+class AndroidFcmToken(Base):
+    __tablename__ = "android_fcm_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token = Column(String, unique=True, nullable=False, index=True)
+    concept_slug = Column(String(64), nullable=True)
+    device_name = Column(String(128), nullable=True)
+    is_active = Column(Boolean, default=True, server_default="true", nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+
 class AppSettings(Base):
     __tablename__ = "app_settings"
 
@@ -237,3 +252,110 @@ class AppSettings(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     # URL картинок интерфейса (лето/зима), JSON: { "summer": {...}, "winter": {...} }
     theme_assets = Column(JSON, nullable=True)
+
+
+class Achievement(Base):
+    __tablename__ = "achievements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True, server_default="true", nullable=False)
+    sort_order = Column(Integer, default=0, server_default="0", nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    levels = relationship(
+        "AchievementLevel",
+        back_populates="achievement",
+        cascade="all, delete-orphan",
+        order_by="AchievementLevel.level_number",
+    )
+
+
+class AchievementLevel(Base):
+    __tablename__ = "achievement_levels"
+    __table_args__ = (UniqueConstraint("achievement_id", "level_number", name="uq_achievement_level_number"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    achievement_id = Column(Integer, ForeignKey("achievements.id", ondelete="CASCADE"), nullable=False, index=True)
+    level_number = Column(Integer, nullable=False)
+    tier_key = Column(String(32), nullable=False, server_default="bronze")
+    image_url = Column(String, nullable=True)
+    how_to_obtain = Column(Text, nullable=False)
+
+    achievement = relationship("Achievement", back_populates="levels")
+
+
+class UserAchievement(Base):
+    __tablename__ = "user_achievements"
+    __table_args__ = (UniqueConstraint("user_id", "achievement_level_id", name="uq_user_achievement_level"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    achievement_level_id = Column(
+        Integer,
+        ForeignKey("achievement_levels.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    earned_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    user = relationship("User")
+    achievement_level = relationship("AchievementLevel")
+
+
+class TaskQuotaSettings(Base):
+    __tablename__ = "task_quota_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    max_daily_tasks = Column(Integer, default=3, server_default="3", nullable=False)
+    max_weekly_tasks = Column(Integer, default=2, server_default="2", nullable=False)
+    max_monthly_tasks = Column(Integer, default=1, server_default="1", nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    period_type = Column(String(16), nullable=False)
+    is_system = Column(Boolean, default=False, server_default="false", nullable=False)
+    system_key = Column(String(64), nullable=True)
+    target_count = Column(Integer, default=1, server_default="1", nullable=False)
+    reward_likes = Column(Integer, default=1, server_default="1", nullable=False)
+    is_active = Column(Boolean, default=True, server_default="true", nullable=False)
+    sort_order = Column(Integer, default=0, server_default="0", nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class UserTaskProgress(Base):
+    __tablename__ = "user_task_progress"
+    __table_args__ = (UniqueConstraint("user_id", "task_id", "period_start", name="uq_user_task_period"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    period_start = Column(Date, nullable=False)
+    current_count = Column(Integer, default=0, server_default="0", nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    reward_granted = Column(Boolean, default=False, server_default="false", nullable=False)
+
+    user = relationship("User")
+    task = relationship("Task")
+
+
+class TaskNotificationLog(Base):
+    __tablename__ = "task_notification_log"
+    __table_args__ = (
+        UniqueConstraint("user_id", "kind", "task_id", "sent_on", name="uq_task_notification_daily"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(32), nullable=False)
+    task_id = Column(Integer, nullable=False, default=0, server_default="0")
+    sent_on = Column(Date, nullable=False)

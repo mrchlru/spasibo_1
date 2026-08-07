@@ -16,14 +16,12 @@ import bot
 import config
 from sqlalchemy.ext.asyncio import AsyncSession
 import models, schemas
+import task_service
 from config import settings
 from bot import (
-    send_telegram_message,
     escape_html,
-    classify_telegram_error,
     classify_smtp_error,
     human_delivery_reason,
-    is_permanent_telegram_error,
     safe_admin_notify,
 )
 from email_service import send_email, is_valid_email, build_broadcast_email_content
@@ -48,6 +46,17 @@ async def _create_notification(
     click_url: str | None = None,
 ) -> None:
     """Сохраняет уведомление в БД и отправляет Web Push при наличии подписки."""
+    from notification_preferences import user_allows_notification
+
+    user = await db.get(models.User, user_id)
+    if user is not None and not user_allows_notification(user.notification_preferences, type, title):
+        logger.info(
+            "Уведомление type=%s для user_id=%s пропущено по настройкам пользователя",
+            type,
+            user_id,
+        )
+        return
+
     try:
         notification = models.Notification(
             user_id=user_id,
@@ -62,15 +71,15 @@ async def _create_notification(
         return
 
     try:
-        from push_service import send_user_web_push
+        from push_service import send_user_push
 
-        await send_user_web_push(
+        await send_user_push(
             db,
             user_id,
             title=title,
             body=message,
             url=click_url or "/",
-            tag=f"serdce-{type}",
+            tag=f"serdce-{type}-{notification.id}",
         )
     except Exception as e:
         logger.warning("Web Push для user_id=%s не отправлен: %s", user_id, e)
@@ -136,13 +145,18 @@ def _should_reset_daily_transfer(user: models.User) -> bool:
     return stored is None or stored != today
 
 
-async def _reset_daily_transfer_if_needed(db: AsyncSession, user: models.User) -> None:
-    """Сбрасывает daily_transfer_count при наступлении нового календарного дня."""
+async def _reset_daily_transfer_if_needed(db: AsyncSession, user: models.User) -> bool:
+    """Сбрасывает daily_transfer_count при наступлении нового календарного дня (МСК).
+
+    Returns:
+        True, если счётчик был сброшен.
+    """
     if user and _should_reset_daily_transfer(user):
         user.daily_transfer_count = 0
         user.daily_transfer_count_for_date = _transfer_limit_calendar_date()
-        await db.commit()
-        await db.refresh(user)
+        await db.flush()
+        return True
+    return False
 
 
 # Пользователи
@@ -150,7 +164,9 @@ async def get_user(db: AsyncSession, user_id: int):
     result = await db.execute(select(models.User).where(models.User.id == user_id))
     user = result.scalars().first()
     if user:
-        await _reset_daily_transfer_if_needed(db, user)
+        if await _reset_daily_transfer_if_needed(db, user):
+            await db.commit()
+            await db.refresh(user)
     return user
 
 
@@ -164,7 +180,9 @@ async def get_user_by_telegram(db: AsyncSession, telegram_id: int):
     )
     user = result.scalars().first()
     if user:
-        await _reset_daily_transfer_if_needed(db, user)
+        if await _reset_daily_transfer_if_needed(db, user):
+            await db.commit()
+            await db.refresh(user)
     return user
 
 async def create_user(db: AsyncSession, user: schemas.RegisterRequest):
@@ -304,13 +322,9 @@ async def update_user_profile(db: AsyncSession, user_id: int, data: schemas.User
 
 # Транзакции
 async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
-    today = _transfer_limit_calendar_date()
-    sender = await db.get(models.User, tr.sender_id)
+    sender = await get_user(db, tr.sender_id)
     if not sender:
         raise ValueError("Отправитель не найден")
-
-    if sender.daily_transfer_count_for_date is None or sender.daily_transfer_count_for_date != today:
-        sender.daily_transfer_count = 0
 
     fixed_amount = 1
     if sender.daily_transfer_count >= 3:
@@ -319,7 +333,8 @@ async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
     receiver = await db.get(models.User, tr.receiver_id)
     if not receiver:
         raise ValueError("Получатель не найден")
-    
+
+    today = _transfer_limit_calendar_date()
     sender.daily_transfer_count += 1
     sender.daily_transfer_count_for_date = today
     receiver.balance += fixed_amount
@@ -333,16 +348,10 @@ async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
     )
     db.add(db_tr)
     await db.commit()
-    await db.refresh(sender) # Обновляем данные отправителя из БД
-    
-    try:
-        message_text = (f"🎉 Вам начислена <b>1</b> спасибка!\n"
-                        f"От: <b>{escape_html(sender.first_name or '')} {escape_html(sender.last_name or '')}</b>\n"
-                        f"Сообщение: <i>{escape_html(tr.message or '')}</i>")
-        if receiver.telegram_id and receiver.telegram_id >= 0:
-            await send_telegram_message(chat_id=receiver.telegram_id, text=message_text)
-    except Exception as e:
-        print(f"Could not send notification to user {receiver.telegram_id}. Error: {e}")
+    await db.refresh(sender)
+
+    await task_service.increment_system_task_progress(db, sender.id, "send_likes", 1)
+    await db.refresh(sender)
 
     sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
     await _create_notification(
@@ -352,6 +361,7 @@ async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
         click_url="/?panel=notifications",
     )
     await db.commit()
+
     await _invalidate_feed_and_leaderboard("перевод спасибки")
 
     return sender
@@ -731,14 +741,6 @@ async def create_purchase(db: AsyncSession, pr: schemas.PurchaseRequest):
             message_thread_id=settings.TELEGRAM_PURCHASE_TOPIC_ID,
         )
 
-        # Уведомление для пользователя (теперь для всех покупок)
-        user_message = f"🎉 Поздравляем с покупкой \"{escape_html(item_name)}\"!"
-        if issued_code_value:
-            # Для товаров с кодом добавляем сам код
-            user_message += f"\n\nВаш уникальный код/ссылка:\n<code>{escape_html(issued_code_value)}</code>"
-        
-        await send_telegram_message(chat_id=user_telegram_id, text=user_message)
-
     except Exception as e:
         print(f"Could not send notification. Error: {e}")
 
@@ -862,22 +864,6 @@ async def create_local_gift(db: AsyncSession, pr: schemas.LocalGiftRequest):
         )
     except Exception as e:
         logger.exception("Could not send admin notification (local gift): %s", e)
-    
-    # Отправляем уведомление пользователю
-    try:
-        user_message = (
-            f"🛍️ <b>Ваша заявка на локальный подарок принята!</b>\n\n"
-            f"🎁 <b>Товар:</b> {escape_html(item.name)}\n"
-            f"🏙️ <b>Город:</b> {escape_html(pr.city)}\n"
-            f"🔗 <b>Ссылка:</b> {escape_html(pr.website_url)}\n\n"
-            f"💰 <b>Зарезервировано:</b> {item.price} спасибок\n\n"
-            f"⏳ Ожидайте решения администратора"
-        )
-        
-        if user.telegram_id and user.telegram_id >= 0:
-            await send_telegram_message(chat_id=user.telegram_id, text=user_message)
-    except Exception as e:
-        print(f"Could not send user notification. Error: {e}")
 
     # Email админам о новой заявке на локальный подарок
     try:
@@ -962,13 +948,6 @@ async def process_local_gift_approval(db: AsyncSession, local_purchase_id: int, 
     local_purchase.updated_at = datetime.utcnow()
     await db.commit()
     await _invalidate_feed_and_leaderboard("одобрение/отклонение локального подарка")
-
-    # Отправляем уведомление пользователю
-    try:
-        if user.telegram_id and user.telegram_id >= 0:
-            await send_telegram_message(chat_id=user.telegram_id, text=user_message)
-    except Exception as e:
-        print(f"Could not send user notification. Error: {e}")
 
     # Email пользователю и админам
     try:
@@ -1080,6 +1059,212 @@ async def delete_banner(db: AsyncSession, banner_id: int):
         return True
     return False
 
+# --- CRUD ДЛЯ АЧИВОК ---
+
+def _achievement_levels_query():
+    """Базовый запрос ачивок с уровнями."""
+    return select(models.Achievement).options(selectinload(models.Achievement.levels))
+
+
+async def get_all_achievements(db: AsyncSession):
+    """Возвращает все ачивки для админки."""
+    result = await db.execute(
+        _achievement_levels_query().order_by(
+            models.Achievement.sort_order.asc(),
+            models.Achievement.id.asc(),
+        )
+    )
+    return result.scalars().unique().all()
+
+
+async def get_active_achievements(db: AsyncSession):
+    """Возвращает активные ачивки для каталога в приложении."""
+    result = await db.execute(
+        _achievement_levels_query()
+        .where(models.Achievement.is_active == True)
+        .order_by(
+            models.Achievement.sort_order.asc(),
+            models.Achievement.id.asc(),
+        )
+    )
+    return result.scalars().unique().all()
+
+
+async def get_achievement_by_id(db: AsyncSession, achievement_id: int):
+    """Возвращает ачивку по id с уровнями."""
+    result = await db.execute(
+        _achievement_levels_query().where(models.Achievement.id == achievement_id)
+    )
+    return result.scalars().first()
+
+
+def _achievement_to_response(achievement: models.Achievement) -> schemas.AchievementResponse:
+    """Преобразует модель ачивки в ответ админки."""
+    return schemas.AchievementResponse(
+        id=achievement.id,
+        title=achievement.title,
+        description=achievement.description,
+        is_active=achievement.is_active,
+        sort_order=achievement.sort_order,
+        created_at=achievement.created_at,
+        updated_at=achievement.updated_at,
+        levels=[
+            schemas.AchievementLevelResponse(
+                id=level.id,
+                level_number=level.level_number,
+                tier_key=level.tier_key,
+                image_url=level.image_url,
+                how_to_obtain=level.how_to_obtain,
+            )
+            for level in sorted(achievement.levels, key=lambda item: item.level_number)
+        ],
+    )
+
+
+async def create_achievement(db: AsyncSession, achievement: schemas.AchievementCreate):
+    """Создаёт ачивку с уровнями."""
+    payload = achievement.model_dump(exclude={"levels"})
+    db_achievement = models.Achievement(**payload)
+    db.add(db_achievement)
+    await db.flush()
+    for level in achievement.levels:
+        db.add(
+            models.AchievementLevel(
+                achievement_id=db_achievement.id,
+                **level.model_dump(),
+            )
+        )
+    await db.commit()
+    return await get_achievement_by_id(db, db_achievement.id)
+
+
+async def _sync_achievement_levels(
+    db: AsyncSession,
+    db_achievement: models.Achievement,
+    levels: list[schemas.AchievementLevelUpsert],
+) -> None:
+    """Синхронизирует уровни ачивки при обновлении."""
+    existing_by_id = {level.id: level for level in db_achievement.levels}
+    keep_ids: set[int] = set()
+
+    for level_data in levels:
+        if level_data.id and level_data.id in existing_by_id:
+            db_level = existing_by_id[level_data.id]
+            for key, value in level_data.model_dump(exclude={"id"}).items():
+                setattr(db_level, key, value)
+            keep_ids.add(db_level.id)
+            continue
+        db.add(
+            models.AchievementLevel(
+                achievement_id=db_achievement.id,
+                **level_data.model_dump(exclude={"id"}),
+            )
+        )
+
+    for level in db_achievement.levels:
+        if level.id in keep_ids:
+            continue
+        earned_count = await db.execute(
+            select(func.count())
+            .select_from(models.UserAchievement)
+            .where(models.UserAchievement.achievement_level_id == level.id)
+        )
+        if earned_count.scalar_one() > 0:
+            raise ValueError("Нельзя удалить уровень, который уже получили сотрудники")
+        await db.delete(level)
+
+
+async def update_achievement(
+    db: AsyncSession,
+    achievement_id: int,
+    achievement_data: schemas.AchievementUpdate,
+):
+    """Обновляет ачивку и её уровни."""
+    db_achievement = await get_achievement_by_id(db, achievement_id)
+    if not db_achievement:
+        return None
+
+    update_fields = achievement_data.model_dump(exclude_unset=True, exclude={"levels"})
+    for key, value in update_fields.items():
+        setattr(db_achievement, key, value)
+
+    if achievement_data.levels is not None:
+        if not achievement_data.levels:
+            raise ValueError("У ачивки должен быть хотя бы один уровень")
+        await _sync_achievement_levels(db, db_achievement, achievement_data.levels)
+
+    await db.commit()
+    return await get_achievement_by_id(db, achievement_id)
+
+
+async def delete_achievement(db: AsyncSession, achievement_id: int) -> bool:
+    """Удаляет ачивку."""
+    db_achievement = await get_achievement_by_id(db, achievement_id)
+    if db_achievement:
+        await db.delete(db_achievement)
+        await db.commit()
+        return True
+    return False
+
+
+async def get_user_earned_level_map(db: AsyncSession, user_id: int) -> dict[int, datetime]:
+    """Возвращает id уровней ачивок, полученных пользователем."""
+    result = await db.execute(
+        select(
+            models.UserAchievement.achievement_level_id,
+            models.UserAchievement.earned_at,
+        ).where(models.UserAchievement.user_id == user_id)
+    )
+    return {row.achievement_level_id: row.earned_at for row in result.all()}
+
+
+def build_user_achievement_responses(
+    achievements: list[models.Achievement],
+    earned_level_map: dict[int, datetime],
+) -> list[schemas.UserAchievementResponse]:
+    """Собирает ответ каталога ачивок со статусом уровней для пользователя."""
+    responses: list[schemas.UserAchievementResponse] = []
+    for achievement in achievements:
+        sorted_levels = sorted(achievement.levels, key=lambda item: item.level_number)
+        level_responses: list[schemas.UserAchievementLevelResponse] = []
+        highest_earned_level: int | None = None
+
+        for level in sorted_levels:
+            earned_at = earned_level_map.get(level.id)
+            if earned_at is not None:
+                highest_earned_level = level.level_number
+            level_responses.append(
+                schemas.UserAchievementLevelResponse(
+                    id=level.id,
+                    level_number=level.level_number,
+                    tier_key=level.tier_key,
+                    image_url=level.image_url,
+                    how_to_obtain=level.how_to_obtain,
+                    status="earned" if earned_at else "locked",
+                    earned_at=earned_at,
+                )
+            )
+
+        display_level = next(
+            (level for level in reversed(sorted_levels) if level.id in earned_level_map),
+            sorted_levels[0] if sorted_levels else None,
+        )
+
+        responses.append(
+            schemas.UserAchievementResponse(
+                id=achievement.id,
+                title=achievement.title,
+                description=achievement.description,
+                is_active=achievement.is_active,
+                sort_order=achievement.sort_order,
+                levels=level_responses,
+                highest_earned_level=highest_earned_level,
+                display_image_url=display_level.image_url if display_level else None,
+                status="earned" if highest_earned_level is not None else "locked",
+            )
+        )
+    return responses
+
 # --- НОВЫЕ ФУНКЦИИ ДЛЯ АВТОМАТИЗАЦИИ ---
 async def process_birthday_bonuses(db: AsyncSession):
     """Начисляет 15 баллов всем, у кого сегодня день рождения и отправляет поздравительное сообщение."""
@@ -1094,20 +1279,6 @@ async def process_birthday_bonuses(db: AsyncSession):
     
     for user in users:
         user.balance += 15
-        
-        # Отправляем поздравительное сообщение в Telegram
-        # Игнорируем анонимизированных пользователей (telegram_id < 0)
-        if user.telegram_id and user.telegram_id >= 0 and user.status == "approved":
-            birthday_message = (
-                f"🎉 <b>С Днем Рождения!</b> 🎂\n\n"
-                f"Дорогой/ая <b>{escape_html(user.first_name or 'коллега')}</b>, поздравляем вас с днем рождения!\n\n"
-                f"🎁 В честь этого праздника вам начислено <b>15 спасибок</b> в качестве подарка!\n\n"
-                f"Желаем вам здоровья, счастья и успехов во всех начинаниях! 🎈"
-            )
-            try:
-                await send_telegram_message(user.telegram_id, birthday_message)
-            except Exception as e:
-                logger.error(f"Не удалось отправить поздравление пользователю {user.id}: {e}")
 
         await _create_notification(
             db, user.id, "system",
@@ -1222,30 +1393,6 @@ async def update_user_status(db: AsyncSession, user_id: int, status: str):
         bool(login_name),
         bool(login_plain),
     )
-
-    if is_tg_app and login_name and login_plain:
-        try:
-            tg_text = (
-                "✅ Ваша заявка на регистрацию одобрена.\n\n"
-                "Данные для входа на сайт:\n"
-                f"Логин: {login_name}\n"
-                f"Пароль: {login_plain}\n\n"
-                "Сохраните пароль и смените его после первого входа."
-            )
-            if login_url:
-                tg_text += f"\n\nСтраница входа: {login_url}"
-            # Без HTML-разметки: пароль может содержать <>& и ломать parse_mode=HTML.
-            await send_telegram_message(
-                user.telegram_id,
-                tg_text,
-                parse_mode=None,
-            )
-        except Exception as e:
-            logger.error(
-                "Ошибка отправки в Telegram после одобрения user_id=%s: %s",
-                user.id,
-                e,
-            )
 
     if user.email and login_name and login_plain:
         try:
@@ -1619,12 +1766,17 @@ async def reset_tickets(db: AsyncSession):
     )
     await db.commit()
 
-async def reset_daily_transfer_limits(db: AsyncSession):
-    """Сбрасывает счетчик ежедневных переводов для всех пользователей."""
-    await db.execute(
-        update(models.User).values(daily_transfer_count=0, daily_transfer_count_for_date=None)
+async def reset_daily_transfer_limits(db: AsyncSession) -> int:
+    """Сбрасывает счётчик ежедневных переводов для всех пользователей (3/3 на сегодня, МСК)."""
+    today = _transfer_limit_calendar_date()
+    result = await db.execute(
+        update(models.User).values(
+            daily_transfer_count=0,
+            daily_transfer_count_for_date=today,
+        )
     )
     await db.commit()
+    return int(result.rowcount or 0)
 
 # --- ДОБАВЬТЕ ЭТИ НОВЫЕ ФУНКЦИИ В КОНЕЦ ФАЙЛА ---
 
@@ -1928,6 +2080,8 @@ async def admin_update_user(db: AsyncSession, user_id: int, user_data: schemas.A
     
     update_data = user_data.model_dump(exclude_unset=True)
     changes_log = []
+    login_changed = False
+    password_changed = False
 
     # Проходим по всем полям, которые пришли с фронтенда
     for key, new_value in update_data.items():
@@ -1974,7 +2128,11 @@ async def admin_update_user(db: AsyncSession, user_id: int, user_data: schemas.A
 
         if is_changed:
             changes_log.append(f"  - {key}: `{old_value}` -> `{new_value}`")
-        
+            if key == "login":
+                login_changed = True
+            elif key == "password" and new_value:
+                password_changed = True
+
         # Применяем изменения к объекту пользователя (конвертируя дату)
         if key == 'date_of_birth' and new_value:
             try:
@@ -2011,10 +2169,6 @@ async def admin_update_user(db: AsyncSession, user_id: int, user_data: schemas.A
         else:
             setattr(user, key, new_value)
     
-    # Отслеживаем, были ли установлены логин и пароль для отправки email
-    login_was_set = 'login' in update_data and (update_data.get('login') is not None and update_data.get('login') != '')
-    password_was_set = 'password' in update_data and update_data.get('password') is not None
-    
     # Автоматически включаем browser_auth_enabled, если есть логин и пароль
     if user.login and user.password_hash:
         if not user.browser_auth_enabled:
@@ -2041,20 +2195,31 @@ async def admin_update_user(db: AsyncSession, user_id: int, user_data: schemas.A
             message_thread_id=settings.TELEGRAM_ADMIN_LOG_TOPIC_ID,
         )
         
-        # Отправляем email с учетными данными, если были установлены логин и пароль
-        if (login_was_set or password_was_set) and user.email and user.login and user.password_plain:
+        # Письмо с логином/паролем — только если их реально изменили, а не при смене email и т.п.
+        if (login_changed or password_changed) and user.email and user.login and user.password_plain:
             try:
                 from email_service import send_credentials_to_user
                 login_url = getattr(settings, 'WEB_APP_LOGIN_URL', None)
                 user_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or "Пользователь"
-                await send_credentials_to_user(
+                sent = await send_credentials_to_user(
                     user_email=user.email,
                     user_name=user_name,
                     login=user.login,
                     password=user.password_plain,
                     login_url=login_url
                 )
-                logger.info(f"Email с учетными данными отправлен пользователю {user.email} (ID: {user.id})")
+                if sent:
+                    logger.info(
+                        "Email с учетными данными отправлен пользователю %s (ID: %s)",
+                        user.email,
+                        user.id,
+                    )
+                else:
+                    logger.warning(
+                        "Email с учетными данными не отправлен пользователю %s (ID: %s)",
+                        user.email,
+                        user.id,
+                    )
             except Exception as e:
                 logger.error(f"Ошибка при отправке учетных данных на email {user.email}: {e}")
                 import traceback
@@ -2166,24 +2331,6 @@ async def set_user_credentials(db: AsyncSession, user_id: int, login: str, passw
     
     await db.commit()
     await db.refresh(user)
-    
-    # Отправляем учетные данные пользователю в Telegram
-    if user.telegram_id and user.telegram_id >= 0:
-        message_text = (
-            f"🔐 <b>Ваши учетные данные для входа в систему</b>\n\n"
-            f"👤 <b>Логин:</b> <code>{escape_html(user.login)}</code>\n"
-            f"🔑 <b>Пароль:</b> <code>{escape_html(password)}</code>\n\n"
-            f"⚠️ <i>Сохраните эти данные в безопасном месте. Пароль больше не будет показан.</i>"
-        )
-        
-        try:
-            await send_telegram_message(
-                chat_id=user.telegram_id,
-                text=message_text,
-                parse_mode='HTML'
-            )
-        except Exception as e:
-            logger.error(f"Не удалось отправить учетные данные пользователю {user.id} ({user.telegram_id}) в Telegram: {e}")
 
     await _create_notification(
         db, user.id, "system",
@@ -2484,41 +2631,13 @@ async def bulk_send_credentials(
                 # В этом случае не отправляем сообщение, так как пароль неизвестен
                 continue
             
-            # Отправляем сообщение через Telegram
-            if user.telegram_id and user.telegram_id >= 0:
-                message_text = f"🔐 <b>Ваши учетные данные для входа в систему</b>\n\n"
-                
-                if custom_message:
-                    message_text += f"{escape_html(custom_message)}\n\n"
-                
-                message_text += (
-                    f"👤 <b>Логин:</b> <code>{escape_html(user.login)}</code>\n"
-                    f"🔑 <b>Пароль:</b> <code>{escape_html(password)}</code>\n\n"
-                    f"⚠️ <i>Сохраните эти данные в безопасном месте. Пароль больше не будет показан.</i>"
-                )
-                
-                try:
-                    await send_telegram_message(
-                        chat_id=user.telegram_id,
-                        text=message_text,
-                        parse_mode='HTML'
-                    )
-                    messages_sent += 1
-                except Exception as e:
-                    logger.error(f"Не удалось отправить сообщение пользователю {user.id} ({user.telegram_id}): {e}")
-                    failed_users.append(user.id)
-                    if user_credentials_generated:
-                        user.login = None
-                        user.password_hash = None
-                        user.password_plain = None
-                        user.browser_auth_enabled = False
-                        credentials_generated -= 1
-
+            # Уведомление пользователю через PWA (push + in-app)
             await _create_notification(
                 db, user.id, "system",
                 "Учётные данные для входа",
                 f"Вам назначены учётные данные для входа через браузер. Логин: {user.login}",
             )
+            messages_sent += 1
             
         except Exception as e:
             logger.error(f"Ошибка при обработке пользователя {user.id}: {e}")
@@ -2665,60 +2784,10 @@ async def broadcast_announcement_to_users(
             recipients_report.append(entry)
 
     if do_send_telegram:
-        users_tg, skipped_no_dialog = await _fetch_broadcast_telegram_users(
-            db,
-            only_browser_users=only_browser_users,
-            user_ids=user_ids_set,
+        logger.info(
+            "Telegram-рассылка пользователям отключена; запрошенные %s получателей пропущены",
+            "все" if user_ids_set is None else len(user_ids_set),
         )
-        # Не отсекаем по has_interacted_with_bot заранее: исторически все
-        # пользователи проходили /start по инструкции, а фактическую доставку
-        # подтверждает только ответ Telegram API. Если Telegram отклонит
-        # сообщение (бот заблокирован, chat not found и т.д.), это попадёт в
-        # отчёт по получателям ниже.
-        recipient_count_telegram = len(users_tg)
-        for user in users_tg:
-            tid = user.telegram_id
-            entry = _make_entry(user, "telegram", str(tid))
-            try:
-                tg_text = _build_broadcast_telegram_html(
-                    subject,
-                    body_plain,
-                    login_url,
-                    web_credentials=_web_credentials_for_user(user),
-                )
-                await send_telegram_message(
-                    chat_id=int(tid),
-                    text=tg_text,
-                    parse_mode="HTML",
-                )
-                sent_ok_telegram += 1
-                entry["ok"] = True
-            except Exception as exc:
-                detail = str(exc)[:500]
-                code = classify_telegram_error(detail)
-                logger.error("Ошибка Telegram-рассылки %s: %s (code=%s)", tid, exc, code)
-                entry["error_code"] = code
-                entry["reason"] = human_delivery_reason(code)
-                entry["detail"] = detail
-                failed.append(
-                    {"channel": "telegram", "target": str(tid), "detail": detail}
-                )
-            recipients_report.append(entry)
-        for user in skipped_no_dialog:
-            entry = _make_entry(
-                user,
-                "telegram",
-                str(user.telegram_id) if user.telegram_id is not None else "",
-            )
-            entry["skipped"] = True
-            entry["skip_reason"] = "no_bot_dialog"
-            entry["error_code"] = "no_bot_dialog"
-            entry["reason"] = human_delivery_reason("no_bot_dialog")
-            entry["detail"] = (
-                "Пользователь ни разу не нажимал /start у бота — Telegram "
-                "запрещает боту первое сообщение. Попросите написать боту."
-            )
-            recipients_report.append(entry)
 
     return {
         "recipient_count_email": recipient_count_email,
@@ -2948,8 +3017,11 @@ def _prepare_dates(start_date: Optional[date], end_date: Optional[date]):
 
 async def get_general_statistics(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
     start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
+
+    query_total_users = select(func.count(models.User.id)).where(models.User.status != 'deleted')
+    total_users_count = (await db.execute(query_total_users)).scalar_one()
         
-    # Исправлено: считаем новых пользователей в периоде, а не всех пользователей
+    # Считаем новых пользователей в периоде
     query_new_users = select(func.count(models.User.id)).where(
         models.User.status != 'deleted',
         models.User.registration_date.between(start_date, end_date_inclusive)
@@ -2991,6 +3063,7 @@ async def get_general_statistics(db: AsyncSession, start_date: Optional[date] = 
     total_store_spent = (await db.execute(query_spent)).scalar_one_or_none() or 0
 
     return {
+        "total_users_count": total_users_count,
         "new_users_count": new_users_count,
         "active_users_count": active_users_count,
         "transactions_count": transactions_count,
@@ -3048,9 +3121,7 @@ async def get_login_activity_stats(db: AsyncSession, start_date: Optional[date] 
     return hourly_stats
     
 async def get_user_engagement_stats(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None, limit: int = 5):
-    if end_date is None: end_date = datetime.utcnow().date()
-    if start_date is None: start_date = end_date - timedelta(days=365*5)
-    end_date_inclusive = end_date + timedelta(days=1)
+    start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
 
     query_senders = (
         select(models.User, func.count(models.Transaction.id).label('sent_count'))
@@ -3079,12 +3150,7 @@ async def get_user_engagement_stats(db: AsyncSession, start_date: Optional[date]
     return {"top_senders": top_senders, "top_receivers": top_receivers}
 
 async def get_popular_items_stats(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None, limit: int = 10):
-    # Используем твою логику обработки дат
-    if end_date is None: end_date = datetime.utcnow().date()
-    if start_date is None: start_date = end_date - timedelta(days=365*5)
-    end_date_inclusive = end_date + timedelta(days=1)
-
-    # --- ИСПРАВЛЕНИЕ: Используем INNER JOIN вместо LEFT JOIN, чтобы показывать только товары с покупками в периоде
+    start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
     # Фильтр по дате применяем в условии JOIN для корректной работы
     query = (
         select(models.MarketItem, func.count(models.Purchase.id).label('purchase_count'))
@@ -3132,24 +3198,32 @@ async def get_total_balance(db: AsyncSession):
     )).scalar_one_or_none()
     return total or 0
 
-async def get_active_user_ratio(db: AsyncSession):
+async def get_active_user_ratio(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
+    start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
+
     total_users = (await db.execute(
         select(func.count(models.User.id)).where(models.User.status != 'deleted')
     )).scalar_one()
 
     active_senders_q = select(models.Transaction.sender_id).join(
         models.User, models.User.id == models.Transaction.sender_id
-    ).where(models.User.status != 'deleted').distinct()
-    
+    ).where(
+        models.Transaction.timestamp.between(start_date, end_date_inclusive),
+        models.User.status != 'deleted'
+    ).distinct()
+
     active_recipients_q = select(models.Transaction.receiver_id).join(
         models.User, models.User.id == models.Transaction.receiver_id
-    ).where(models.User.status != 'deleted').distinct()
+    ).where(
+        models.Transaction.timestamp.between(start_date, end_date_inclusive),
+        models.User.status != 'deleted'
+    ).distinct()
 
     active_senders = (await db.execute(active_senders_q)).scalars().all()
     active_recipients = (await db.execute(active_recipients_q)).scalars().all()
-    
+
     active_user_ids_count = len(set(active_senders).union(set(active_recipients)))
-    inactive_users_count = total_users - active_user_ids_count
+    inactive_users_count = max(total_users - active_user_ids_count, 0)
     return {"active_users": active_user_ids_count, "inactive_users": inactive_users_count}
 
 async def get_average_session_duration(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
@@ -3168,8 +3242,18 @@ async def get_average_session_duration(db: AsyncSession, start_date: Optional[da
     
     average_seconds = (await db.execute(query)).scalar_one_or_none() or 0
     average_minutes = round(average_seconds / 60, 2)
+
+    count_query = (
+        select(func.count(models.UserSession.id))
+        .join(models.User, models.User.id == models.UserSession.user_id)
+        .filter(
+            models.UserSession.session_start.between(start_date, end_date_inclusive),
+            models.User.status != 'deleted'
+        )
+    )
+    session_count = (await db.execute(count_query)).scalar_one() or 0
     
-    return {"average_duration_minutes": average_minutes}
+    return {"average_duration_minutes": average_minutes, "session_count": session_count}
 
 # --- НОВАЯ ФУНКЦИЯ ДЛЯ ОБУЧЕНИЯ ---
 
@@ -3679,34 +3763,6 @@ async def create_shared_gift_invitation(db: AsyncSession, invitation: schemas.Cr
     db.add(db_invitation)
     await db.commit()
     await db.refresh(db_invitation)
-    
-    # Отправляем уведомление приглашенному пользователю
-    try:
-        # Игнорируем анонимизированных пользователей (telegram_id < 0)
-        if invited_user.telegram_id and invited_user.telegram_id >= 0:
-            await send_telegram_message(
-                invited_user.telegram_id,
-                f"🎁 <b>Приглашение на совместный подарок!</b>\n\n"
-                f"👤 <b>{escape_html(buyer.first_name or '')} {escape_html(buyer.last_name or '')}</b> приглашает вас разделить товар <b>{escape_html(item.name)}</b>\n\n"
-                f"💰 Стоимость будет разделена 50/50\n"
-                f"⏰ Приглашение действует 24 часа",
-                {
-                    "inline_keyboard": [
-                        [
-                            {
-                                "text": "✅ Принять",
-                                "callback_data": f"accept_shared_gift_{db_invitation.id}"
-                            },
-                            {
-                                "text": "❌ Отказаться", 
-                                "callback_data": f"reject_shared_gift_{db_invitation.id}"
-                            }
-                        ]
-                    ]
-                }
-            )
-    except Exception as e:
-        print(f"Failed to send shared gift invitation notification: {e}")
 
     buyer_name = f"{buyer.first_name or ''} {buyer.last_name or ''}".strip()
     await _create_notification(
@@ -3783,20 +3839,7 @@ async def accept_shared_gift_invitation(db: AsyncSession, invitation_id: int, us
     item.stock -= 1
     
     await db.commit()
-    
-    # Отправляем уведомление покупателю
-    try:
-        # Игнорируем анонимизированных пользователей (telegram_id < 0)
-        if buyer.telegram_id and buyer.telegram_id >= 0:
-            await send_telegram_message(
-                buyer.telegram_id,
-                f"✅ <b>Приглашение принято!</b>\n\n"
-                f"👤 <b>{escape_html(invitation.invited_user.first_name or '')} {escape_html(invitation.invited_user.last_name or '')}</b> согласился разделить товар <b>{escape_html(item.name)}</b>\n\n"
-                f"💰 Вам возвращена половина стоимости товара"
-            )
-    except Exception as e:
-        print(f"Failed to send shared gift accepted notification: {e}")
-    
+
     # Отправляем уведомление в админ-чат о совместной покупке
     try:
         admin_message = (
@@ -3884,34 +3927,10 @@ async def reject_shared_gift_invitation(db: AsyncSession, invitation_id: int, us
     await refund_shared_gift_purchase(db, invitation)
     
     await db.commit()
-    
-    # Отправляем уведомление покупателю
-    try:
-        buyer_result = await db.execute(
-            select(models.User).where(models.User.id == invitation.buyer_id)
-        )
-        buyer = buyer_result.scalar_one_or_none()
-        
-        item_result = await db.execute(
-            select(models.MarketItem).where(models.MarketItem.id == invitation.item_id)
-        )
-        item = item_result.scalar_one_or_none()
-        
-        if buyer and item:
-            # Игнорируем анонимизированных пользователей (telegram_id < 0)
-            if buyer.telegram_id and buyer.telegram_id >= 0:
-                await send_telegram_message(
-                    buyer.telegram_id,
-                    f"❌ <b>Приглашение отклонено</b>\n\n"
-                    f"👤 <b>{escape_html(invitation.invited_user.first_name or '')} {escape_html(invitation.invited_user.last_name or '')}</b> отклонил приглашение на товар <b>{escape_html(item.name)}</b>\n\n"
-                    f"💰 Вам возвращена полная стоимость товара"
-                )
-    except Exception as e:
-        print(f"Failed to send shared gift rejected notification: {e}")
 
     try:
         invited_name = f"{invitation.invited_user.first_name or ''} {invitation.invited_user.last_name or ''}".strip()
-        item_name = item.name if item else "товар"
+        item_name = invitation.item.name if invitation.item else "товар"
         await _create_notification(
             db, invitation.buyer_id, "shared_gift",
             "Приглашение отклонено",
@@ -3979,31 +3998,11 @@ async def cleanup_expired_shared_gift_invitations(db: AsyncSession):
     for invitation in expired_invitations:
         await refund_shared_gift_purchase(db, invitation)
         invitation.status = 'expired'
-        
-        # Отправляем уведомление покупателю
-        try:
-            buyer_result = await db.execute(
-                select(models.User).where(models.User.id == invitation.buyer_id)
-            )
-            buyer = buyer_result.scalar_one_or_none()
-            
-            item_result = await db.execute(
-                select(models.MarketItem).where(models.MarketItem.id == invitation.item_id)
-            )
-            item = item_result.scalar_one_or_none()
-            
-            if buyer and item:
-                # Игнорируем анонимизированных пользователей (telegram_id = -1)
-                if buyer.telegram_id and buyer.telegram_id != -1:
-                    await send_telegram_message(
-                        buyer.telegram_id,
-                        f"⏰ <b>Приглашение истекло</b>\n\n"
-                        f"Время на принятие приглашения на товар <b>{escape_html(item.name)}</b> истекло\n\n"
-                        f"💰 Вам возвращена полная стоимость товара"
-                    )
-        except Exception as e:
-            print(f"Failed to send shared gift expired notification: {e}")
 
+        item_result = await db.execute(
+            select(models.MarketItem).where(models.MarketItem.id == invitation.item_id)
+        )
+        item = item_result.scalar_one_or_none()
         if item:
             await _create_notification(
                 db, invitation.buyer_id, "shared_gift",

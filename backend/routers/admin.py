@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Response, Query, status, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +17,8 @@ from database import get_db
 from config import settings
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
+
+import bulk_user_import
 
 router = APIRouter(
     prefix="/admin",
@@ -128,8 +130,11 @@ async def reset_balances_route(db: AsyncSession = Depends(get_db)):
 
 @router.post("/reset-daily-transfer-limits")
 async def reset_daily_transfer_limits_route(db: AsyncSession = Depends(get_db)):
-    await crud.reset_daily_transfer_limits(db)
-    return {"detail": "Лимиты на отправку спасибок успешно сброшены у всех пользователей"}
+    users_updated = await crud.reset_daily_transfer_limits(db)
+    return {
+        "detail": "Лимиты на отправку спасибок успешно сброшены у всех пользователей",
+        "users_updated": users_updated,
+    }
 
 @router.get("/users", response_model=List[schemas.UserResponse])
 async def get_all_users_for_admin_route(db: AsyncSession = Depends(get_db)):
@@ -630,13 +635,21 @@ async def get_login_activity(start_date: Optional[date] = Query(None), end_date:
     return {"hourly_stats": stats}
 
 @router.get("/statistics/active_user_ratio", response_model=schemas.ActiveUserRatioStats)
-async def get_active_user_ratio_route(db: AsyncSession = Depends(get_db)):
-    ratio_data = await crud.get_active_user_ratio(db)
+async def get_active_user_ratio_route(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    ratio_data = await crud.get_active_user_ratio(db, start_date=start_date, end_date=end_date)
     return ratio_data
 
 @router.get("/statistics/user_engagement", response_model=schemas.UserEngagementStats)
-async def get_user_engagement(db: AsyncSession = Depends(get_db)):
-    engagement_data = await crud.get_user_engagement_stats(db)
+async def get_user_engagement(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    engagement_data = await crud.get_user_engagement_stats(db, start_date=start_date, end_date=end_date)
     top_senders_schema = [
         {"user": row[0], "count": row.sent_count} 
         for row in engagement_data["top_senders"]
@@ -648,8 +661,12 @@ async def get_user_engagement(db: AsyncSession = Depends(get_db)):
     return {"top_senders": top_senders_schema, "top_receivers": top_receivers_schema}
 
 @router.get("/statistics/popular_items", response_model=schemas.PopularItemsStats)
-async def get_popular_items(db: AsyncSession = Depends(get_db)):
-    items_data = await crud.get_popular_items_stats(db)
+async def get_popular_items(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    items_data = await crud.get_popular_items_stats(db, start_date=start_date, end_date=end_date)
     popular_items_schema = [
         {"item": row[0], "purchase_count": row.purchase_count} 
         for row in items_data
@@ -657,8 +674,12 @@ async def get_popular_items(db: AsyncSession = Depends(get_db)):
     return {"items": popular_items_schema}
 
 @router.get("/statistics/inactive_users", response_model=schemas.InactiveUsersStats)
-async def get_inactive_users_list(db: AsyncSession = Depends(get_db)):
-    inactive_users = await crud.get_inactive_users(db)
+async def get_inactive_users_list(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    inactive_users = await crud.get_inactive_users(db, start_date=start_date, end_date=end_date)
     return {"users": inactive_users}
 
 @router.get("/statistics/total_balance", response_model=schemas.TotalBalanceStats)
@@ -676,8 +697,12 @@ async def get_average_session_duration_route(
     return stats
 
 @router.get("/statistics/user_engagement/export")
-async def export_user_engagement(db: AsyncSession = Depends(get_db)):
-    engagement_data = await crud.get_user_engagement_stats(db)
+async def export_user_engagement(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    engagement_data = await crud.get_user_engagement_stats(db, start_date=start_date, end_date=end_date)
     top_senders = engagement_data["top_senders"]
     top_receivers = engagement_data["top_receivers"]
 
@@ -826,6 +851,67 @@ async def export_all_users(db: AsyncSession = Depends(get_db)):
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@router.get("/users/bulk-import/template")
+async def download_bulk_import_template():
+    """Скачать Excel-шаблон для массового создания сотрудников."""
+    content = bulk_user_import.build_import_template_bytes()
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="serdce_users_template.xlsx"'},
+    )
+
+
+@router.post("/users/bulk-import", response_model=schemas.BulkUserImportResponse)
+async def bulk_import_users_route(
+    file: UploadFile = File(...),
+    send_credentials: bool = Form(True),
+    db: AsyncSession = Depends(get_db),
+):
+    """Импорт сотрудников из Excel: создание аккаунтов и рассылка доступов."""
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Загрузите файл Excel (.xlsx)",
+        )
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл пуст")
+
+    parsed_rows, parse_errors = bulk_user_import.parse_import_workbook(file_bytes)
+    if parse_errors:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="; ".join(parse_errors))
+
+    import_result = await bulk_user_import.bulk_import_users(
+        db,
+        parsed_rows,
+        send_credentials=send_credentials,
+    )
+    return schemas.BulkUserImportResponse(
+        total_rows=import_result.total_rows,
+        created_count=import_result.created_count,
+        skipped_count=import_result.skipped_count,
+        error_count=import_result.error_count,
+        emails_sent_count=import_result.emails_sent_count,
+        rows=[schemas.BulkUserImportRowResult.model_validate(row, from_attributes=True) for row in import_result.rows],
+    )
+
+
+@router.post("/users/bulk-import/export-report")
+async def export_bulk_import_report(payload: schemas.BulkUserImportReportRequest):
+    """Скачать таблицу с логинами и паролями после импорта."""
+    row_results = [
+        bulk_user_import.ImportRowResult(**item.model_dump()) for item in payload.rows
+    ]
+    content = bulk_user_import.build_import_report_bytes(row_results)
+    filename = f"import_credentials_{datetime.utcnow().date()}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 @router.delete("/market-items/{item_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)

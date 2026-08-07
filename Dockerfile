@@ -6,8 +6,7 @@
 FROM node:20-alpine AS frontend-build
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci
+RUN npm ci
 COPY frontend/ ./
 # Пустой URL = API на том же origin (Telegram Mini App / один домен)
 ARG VITE_API_URL=
@@ -29,17 +28,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy
 
 COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Windows CRLF ломает shebang в Linux-контейнере (exec: No such file or directory).
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # pg_dump / pg_restore для одноразовой миграции БД (deploy/pg_migrate_source_to_target.sh).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client \
+    && apt-get install -y --no-install-recommends \
+        postgresql-client \
+        libcairo2 \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libgdk-pixbuf-2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt /app/backend/requirements.txt
-# BuildKit: кэш uv между сборками на том же хосте.
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv venv /opt/venv \
+RUN uv venv /opt/venv \
     && uv pip install --python /opt/venv/bin/python -r /app/backend/requirements.txt
 
 ENV PATH="/opt/venv/bin:${PATH}" \

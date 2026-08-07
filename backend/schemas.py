@@ -36,6 +36,7 @@ class UserResponse(UserBase):
     balance: int
     reserved_balance: int = 0
     daily_transfer_count: int
+    daily_transfer_count_for_date: Optional[date] = None
     is_admin: bool
     status: Optional[str] = 'approved' 
     telegram_photo_url: Optional[str] = None
@@ -180,6 +181,26 @@ class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
 
+class NotificationPreferencesResponse(BaseModel):
+    birthdays: bool = True
+    likesReceived: bool = True
+    purchases: bool = True
+    sharedGifts: bool = True
+    profileUpdates: bool = True
+    achievements: bool = True
+    tasks: bool = True
+    systemNews: bool = True
+
+class NotificationPreferencesUpdate(BaseModel):
+    birthdays: Optional[bool] = None
+    likesReceived: Optional[bool] = None
+    purchases: Optional[bool] = None
+    sharedGifts: Optional[bool] = None
+    profileUpdates: Optional[bool] = None
+    achievements: Optional[bool] = None
+    tasks: Optional[bool] = None
+    systemNews: Optional[bool] = None
+
 class RegisterRequest(BaseModel):
     telegram_id: Optional[str] = None
     first_name: str
@@ -252,6 +273,7 @@ class MarketItemUpdate(BaseModel):
     new_item_codes: Optional[List[str]] = []
 
 class UserUpdate(BaseModel):
+    first_name: Optional[str] = None
     last_name: Optional[str] = None
     department: Optional[str] = None
     position: Optional[str] = None
@@ -260,6 +282,7 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
 
 class ProfileUpdateRequest(BaseModel):
+    first_name: Optional[str] = None
     last_name: Optional[str] = None
     department: Optional[str] = None
     position: Optional[str] = None
@@ -327,6 +350,7 @@ class MyRankResponse(BaseModel):
     total_participants: int
 
 class GeneralStatsResponse(BaseModel):
+    total_users_count: int = 0
     new_users_count: int
     transactions_count: int
     active_users_count: int
@@ -402,6 +426,7 @@ class SessionResponse(SessionBase):
 
 class AverageSessionDurationStats(BaseModel):
     average_duration_minutes: float
+    session_count: int = 0
 
 class StatixBonusItemResponse(OrmBase):
     id: int
@@ -696,6 +721,20 @@ class PushTestRequest(BaseModel):
     url: str = "/"
 
 
+class AndroidPushRegisterRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=4096)
+    concept_slug: Optional[str] = None
+    device_name: Optional[str] = Field(None, max_length=128)
+
+
+class AndroidPushUnregisterRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=4096)
+
+
+class AndroidPushConfigResponse(BaseModel):
+    enabled: bool
+
+
 class UnifiedPurchaseResponse(BaseModel):
     id: int
     purchase_type: str
@@ -769,3 +808,124 @@ class BulkUserImportReportRequest(BaseModel):
     """Тело запроса для выгрузки отчёта после импорта."""
 
     rows: List[BulkUserImportRowResult]
+
+
+class AchievementLevelBase(OrmBase):
+    level_number: int = Field(..., ge=1, le=20)
+    tier_key: str = Field(..., min_length=1, max_length=32)
+    image_url: Optional[str] = None
+    how_to_obtain: str = Field(..., min_length=1)
+
+
+class AchievementLevelCreate(AchievementLevelBase):
+    pass
+
+
+class AchievementLevelUpsert(AchievementLevelBase):
+    id: Optional[int] = None
+
+
+class AchievementLevelResponse(AchievementLevelBase):
+    id: int
+
+
+class AchievementBase(OrmBase):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1)
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class AchievementCreate(AchievementBase):
+    levels: List[AchievementLevelCreate] = Field(..., min_length=1)
+
+
+class AchievementUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = Field(default=None, min_length=1)
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+    levels: Optional[List[AchievementLevelUpsert]] = None
+
+
+class AchievementResponse(AchievementBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    levels: List[AchievementLevelResponse]
+
+
+class UserAchievementLevelResponse(AchievementLevelResponse):
+    status: Literal["locked", "earned"]
+    earned_at: Optional[datetime] = None
+
+
+class UserAchievementResponse(AchievementBase):
+    id: int
+    levels: List[UserAchievementLevelResponse]
+    highest_earned_level: Optional[int] = None
+    display_image_url: Optional[str] = None
+    status: Literal["locked", "earned"]
+
+
+TaskPeriodType = Literal["daily", "weekly", "monthly"]
+
+
+class TaskQuotaSettingsResponse(OrmBase):
+    max_daily_tasks: int
+    max_weekly_tasks: int
+    max_monthly_tasks: int
+
+
+class TaskQuotaSettingsUpdate(BaseModel):
+    max_daily_tasks: Optional[int] = Field(default=None, ge=1, le=10)
+    max_weekly_tasks: Optional[int] = Field(default=None, ge=0, le=10)
+    max_monthly_tasks: Optional[int] = Field(default=None, ge=0, le=10)
+
+
+class TaskBase(OrmBase):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    period_type: TaskPeriodType
+    target_count: int = Field(default=1, ge=1, le=100)
+    reward_likes: int = Field(default=1, ge=0, le=100)
+    is_active: bool = True
+    sort_order: int = 0
+
+
+class TaskCreate(TaskBase):
+    pass
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    period_type: Optional[TaskPeriodType] = None
+    target_count: Optional[int] = Field(default=None, ge=1, le=100)
+    reward_likes: Optional[int] = Field(default=None, ge=0, le=100)
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class TaskResponse(TaskBase):
+    id: int
+    is_system: bool
+    system_key: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserTaskProgressResponse(BaseModel):
+    current_count: int
+    target_count: int
+    completed: bool
+    completed_at: Optional[datetime] = None
+    progress_percent: int
+
+
+class UserTaskResponse(TaskResponse):
+    progress: UserTaskProgressResponse
+
+
+class AdminCompleteTaskRequest(BaseModel):
+    user_id: int
