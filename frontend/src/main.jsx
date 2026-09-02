@@ -5,6 +5,12 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
+import './styles/iosLiquidGlass.css';
+import { applyPlatformTheme } from './platform/iosGlass.js';
+import { registerServiceWorker } from './pwa/registerServiceWorker.js';
+
+applyPlatformTheme();
+registerServiceWorker();
 
 // 1. Импортируем наши ПРАВИЛЬНЫЕ Provider'ы
 import { ModalAlertProvider } from './contexts/ModalAlertContext.jsx';

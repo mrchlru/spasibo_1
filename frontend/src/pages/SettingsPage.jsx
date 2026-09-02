@@ -1,13 +1,24 @@
 // frontend/src/pages/SettingsPage.jsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styles from './SettingsPage.module.css';
-import { FaQuestionCircle, FaHeadset, FaFileContract, FaBookOpen, FaLock, FaSignOutAlt } from 'react-icons/fa';
+import { FaQuestionCircle, FaHeadset, FaFileContract, FaBookOpen, FaLock, FaSignOutAlt, FaBell } from 'react-icons/fa';
 import PageLayout from '../components/PageLayout';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 import { useConfirmation } from '../contexts/ConfirmationContext';
 import { changePassword } from '../api';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
+import {
+  enablePushFromUserGesture,
+  getNotificationPermission,
+  hasBrowserPushSubscription,
+  startNotificationPermissionRequest,
+} from '../pwa/pushNotifications.js';
+import {
+  getPushBlockReason,
+  isPushApiAvailable,
+  pushBlockReasonMessage,
+} from '../pwa/pushEnvironment.js';
 
 // Определяем, является ли это браузером (не Telegram WebApp)
 const isWebBrowser = !window.Telegram?.WebApp;
@@ -27,6 +38,47 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
     confirm: false
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPushState() {
+      if (!isPushApiAvailable()) {
+        return;
+      }
+      const subscribed = await hasBrowserPushSubscription();
+      if (!cancelled) {
+        setPushEnabled(subscribed || getNotificationPermission() === 'granted');
+      }
+    }
+    loadPushState();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleEnablePush = async () => {
+    const blockReason = getPushBlockReason();
+    if (blockReason) {
+      showAlert(pushBlockReasonMessage(blockReason), 'error');
+      return;
+    }
+
+    setPushLoading(true);
+    try {
+      const permissionPromise = startNotificationPermissionRequest();
+      const result = await enablePushFromUserGesture(permissionPromise);
+      if (result.ok) {
+        setPushEnabled(true);
+        showAlert('Push-уведомления включены', 'success');
+      } else {
+        showAlert(pushBlockReasonMessage(result.reason), 'error');
+      }
+    } finally {
+      setPushLoading(false);
+    }
+  };
 
   // Ссылка на ваш аккаунт поддержки в Telegram
   const supportUrl = 'https://t.me/fix2Form'; // <-- НЕ ЗАБУДЬТЕ ЗАМЕНИТЬ НА ВАШ АККАУНТ
@@ -101,6 +153,20 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
           <FaQuestionCircle className={styles.icon} />
           <span>Часто задаваемые вопросы (FAQ)</span>
         </button>
+
+        {isPushApiAvailable() && (
+          <button
+            type="button"
+            onClick={handleEnablePush}
+            disabled={pushLoading || pushEnabled}
+            className={styles.settingsItem}
+          >
+            <FaBell className={styles.icon} />
+            <span>
+              {pushEnabled ? 'Push-уведомления включены' : 'Включить push-уведомления'}
+            </span>
+          </button>
+        )}
 
         <a href={supportUrl} target="_blank" rel="noopener noreferrer" className={styles.settingsItem}>
           <FaHeadset className={styles.icon} />

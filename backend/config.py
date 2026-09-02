@@ -1,4 +1,22 @@
+import base64
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+
+def _normalize_vapid_private_key(raw_value: str) -> str:
+    """Приводит VAPID private key к валидному PEM независимо от формата env."""
+    raw = raw_value.strip()
+    if not raw:
+        return ""
+
+    if "BEGIN" in raw:
+        return raw.replace("\\n", "\n").replace("\r", "").strip()
+
+    padding = "=" * ((4 - len(raw) % 4) % 4)
+    pem_bytes = base64.urlsafe_b64decode(raw + padding)
+    return pem_bytes.decode("utf-8").strip()
+
 
 class Settings(BaseSettings):
     DATABASE_URL: str
@@ -71,6 +89,25 @@ class Settings(BaseSettings):
     STATIC_ROOT: str = ""
     # Дополнительные origins для CORS (через запятую), кроме встроенного списка в app.py
     CORS_ORIGINS: str = ""
+
+    # Web Push (VAPID). Пустой приватный ключ — push отключён.
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_CONTACT_EMAIL: str = "mailto:admin@spasibo.local"
+    WEB_PUSH_ENABLED: bool = True
+    PWA_PUBLIC_BASE_URL: str = ""
+
+    # Firebase Cloud Messaging (Android-приложение)
+    FCM_ENABLED: bool = True
+    FIREBASE_SERVICE_ACCOUNT_JSON: str = ""
+
+    @field_validator("VAPID_PRIVATE_KEY", mode="before")
+    @classmethod
+    def _decode_vapid_private_key(cls, value: object) -> object:
+        """Поддерживает PEM и base64url (одна строка для env)."""
+        if not isinstance(value, str):
+            return value
+        return _normalize_vapid_private_key(value)
 
     class Config:
         env_file = ".env"

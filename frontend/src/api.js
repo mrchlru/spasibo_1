@@ -526,6 +526,19 @@ export const markNotificationRead = (notificationId) =>
 export const markAllNotificationsRead = () =>
   apiClient.put('/notifications/read-all', null, getAuthHeaders());
 
+// --- WEB PUSH ---
+export const getVapidPublicKey = () =>
+  apiClient.get('/push/vapid-public-key', getAuthHeaders()).then((res) => res.data);
+
+export const subscribePush = (payload) =>
+  apiClient.post('/push/subscribe', payload, getAuthHeaders());
+
+export const unsubscribePush = (endpoint) =>
+  apiClient.post('/push/unsubscribe', { endpoint }, getAuthHeaders());
+
+export const sendTestPush = (payload = {}) =>
+  apiClient.post('/push/test', payload, getAuthHeaders());
+
 // --- CARD UPLOAD ---
 export const uploadPkpassFile = (file) => {
   const formData = new FormData();

@@ -705,3 +705,41 @@ class AdminMediaStatusResponse(BaseModel):
     """Доступность загрузки в S3-совместимое хранилище."""
 
     enabled: bool
+
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscribeRequest(BaseModel):
+    endpoint: str = Field(..., min_length=10)
+    keys: PushSubscriptionKeys
+
+
+class PushUnsubscribeRequest(BaseModel):
+    endpoint: str = Field(..., min_length=10)
+
+
+class PushVapidPublicKeyResponse(BaseModel):
+    public_key: str
+    enabled: bool
+
+
+class PushTestRequest(BaseModel):
+    title: str = "Тестовое уведомление"
+    body: str = "Push-канал «Спасибо» работает"
+    url: str = "/"
+
+
+class AndroidPushRegisterRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=4096)
+    device_name: Optional[str] = Field(None, max_length=128)
+
+
+class AndroidPushUnregisterRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=4096)
+
+
+class AndroidPushConfigResponse(BaseModel):
+    enabled: bool
