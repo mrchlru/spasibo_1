@@ -5,6 +5,7 @@ import math
 import re
 import logging
 import traceback
+from types import SimpleNamespace
 
 import httpx
 from typing import Optional
@@ -46,6 +47,7 @@ async def _create_notification(
     message: str,
     *,
     click_url: str | None = None,
+    push_tag: str | None = None,
 ) -> None:
     """Сохраняет уведомление в БД и отправляет Web Push при наличии подписки."""
     try:
@@ -70,7 +72,7 @@ async def _create_notification(
             title=title,
             body=message,
             url=click_url or "/",
-            tag=f"spasibo-{type}-{notification.id}",
+            tag=push_tag or f"spasibo-{type}-{notification.id}",
         )
     except Exception as e:
         logger.warning("Web Push для user_id=%s не отправлен: %s", user_id, e)
@@ -289,13 +291,9 @@ async def update_user_profile(db: AsyncSession, user_id: int, data: schemas.User
         return None
     
     update_data = data.model_dump(exclude_unset=True)
+    update_data.pop("date_of_birth", None)
     
     for key, value in update_data.items():
-        if key == 'date_of_birth' and value:
-            try:
-                value = date.fromisoformat(value)
-            except (ValueError, TypeError):
-                value = None
         setattr(user, key, value)
         
     await db.commit()
@@ -1085,46 +1083,13 @@ async def delete_banner(db: AsyncSession, banner_id: int):
 
 # --- НОВЫЕ ФУНКЦИИ ДЛЯ АВТОМАТИЗАЦИИ ---
 async def process_birthday_bonuses(db: AsyncSession):
-    """Начисляет 15 баллов всем, у кого сегодня день рождения и отправляет поздравительное сообщение."""
-    today = date.today()
-    users_with_birthday = await db.execute(
-        select(models.User).where(
-            func.extract('month', models.User.date_of_birth) == today.month,
-            func.extract('day', models.User.date_of_birth) == today.day
-        )
-    )
-    users = users_with_birthday.scalars().all()
-    
-    for user in users:
-        user.balance += 15
-        
-        # Отправляем поздравительное сообщение в Telegram
-        # Игнорируем анонимизированных пользователей (telegram_id < 0)
-        if user.telegram_id and user.telegram_id >= 0 and user.status == "approved":
-            birthday_message = (
-                f"🎉 <b>С Днем Рождения!</b> 🎂\n\n"
-                f"Дорогой/ая <b>{escape_html(user.first_name or 'коллега')}</b>, поздравляем вас с днем рождения!\n\n"
-                f"🎁 В честь этого праздника вам начислено <b>15 спасибок</b> в качестве подарка!\n\n"
-                f"Желаем вам здоровья, счастья и успехов во всех начинаниях! 🎈"
-            )
-            try:
-                await send_telegram_message(user.telegram_id, birthday_message)
-            except Exception as e:
-                logger.error(f"Не удалось отправить поздравление пользователю {user.id}: {e}")
+    """Начисляет бонус ко дню рождения (делегирует в birthday_service)."""
+    import birthday_service
 
-        await _create_notification(
-            db, user.id, "system",
-            "С Днём Рождения!",
-            "Поздравляем с днём рождения! Вам начислено 15 спасибок в качестве подарка.",
-        )
-    
-    # --- ДОБАВИТЬ ЭТИ ДВЕ СТРОКИ ---
+    processed = await birthday_service.process_birthday_bonuses(db)
     await reset_ticket_parts(db)
     await reset_tickets(db)
-
-    await db.commit()
-    await _invalidate_feed_and_leaderboard("бонусы ко дню рождения")
-    return len(users)
+    return processed
 
 # --- ДОБАВЬТЕ ЭТУ НОВУЮ ФУНКЦИЮ В КОНЕЦ ФАЙЛА ---
 async def _ensure_unique_login(db: AsyncSession, base_login: str, exclude_user_id: int) -> str:
@@ -1380,7 +1345,22 @@ async def admin_create_market_item(db: AsyncSession, item: schemas.MarketItemCre
         .options(selectinload(models.MarketItem.codes))
     )
     created_item_with_codes = result.scalar_one_or_none()
-    
+
+    if created_item_with_codes is not None:
+        try:
+            import market_notification_service
+
+            await market_notification_service.notify_market_discount(
+                db,
+                created_item_with_codes,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Не удалось отправить уведомление о скидке (create item %s): %s",
+                db_item.id,
+                exc,
+            )
+
     # Возвращаем полностью загруженный объект
     return created_item_with_codes
 
@@ -1390,8 +1370,13 @@ async def admin_update_market_item(db: AsyncSession, item_id: int, item_data: sc
 
     db_item = await db.get(models.MarketItem, item_id)
     if not db_item:
-        print(f"--- [UPDATE ITEM {item_id}] ОШИБКА: Товар не найден ---") # <-- Лог ошибки
+        print(f"--- [UPDATE ITEM {item_id}] ОШИБКА: Товар не найден ---") # <-- Lог ошибки
         return None
+
+    item_before_update = SimpleNamespace(
+        price=db_item.price,
+        original_price=db_item.original_price,
+    )
 
     print(f"Текущие данные товара ДО обновления: name='{db_item.name}', price={db_item.price}, stock={db_item.stock}, price_rub={db_item.price_rub}, original_price={db_item.original_price}") # <-- Лог 3 (Добавил больше полей)
 
@@ -1489,6 +1474,23 @@ async def admin_update_market_item(db: AsyncSession, item_id: int, item_data: sc
 
     if updated_item_with_codes:
          print(f"Данные товара ПОСЛЕ обновления и перечитки: name='{updated_item_with_codes.name}', price={updated_item_with_codes.price}, stock={updated_item_with_codes.stock}, price_rub={updated_item_with_codes.price_rub}, original_price={updated_item_with_codes.original_price}") # <-- Лог 9
+         try:
+             import market_notification_service
+
+             if market_notification_service.should_notify_market_discount(
+                 item_before_update,
+                 updated_item_with_codes,
+             ):
+                 await market_notification_service.notify_market_discount(
+                     db,
+                     updated_item_with_codes,
+                 )
+         except Exception as exc:
+             logger.warning(
+                 "Не удалось отправить уведомление о скидке (update item %s): %s",
+                 item_id,
+                 exc,
+             )
     else:
          print(f"--- [UPDATE ITEM {item_id}] ОШИБКА: Не удалось перечитать товар после обновления ---") # <-- Лог ошибки перечитки
 
@@ -1768,8 +1770,8 @@ async def request_profile_update(db: AsyncSession, user: models.User, update_dat
     }
     
     # 2. Собираем запрошенные новые данные
-    # (exclude_unset=True важен, но фронтенд пришлет все поля, включая неизмененные)
-    new_data_raw = update_data.model_dump() 
+    new_data_raw = update_data.model_dump()
+    new_data_raw.pop("date_of_birth", None)
     
     # 3. Сравниваем, чтобы найти только РЕАЛЬНЫЕ изменения
     actual_new_data = {}
@@ -1855,12 +1857,9 @@ async def process_profile_update(db: AsyncSession, update_id: int, action: str):
     if action == "approve":
         # 3. ОДОБРЕНО: Применяем изменения (которые хранятся в new_data) к пользователю
         for key, value in pending_update.new_data.items():
-            if key == 'date_of_birth' and value:
-                try:
-                    value = date.fromisoformat(value)
-                except (ValueError, TypeError):
-                    value = None
-            setattr(user, key, value) # Обновляем поле пользователя
+            if key == "date_of_birth":
+                continue
+            setattr(user, key, value)
 
         pending_update.status = "approved"
         await db.delete(pending_update) # Удаляем запрос после выполнения

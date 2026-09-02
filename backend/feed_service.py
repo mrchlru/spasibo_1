@@ -22,6 +22,8 @@ async def get_unified_feed(
     limit: int = FEED_TRANSACTION_LIMIT,
 ) -> list[schemas.UnifiedFeedEntry]:
     """Возвращает ленту: закреплённые новости, затем до limit записей активности."""
+    import birthday_service
+
     safe_limit = min(max(limit, 1), FEED_TRANSACTION_LIMIT)
 
     pinned_posts = await feed_post_service.list_visible_feed_posts(
@@ -35,6 +37,8 @@ async def get_unified_feed(
         pinned_only=False,
     )
     transactions = await crud.get_feed(db, days=days, limit=safe_limit)
+    birthday_users = await birthday_service.list_today_birthday_users(db)
+    birthday_timestamp = birthday_service.birthday_stream_timestamp()
 
     entries: list[schemas.UnifiedFeedEntry] = []
     for post in pinned_posts:
@@ -45,6 +49,13 @@ async def get_unified_feed(
         stream_items.append((post.published_at, _post_entry(post)))
     for transaction in transactions:
         stream_items.append((transaction.timestamp, _transaction_entry(transaction)))
+    for birthday_user in birthday_users:
+        stream_items.append(
+            (
+                birthday_timestamp,
+                _birthday_entry(birthday_user),
+            ),
+        )
 
     stream_items.sort(key=lambda item: item[0], reverse=True)
     entries.extend(entry for _, entry in stream_items[:safe_limit])
@@ -67,6 +78,7 @@ def _post_entry(post: models.FeedPost) -> schemas.UnifiedFeedEntry:
         timestamp=post.published_at,
         post=feed_post_service.feed_post_to_response(post),
         transaction=None,
+        birthday=None,
     )
 
 
@@ -98,4 +110,18 @@ def _transaction_entry(transaction: models.Transaction) -> schemas.UnifiedFeedEn
             sender=sender_dto,
             receiver=receiver_dto,
         ),
+        birthday=None,
+    )
+
+
+def _birthday_entry(user: models.User) -> schemas.UnifiedFeedEntry:
+    """Собирает элемент ленты о дне рождения."""
+    import birthday_service
+
+    return schemas.UnifiedFeedEntry(
+        kind="birthday",
+        timestamp=birthday_service.birthday_stream_timestamp(),
+        post=None,
+        transaction=None,
+        birthday=birthday_service.birthday_feed_item(user),
     )

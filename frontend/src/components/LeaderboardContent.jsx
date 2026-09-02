@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getLeaderboard, getMyRank, getLeaderboardStatus, resolveAvatarUrl } from '../api';
 import styles from '../pages/LeaderboardPage.module.css';
+import FeedSkeleton from './FeedSkeleton';
 import { FaCrown, FaCalendarDay, FaCalendarAlt, FaGift, FaInfinity } from 'react-icons/fa';
 import { resolveSeasonAssets } from '../themeAssetDefaults';
 
@@ -103,8 +104,8 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
         </div>
       )}
 
-      {isLoading ? (
-        <p>Загрузка рейтинга...</p>
+      {isLoading && leaderboard.length === 0 ? (
+        <FeedSkeleton count={3} />
       ) : (
         <>
           {myRank && myRank.rank !== null && (

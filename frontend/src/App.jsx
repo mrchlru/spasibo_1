@@ -19,6 +19,7 @@ import {
   resolveAvatarUrl,
 } from './api';
 import { initializeCache, clearCache, setCachedData } from './storage';
+import { preloadAppContent } from './boot/preloadAppContent';
 
 // Компоненты навигации (загружаются сразу, так как всегда видны)
 import BottomNav from './components/BottomNav';
@@ -62,6 +63,7 @@ const isTelegramWebApp = !!window.Telegram?.WebApp;
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [bootReady, setBootReady] = useState(false);
   const [page, setPage] = useState('home');
   const [homeSection, setHomeSection] = useState('feed');
   const [telegramPhotoUrl, setTelegramPhotoUrl] = useState(null);
@@ -488,9 +490,36 @@ function App() {
   // --- 1. НОВАЯ ПЕРЕМЕННАЯ ДЛЯ УДОБСТВА ---
   // Эта переменная будет true, если нужно показать обучение, и false в противном случае.
   const isOnboardingVisible = (user && !user.has_seen_onboarding) || showOnboarding;
+
+  useEffect(() => {
+    if (loading || !user || user.status !== 'approved') {
+      setBootReady(false);
+      return undefined;
+    }
+    if (isOnboardingVisible) {
+      setBootReady(true);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setBootReady(false);
+    preloadAppContent({ timeoutMs: 2500 }).finally(() => {
+      if (!cancelled) {
+        setBootReady(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, user?.id, user?.status, isOnboardingVisible]);
   
   const renderPage = () => {
     if (loading) {
+      return <LoadingScreen />;
+    }
+
+    if (user?.status === 'approved' && !isOnboardingVisible && !bootReady) {
       return <LoadingScreen />;
     }
   

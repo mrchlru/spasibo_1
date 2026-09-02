@@ -806,6 +806,47 @@ button:active {
   z-index: 900;
 }
 
+.feedItemBirthday {
+  background: linear-gradient(135deg, rgba(255, 248, 220, 0.95) 0%, rgba(255, 255, 255, 1) 100%);
+  border: 1px solid rgba(212, 168, 67, 0.35);
+  align-items: center;
+  gap: 12px;
+}
+
+.feedBirthdayIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #c58a00;
+  background: rgba(255, 236, 179, 0.65);
+}
+
+.feedBirthdayTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--theme-primary-dark, #2f6a2c);
+}
+
+.feedBirthdayMessage {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #6e7a85;
+}
+
+.feedBirthdayAvatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 @media (min-width: 1025px) {
   .publishFab {
     right: 28px;
