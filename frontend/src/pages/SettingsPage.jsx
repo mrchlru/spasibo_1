@@ -6,8 +6,8 @@ import { FaQuestionCircle, FaHeadset, FaFileContract, FaBookOpen, FaLock, FaSign
 import PageLayout from '../components/PageLayout';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 import { useConfirmation } from '../contexts/ConfirmationContext';
-import { changePassword } from '../api';
-import { FaEye, FaEyeSlash } from 'react-icons/fa';
+import { changePassword, sendTestPush } from '../api';
+import { FaEye, FaEyeSlash, FaPaperPlane } from 'react-icons/fa';
 import {
   enablePushFromUserGesture,
   getNotificationPermission,
@@ -40,6 +40,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
   const [isLoading, setIsLoading] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
+  const [testPushLoading, setTestPushLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +78,39 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
       }
     } finally {
       setPushLoading(false);
+    }
+  };
+
+  const handleTestPush = async () => {
+    if (!pushEnabled) {
+      showAlert('Сначала включите push-уведомления', 'error');
+      return;
+    }
+
+    setTestPushLoading(true);
+    try {
+      const { data } = await sendTestPush({
+        title: 'Тест «Спасибо»',
+        body: 'Push-канал работает',
+        url: '/',
+      });
+      const delivered = data?.delivered ?? 0;
+      if (delivered > 0) {
+        showAlert('Тестовое уведомление отправлено', 'success');
+      } else {
+        showAlert(
+          'Сервер не доставил push. Проверьте подписку и VAPID-ключи на сервере.',
+          'error',
+        );
+      }
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      showAlert(
+        typeof detail === 'string' ? detail : 'Не удалось отправить тестовое уведомление',
+        'error',
+      );
+    } finally {
+      setTestPushLoading(false);
     }
   };
 
@@ -165,6 +199,18 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
             <span>
               {pushEnabled ? 'Push-уведомления включены' : 'Включить push-уведомления'}
             </span>
+          </button>
+        )}
+
+        {isPushApiAvailable() && pushEnabled && (
+          <button
+            type="button"
+            onClick={handleTestPush}
+            disabled={testPushLoading}
+            className={styles.settingsItem}
+          >
+            <FaPaperPlane className={styles.icon} />
+            <span>{testPushLoading ? 'Отправка…' : 'Тестовое push-уведомление'}</span>
           </button>
         )}
 
