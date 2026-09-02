@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 import crud
 from database import get_db, settings
+import avatar_service
 
 router = APIRouter()
 
@@ -15,6 +16,13 @@ async def run_daily_tasks(db: AsyncSession = Depends(get_db)):
     await crud.reset_tickets(db)
     await crud.reset_daily_transfer_limits(db)
     return {"status": "ok", "birthdays_processed": birthdays_processed}
+
+
+@router.post("/scheduler/refresh-avatars", dependencies=[Depends(verify_cron_secret)])
+async def refresh_avatars(db: AsyncSession = Depends(get_db)):
+    """Ручной запуск обновления аватаров (основной cron — встроенный планировщик, 02:00 МСК)."""
+    updated = await avatar_service.refresh_all_user_avatars(db)
+    return {"status": "ok", "avatars_updated": updated}
 
 @router.post("/run-monthly-tasks")
 async def run_monthly_tasks(

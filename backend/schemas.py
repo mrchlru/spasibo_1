@@ -21,6 +21,7 @@ class UserBase(OrmBase):
     last_name: str
     department: str
     username: Optional[str] = None
+    telegram_photo_url: Optional[str] = None
 
 class PurchaseForUserResponse(OrmBase):
     id: int
@@ -51,6 +52,7 @@ class UserResponse(UserBase):
     login: Optional[str] = None
     password_plain: Optional[str] = None  # Пароль в открытом виде (только для админов)
     browser_auth_enabled: bool = False
+    can_publish_feed_posts: bool = False
     registration_date: Optional[datetime] = None
 
     @field_serializer('date_of_birth')
@@ -105,6 +107,7 @@ def panel_admin_user_response(email: str) -> UserResponse:
         login=None,
         password_plain=None,
         browser_auth_enabled=False,
+        can_publish_feed_posts=True,
         registration_date=None,
     )
 
@@ -283,6 +286,7 @@ class AdminUserUpdate(BaseModel):
     email: Optional[str] = None
     password: Optional[str] = None
     browser_auth_enabled: Optional[bool] = None
+    can_publish_feed_posts: Optional[bool] = None
 
 class BannerBase(OrmBase):
     image_url: Optional[str] = None
@@ -743,3 +747,75 @@ class AndroidPushUnregisterRequest(BaseModel):
 
 class AndroidPushConfigResponse(BaseModel):
     enabled: bool
+
+
+FeedPostAttachmentKind = Literal["image", "document"]
+
+
+class FeedPostAttachmentInput(BaseModel):
+    kind: FeedPostAttachmentKind
+    url: str = Field(..., min_length=1, max_length=1024)
+    filename: Optional[str] = Field(default=None, max_length=512)
+    content_type: Optional[str] = Field(default=None, max_length=128)
+    sort_order: int = 0
+
+
+class FeedPostAttachmentResponse(FeedPostAttachmentInput):
+    id: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FeedPostPublisherCreate(BaseModel):
+    """Публикация новости из PWA."""
+
+    title: str = Field(..., min_length=1, max_length=255)
+    body: Optional[str] = None
+    is_pinned: bool = False
+    is_published: bool = True
+    attachments: list[FeedPostAttachmentInput] = Field(default_factory=list)
+
+
+class FeedPostPublisherUpdate(BaseModel):
+    """Редактирование новости из PWA."""
+
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    body: Optional[str] = None
+    is_pinned: Optional[bool] = None
+    attachments: Optional[list[FeedPostAttachmentInput]] = None
+
+
+class FeedPostAuthor(BaseModel):
+    id: int
+    first_name: Optional[str] = None
+    last_name: str
+    username: Optional[str] = None
+    telegram_photo_url: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FeedPostResponse(BaseModel):
+    id: int
+    title: str
+    body: Optional[str] = None
+    is_pinned: bool
+    pin_order: int
+    is_published: bool
+    created_by_user_id: Optional[int] = None
+    author: Optional[FeedPostAuthor] = None
+    published_at: datetime
+    created_at: datetime
+    updated_at: datetime
+    attachments: list[FeedPostAttachmentResponse] = Field(default_factory=list)
+
+
+class UnifiedFeedEntry(BaseModel):
+    kind: Literal["post", "transaction"]
+    timestamp: datetime
+    post: Optional[FeedPostResponse] = None
+    transaction: Optional[FeedItem] = None
+
+
+class AdminDocumentUploadResponse(BaseModel):
+    url: str
+    filename: str
+    content_type: str

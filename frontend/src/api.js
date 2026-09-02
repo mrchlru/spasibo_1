@@ -15,6 +15,19 @@ export const getTelegramPhotoProxyUrl = (photoUrl) => {
   return `${base}/telegram/photo-proxy?url=${encodeURIComponent(photoUrl)}`;
 };
 
+/** URL аватара: локальный /users/{id}/avatar или прокси Telegram. */
+export const resolveAvatarUrl = (photoUrl) => {
+  if (!photoUrl) return '';
+  if (photoUrl.startsWith('/users/')) {
+    const base = API_BASE_URL.replace(/\/$/, '');
+    return `${base}${photoUrl}`;
+  }
+  if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+    return getTelegramPhotoProxyUrl(photoUrl);
+  }
+  return photoUrl;
+};
+
 // Таймаут axios предохраняет UI от «вечно крутящегося» состояния, если
 // какой-то API-запрос завис (например, при холодном старте бэкенда или
 // проблемах с сетью). 20 секунд достаточно даже для тяжёлых отчётов и
@@ -148,7 +161,38 @@ export const requestProfileUpdate = (updateData) =>
 export const updateMe = (updateData) =>
   apiClient.put('/users/me', updateData, getAuthHeaders());
 
-export const getFeed = () => apiClient.get('/transactions/feed');
+export const getFeed = () => apiClient.get('/feed', getAuthHeaders());
+
+export const createFeedPost = (payload) =>
+  apiClient.post('/feed-posts', payload, getAuthHeaders());
+
+export const updateFeedPost = (postId, payload) =>
+  apiClient.put(`/feed-posts/${postId}`, payload, getAuthHeaders());
+
+export const publishFeedPost = (postId) =>
+  apiClient.post(`/feed-posts/${postId}/publish`, {}, getAuthHeaders());
+
+export const pinFeedPost = (postId) =>
+  apiClient.post(`/feed-posts/${postId}/pin`, {}, getAuthHeaders());
+
+export const unpinFeedPost = (postId) =>
+  apiClient.post(`/feed-posts/${postId}/unpin`, {}, getAuthHeaders());
+
+export const uploadFeedPostImage = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post('/feed-posts/media/upload', formData, {
+    headers: { ...getAuthHeaders().headers },
+  });
+};
+
+export const uploadFeedPostDocument = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post('/feed-posts/documents/upload', formData, {
+    headers: { ...getAuthHeaders().headers },
+  });
+};
 
 export const getLeaderboard = ({ period, type }) =>
   apiClient.get(`/leaderboard/?period=${period}&type=${type}`, getAuthHeaders());

@@ -16,6 +16,7 @@ import {
   getAppSettings,
   updateMe,
   getTelegramPhotoProxyUrl,
+  resolveAvatarUrl,
 } from './api';
 import { initializeCache, clearCache, setCachedData } from './storage';
 
@@ -566,7 +567,10 @@ function App() {
     }
     
     if (user.status === 'approved') {
-      const effectiveTelegramPhotoUrl = telegramPhotoUrl || getTelegramPhotoProxyUrl(user?.telegram_photo_url);
+      const effectiveTelegramPhotoUrl =
+        resolveAvatarUrl(user?.telegram_photo_url) ||
+        telegramPhotoUrl ||
+        getTelegramPhotoProxyUrl(user?.telegram_photo_url);
       switch (page) {
         case 'leaderboard': return <LeaderboardPage user={user} seasonTheme={seasonTheme} themeAssets={themeAssets} />;
         case 'roulette': return <RoulettePage user={user} onUpdateUser={updateUser} />;

@@ -60,6 +60,7 @@ async def _post_telegram_json(
         "sendMessage": "send-message",
         "answerCallbackQuery": "answer-callback-query",
         "getFile": "get-file",
+        "getUserProfilePhotos": "get-user-profile-photos",
     }
     url = direct_url
     headers: dict[str, str] = {}
@@ -463,6 +464,26 @@ async def get_telegram_file_path(file_id: str) -> str:
     if not result.get("ok") or "result" not in result or "file_path" not in result["result"]:
         raise Exception(f"Telegram getFile error: {result}")
     return result["result"]["file_path"]
+
+
+async def get_telegram_user_profile_photo_path(telegram_id: int) -> str | None:
+    """Возвращает file_path последнего фото профиля пользователя Telegram."""
+    timeout = httpx.Timeout(30.0, connect=10.0)
+    result = await _post_telegram_json(
+        method="getUserProfilePhotos",
+        direct_url=f"{TELEGRAM_API_URL}getUserProfilePhotos",
+        payload={"user_id": telegram_id, "limit": 1},
+        timeout=timeout,
+    )
+    if not result.get("ok"):
+        return None
+    photos = result.get("result", {}).get("photos") or []
+    if not photos or not photos[0]:
+        return None
+    file_id = photos[0][-1].get("file_id")
+    if not file_id:
+        return None
+    return await get_telegram_file_path(file_id)
 
 
 async def download_telegram_file(file_path: str) -> bytes:

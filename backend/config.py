@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     S3_OBJECT_ACL: str = ""
     IMAGE_AVIF_QUALITY: int = 55
     IMAGE_MAX_SIDE_PX: int = 2048
+    AVATAR_MAX_SIDE_PX: int = 512
+    AVATAR_WEBP_QUALITY: int = 82
+    AVATAR_REFRESH_DAYS: int = 30
+    INTERNAL_SCHEDULER_ENABLED: bool = True
 
     # Раздача собранного Vite-фронта из одного контейнера (Docker / Timeweb)
     SERVE_SPA: bool = False
