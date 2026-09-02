@@ -63,6 +63,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState('home');
+  const [homeSection, setHomeSection] = useState('feed');
   const [telegramPhotoUrl, setTelegramPhotoUrl] = useState(null);
   const [showPendingBanner, setShowPendingBanner] = useState(false);
  // 2. Добавляем новое состояние для принудительного показа обучения
@@ -383,6 +384,14 @@ function App() {
   
   const navigate = (targetPage) => {
     setShowPendingBanner(false);
+    if (targetPage === 'leaderboard' && !isDesktop) {
+      setHomeSection('rating');
+      setPage('home');
+      return;
+    }
+    if (targetPage === 'home') {
+      setHomeSection('feed');
+    }
     setPage(targetPage);
   };
   
@@ -572,7 +581,22 @@ function App() {
         telegramPhotoUrl ||
         getTelegramPhotoProxyUrl(user?.telegram_photo_url);
       switch (page) {
-        case 'leaderboard': return <LeaderboardPage user={user} seasonTheme={seasonTheme} themeAssets={themeAssets} />;
+        case 'leaderboard':
+          if (!isDesktop) {
+            return (
+              <HomePage
+                user={user}
+                telegramPhotoUrl={effectiveTelegramPhotoUrl}
+                onNavigate={navigate}
+                isDesktop={isDesktop}
+                seasonTheme={seasonTheme}
+                themeAssets={themeAssets}
+                homeSection="rating"
+                onHomeSectionChange={setHomeSection}
+              />
+            );
+          }
+          return <LeaderboardPage user={user} seasonTheme={seasonTheme} themeAssets={themeAssets} />;
         case 'roulette': return <RoulettePage user={user} onUpdateUser={updateUser} />;
         case 'marketplace': return <MarketplacePage user={user} onPurchaseSuccess={handlePurchaseAndUpdate} />;
         case 'profile': return <ProfilePage user={user} telegramPhotoUrl={effectiveTelegramPhotoUrl} onNavigate={navigate} />;
@@ -595,7 +619,18 @@ function App() {
         case 'admin': return <AdminPage seasonTheme={seasonTheme} themeAssets={themeAssets} onAppearanceUpdated={handleAppearanceUpdated} />;
         case 'home':
         default:
-          return <HomePage user={user} telegramPhotoUrl={effectiveTelegramPhotoUrl} onNavigate={navigate} isDesktop={isDesktop} seasonTheme={seasonTheme} themeAssets={themeAssets} />;
+          return (
+            <HomePage
+              user={user}
+              telegramPhotoUrl={effectiveTelegramPhotoUrl}
+              onNavigate={navigate}
+              isDesktop={isDesktop}
+              seasonTheme={seasonTheme}
+              themeAssets={themeAssets}
+              homeSection={homeSection}
+              onHomeSectionChange={setHomeSection}
+            />
+          );
       }
     }
     
