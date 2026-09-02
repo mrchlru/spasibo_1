@@ -8,6 +8,14 @@
   overflow-x: hidden;
 }
 
+.embeddedRoot {
+  padding: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
 /* --- НАЧАЛО НОВЫХ СТИЛЕЙ ДЛЯ ВКЛАДОК --- */
 
 /* Главный прямоугольник-контейнер */

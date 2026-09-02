@@ -9,6 +9,8 @@ import { formatToMsk, formatFeedDate } from '../utils/dateFormatter';
 import LeaderboardBanner from '../components/LeaderboardBanner';
 import Garland from '../components/Garland';
 import FeedPostModal from '../components/FeedPostModal';
+import SectionSlider from '../components/SectionSlider';
+import LeaderboardContent from '../components/LeaderboardContent';
 import { resolveSeasonAssets } from '../themeAssetDefaults';
 
 function normalizeFeedEntries(data) {
@@ -30,7 +32,16 @@ function canAuthorPinPost(post, user) {
   return post.created_by_user_id === user.id || post.author?.id === user.id;
 }
 
-function HomePage({ user, onNavigate, telegramPhotoUrl, isDesktop, seasonTheme, themeAssets }) {
+function HomePage({
+  user,
+  onNavigate,
+  telegramPhotoUrl,
+  isDesktop,
+  seasonTheme,
+  themeAssets,
+  homeSection = 'feed',
+  onHomeSectionChange,
+}) {
   const isWinterTheme = seasonTheme === 'winter';
   const seasonKey = isWinterTheme ? 'winter' : 'summer';
   const mergedAssets = useMemo(
@@ -326,6 +337,11 @@ function HomePage({ user, onNavigate, telegramPhotoUrl, isDesktop, seasonTheme, 
 
   const streamDateKeys = Object.keys(groupedStream);
   const hasFeedContent = pinnedEntries.length > 0 || streamDateKeys.length > 0;
+  const isRatingSection = !isDesktop && homeSection === 'rating';
+
+  function handleSectionChange(section) {
+    onHomeSectionChange?.(section);
+  }
 
   return (
     <div className={styles.pageContainer}>
@@ -344,6 +360,10 @@ function HomePage({ user, onNavigate, telegramPhotoUrl, isDesktop, seasonTheme, 
             onClick={() => onNavigate('transfer')}
           />
         </div>
+
+        {!isDesktop && (
+          <SectionSlider activeSection={homeSection} onChange={handleSectionChange} />
+        )}
 
         {mainBanners.length > 0 && (
           <div className={styles.sliderContainer}>
@@ -392,7 +412,7 @@ function HomePage({ user, onNavigate, telegramPhotoUrl, isDesktop, seasonTheme, 
           </div>
         )}
 
-        {photoFeedBanners.length > 0 && (
+        {photoFeedBanners.length > 0 && !isRatingSection && (
           <div className={styles.photoFeed}>
             <div className={styles.photoFeedTrack}>
               {[...photoFeedBanners, ...photoFeedBanners].map((banner, index) => (
@@ -404,6 +424,17 @@ function HomePage({ user, onNavigate, telegramPhotoUrl, isDesktop, seasonTheme, 
           </div>
         )}
 
+        {isRatingSection ? (
+          <div className={styles.feedSection}>
+            <h3 className={styles.feedTitle}>Рейтинг</h3>
+            <LeaderboardContent
+              user={user}
+              seasonTheme={seasonTheme}
+              themeAssets={themeAssets}
+              embedded
+            />
+          </div>
+        ) : (
         <div className={styles.feedSection}>
           <h3 className={styles.feedTitle}>Последняя активность</h3>
           <div className={styles.feedGrid}>
@@ -430,9 +461,10 @@ function HomePage({ user, onNavigate, telegramPhotoUrl, isDesktop, seasonTheme, 
             )}
           </div>
         </div>
+        )}
       </div>
 
-      {canManageFeedPosts(user) && (
+      {canManageFeedPosts(user) && !isRatingSection && (
         <button type="button" className={styles.publishFab} aria-label="Написать новость" onClick={openCreateModal}>
           <FaPen size={18} />
         </button>

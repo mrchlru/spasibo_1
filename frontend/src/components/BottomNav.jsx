@@ -1,6 +1,6 @@
 // frontend/src/components/BottomNav.jsx
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { FaHome, FaTrophy, FaStore, FaUser, FaCog, FaDice } from 'react-icons/fa';
+import { FaHome, FaStore, FaUser, FaCog, FaDice } from 'react-icons/fa';
 import { getMarketItems, getLeaderboard, getFeed } from '../api';
 import { setCachedData, getCachedData } from '../storage';
 import { isIosGlassEnabled } from '../platform/iosGlass.js';
@@ -192,7 +192,6 @@ function BottomNav({ user, activePage, onNavigate }) {
 
   const navItems = [
     { id: 'home', label: 'Лента', icon: <FaHome size={22} /> },
-    { id: 'leaderboard', label: 'Рейтинг', icon: <FaTrophy size={22} /> },
     { id: 'roulette', label: 'Рулетка', icon: <FaDice size={22} /> },
     { id: 'marketplace', label: 'Магазин', icon: <FaStore size={22} /> },
     { id: 'profile', label: 'Профиль', icon: <FaUser size={22} /> },
