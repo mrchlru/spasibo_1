@@ -1,16 +1,17 @@
 // frontend/src/pages/HomePage.jsx
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { FaPen, FaThumbtack, FaEye, FaPencil, FaBullhorn } from 'react-icons/fa6';
+import { FaPen, FaThumbtack, FaEye, FaPencil, FaBullhorn, FaCakeCandles } from 'react-icons/fa6';
 import { getFeed, getBanners, publishFeedPost, pinFeedPost, unpinFeedPost, resolveAvatarUrl } from '../api';
 import styles from './HomePage.module.css';
-import { getCachedData } from '../storage';
+import { getCachedData, setCachedData } from '../storage';
 import { formatToMsk, formatFeedDate } from '../utils/dateFormatter';
 import LeaderboardBanner from '../components/LeaderboardBanner';
 import Garland from '../components/Garland';
 import FeedPostModal from '../components/FeedPostModal';
 import SectionSlider from '../components/SectionSlider';
 import LeaderboardContent from '../components/LeaderboardContent';
+import FeedSkeleton from '../components/FeedSkeleton';
 import { resolveSeasonAssets } from '../themeAssetDefaults';
 
 function normalizeFeedEntries(data) {
@@ -50,9 +51,12 @@ function HomePage({
   );
   const sendThanksImage = mergedAssets.thanks_button;
   const feedLogoImage = mergedAssets.thanks_feed_logo;
-  const [feedEntries, setFeedEntries] = useState(() => normalizeFeedEntries(getCachedData('feed')));
-  const [banners, setBanners] = useState(() => getCachedData('banners') || []);
-  const [isLoading, setIsLoading] = useState(!feedEntries);
+  const initialFeedEntries = normalizeFeedEntries(getCachedData('feed'));
+  const initialBanners = getCachedData('banners') || [];
+  const hasInitialFeed = initialFeedEntries.length > 0;
+  const [feedEntries, setFeedEntries] = useState(initialFeedEntries);
+  const [banners, setBanners] = useState(initialBanners);
+  const [isLoading, setIsLoading] = useState(!hasInitialFeed);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [feedModalOpen, setFeedModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
@@ -61,7 +65,9 @@ function HomePage({
   const refreshFeed = useCallback(async () => {
     try {
       const response = await getFeed();
-      setFeedEntries(normalizeFeedEntries(response.data));
+      const normalized = normalizeFeedEntries(response.data);
+      setFeedEntries(normalized);
+      setCachedData('feed', response.data);
     } catch (error) {
       console.error('Failed to fetch feed', error);
     }
@@ -69,7 +75,7 @@ function HomePage({
 
   useEffect(() => {
     const fetchData = async () => {
-      const promises = [];
+      const promises = [refreshFeed()];
 
       if (!banners || banners.length === 0) {
         promises.push(
@@ -79,14 +85,7 @@ function HomePage({
         );
       }
 
-      if (!feedEntries) {
-        promises.push(refreshFeed());
-      }
-
-      if (promises.length > 0) {
-        await Promise.all(promises);
-      }
-
+      await Promise.all(promises);
       setIsLoading(false);
     };
 
@@ -152,6 +151,14 @@ function HomePage({
           key: `tx-${entry.transaction.id}`,
           timestamp: entry.timestamp,
           transaction: entry.transaction,
+        });
+        continue;
+      }
+      if (entry.kind === 'birthday' && entry.birthday) {
+        stream.push({
+          key: `birthday-${entry.birthday.user_id}`,
+          timestamp: entry.timestamp,
+          birthday: entry.birthday,
         });
       }
     }
@@ -316,6 +323,31 @@ function HomePage({
     );
   }
 
+  function renderBirthdayCard(birthday) {
+    const name = birthday.display_name || birthday.first_name || 'коллеги';
+    return (
+      <div key={`birthday-${birthday.user_id}`} className={`${styles.feedItem} ${styles.feedItemBirthday}`}>
+        <div className={styles.feedBirthdayIcon} aria-hidden="true">
+          <FaCakeCandles size={28} />
+        </div>
+        <div className={styles.feedItemContent}>
+          <p className={styles.feedBirthdayTitle}>Сегодня день рождения у {name}!</p>
+          <p className={styles.feedBirthdayMessage}>
+            Дарим подарок — {birthday.bonus_amount || 15} спасибок 🎁
+          </p>
+        </div>
+        {birthday.telegram_photo_url && (
+          <img
+            src={resolveAvatarUrl(birthday.telegram_photo_url) || 'placeholder.png'}
+            alt=""
+            className={styles.feedBirthdayAvatar}
+            loading="lazy"
+          />
+        )}
+      </div>
+    );
+  }
+
   function renderTransactionCard(item) {
     return (
       <div key={`tx-${item.id}`} className={styles.feedItem}>
@@ -365,7 +397,7 @@ function HomePage({
           <SectionSlider activeSection={homeSection} onChange={handleSectionChange} />
         )}
 
-        {mainBanners.length > 0 && (
+        {mainBanners.length > 0 && !isRatingSection && (
           <div className={styles.sliderContainer}>
             {mainBanners.length > 1 && (
               <button className={styles.sliderArrowLeft} onClick={goToPrevSlide} aria-label="Предыдущий баннер">
@@ -438,8 +470,8 @@ function HomePage({
         <div className={styles.feedSection}>
           <h3 className={styles.feedTitle}>Последняя активность</h3>
           <div className={styles.feedGrid}>
-            {isLoading ? (
-              <p>Загрузка...</p>
+            {isLoading && !hasFeedContent ? (
+              <FeedSkeleton count={4} />
             ) : hasFeedContent ? (
               <>
                 {pinnedEntries.map((entry) => renderPostCard(entry.post))}
@@ -450,6 +482,7 @@ function HomePage({
                     </div>
                     {groupedStream[dateKey].map((entry) => {
                       if (entry.post) return renderPostCard(entry.post);
+                      if (entry.birthday) return renderBirthdayCard(entry.birthday);
                       if (entry.transaction) return renderTransactionCard(entry.transaction);
                       return null;
                     })}

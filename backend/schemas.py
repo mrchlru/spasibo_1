@@ -259,7 +259,6 @@ class UserUpdate(BaseModel):
     department: Optional[str] = None
     position: Optional[str] = None
     phone_number: Optional[str] = None
-    date_of_birth: Optional[str] = None
     email: Optional[str] = None
 
 class ProfileUpdateRequest(BaseModel):
@@ -267,7 +266,6 @@ class ProfileUpdateRequest(BaseModel):
     department: Optional[str] = None
     position: Optional[str] = None
     phone_number: Optional[str] = None
-    date_of_birth: Optional[str] = None
     email: Optional[str] = None
 
 class AdminUserUpdate(BaseModel):
@@ -809,10 +807,21 @@ class FeedPostResponse(BaseModel):
 
 
 class UnifiedFeedEntry(BaseModel):
-    kind: Literal["post", "transaction"]
+    kind: Literal["post", "transaction", "birthday"]
     timestamp: datetime
     post: Optional[FeedPostResponse] = None
     transaction: Optional[FeedItem] = None
+    birthday: Optional["BirthdayFeedItem"] = None
+
+
+class BirthdayFeedItem(BaseModel):
+    user_id: int
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    username: Optional[str] = None
+    telegram_photo_url: Optional[str] = None
+    bonus_amount: int = 15
+    display_name: str
 
 
 class AdminDocumentUploadResponse(BaseModel):
