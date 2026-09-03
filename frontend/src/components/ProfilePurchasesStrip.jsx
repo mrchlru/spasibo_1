@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getMyPurchases } from '../api';
 import { downloadUrlAsFile, isPrizeImageUrl } from '../utils/prizeAssets';
+import { isHttpUrl, openExternalLink } from '../utils/openExternalLink';
 import styles from './ProfilePurchasesStrip.module.css';
 
 /** Загружает и показывает купленные товары в профиле. */
@@ -86,7 +87,11 @@ export function ProfilePurchasesStrip() {
 function PurchaseFulfillmentModal({ purchase, onClose }) {
   const code = purchase.issued_code?.trim() || '';
   const isImage = isPrizeImageUrl(code);
-  const isLink = /^https?:\/\//i.test(code);
+  const isLink = isHttpUrl(code);
+
+  function handleOpenLink() {
+    openExternalLink(code);
+  }
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -130,14 +135,13 @@ function PurchaseFulfillmentModal({ purchase, onClose }) {
               </div>
             ) : null}
             {isLink && !isImage ? (
-              <a
+              <button
+                type="button"
                 className={styles.prizeAction}
-                href={code}
-                target="_blank"
-                rel="noreferrer"
+                onClick={handleOpenLink}
               >
                 Открыть ссылку
-              </a>
+              </button>
             ) : null}
             {!isImage && !isLink ? (
               <p className={styles.codeValue}>{code}</p>
