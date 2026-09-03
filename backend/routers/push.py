@@ -6,8 +6,8 @@ import models
 import schemas
 from database import get_db
 from dependencies import get_current_user
-from fcm_service import is_fcm_configured
-from push_service import get_vapid_public_key, is_push_configured, send_user_push
+from fcm_service import get_active_android_tokens, is_fcm_configured
+from push_service import get_vapid_public_key, is_push_configured, send_user_push_with_stats
 
 router = APIRouter(prefix="/push", tags=["push"])
 
@@ -25,6 +25,21 @@ async def get_public_vapid_key() -> schemas.PushVapidPublicKeyResponse:
 async def get_android_push_config() -> schemas.AndroidPushConfigResponse:
     """Статус FCM для нативного Android-приложения."""
     return schemas.AndroidPushConfigResponse(enabled=is_fcm_configured())
+
+
+@router.get("/android/status", response_model=schemas.AndroidPushStatusResponse)
+async def get_android_push_status(
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> schemas.AndroidPushStatusResponse:
+    """Статус FCM-подписки текущего пользователя (число токенов на сервере)."""
+    tokens = await get_active_android_tokens(db, user.id)
+    fcm_enabled = is_fcm_configured()
+    return schemas.AndroidPushStatusResponse(
+        fcm_enabled=fcm_enabled,
+        tokens_registered=len(tokens),
+        ready=fcm_enabled and len(tokens) > 0,
+    )
 
 
 @router.post("/android/register", status_code=status.HTTP_204_NO_CONTENT)
@@ -130,17 +145,17 @@ async def unsubscribe_push(
     await db.commit()
 
 
-@router.post("/test")
+@router.post("/test", response_model=schemas.PushTestResponse)
 async def send_test_push(
     body: schemas.PushTestRequest,
     user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> schemas.PushTestResponse:
     """Отправляет тестовое push-уведомление текущему пользователю."""
     if not is_push_configured() and not is_fcm_configured():
         raise HTTPException(status_code=503, detail="Push не настроен на сервере")
 
-    delivered = await send_user_push(
+    stats = await send_user_push_with_stats(
         db,
         user.id,
         title=body.title,
@@ -149,4 +164,4 @@ async def send_test_push(
         tag="spasibo-test",
     )
     await db.commit()
-    return {"delivered": delivered}
+    return schemas.PushTestResponse(**stats)

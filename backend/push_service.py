@@ -201,6 +201,29 @@ async def send_user_push(
     tag: str | None = None,
 ) -> int:
     """Web Push + FCM (Android) для пользователя."""
+    stats = await send_user_push_with_stats(
+        db,
+        user_id,
+        title=title,
+        body=body,
+        url=url,
+        tag=tag,
+    )
+    return stats["delivered"]
+
+
+async def send_user_push_with_stats(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    title: str,
+    body: str,
+    url: str = '/',
+    tag: str | None = None,
+) -> dict[str, int]:
+    """Web Push + FCM с разбивкой доставки по каналам."""
+    from fcm_service import get_active_android_tokens, send_user_fcm_push
+
     web_delivered = await send_user_web_push(
         db,
         user_id,
@@ -209,9 +232,9 @@ async def send_user_push(
         url=url,
         tag=tag,
     )
+    fcm_tokens = len(await get_active_android_tokens(db, user_id))
+    fcm_delivered = 0
     try:
-        from fcm_service import send_user_fcm_push
-
         fcm_delivered = await send_user_fcm_push(
             db,
             user_id,
@@ -222,5 +245,10 @@ async def send_user_push(
         )
     except Exception as exc:
         logger.warning("FCM для user_id=%s не отправлен: %s", user_id, exc)
-        fcm_delivered = 0
-    return web_delivered + fcm_delivered
+
+    return {
+        "delivered": web_delivered + fcm_delivered,
+        "web_delivered": web_delivered,
+        "fcm_delivered": fcm_delivered,
+        "fcm_tokens": fcm_tokens,
+    }

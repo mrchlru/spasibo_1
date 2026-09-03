@@ -3,7 +3,7 @@
  * Нативный код инжектирует window.SpasiboAndroid и UA SpasiboAndroid/1.
  */
 
-import { sendTestPush } from '../api.js';
+import { getAndroidPushStatus, sendTestPush } from '../api.js';
 
 const WELCOME_PUSH_SENT_KEY = 'android_push_welcome_sent';
 const PROMPT_DISMISSED_SESSION_KEY = 'android_push_prompt_dismissed_session';
@@ -105,22 +105,55 @@ async function waitForAndroidNotificationPermission(timeoutMs) {
   return poll;
 }
 
+async function waitForAndroidPushRegisteredOnServer(timeoutMs = 10_000) {
+  const step = 800;
+  let waited = 0;
+  while (waited < timeoutMs) {
+    try {
+      const status = await getAndroidPushStatus();
+      if (status.tokens_registered > 0) {
+        return status;
+      }
+    } catch {
+      /* сервер ещё не видит токен */
+    }
+    await sleep(step);
+    waited += step;
+  }
+  try {
+    return await getAndroidPushStatus();
+  } catch {
+    return { fcm_enabled: false, tokens_registered: 0, ready: false };
+  }
+}
+
 /**
  * Регистрирует FCM-токен и отправляет приветственный push один раз.
  *
- * @returns {Promise<{ registered: boolean, welcomeSent: boolean }>}
+ * @returns {Promise<{ registered: boolean, welcomeSent: boolean, tokensRegistered?: number }>}
  */
 export async function registerAndroidPushAndSendWelcome() {
   const bridge = window.SpasiboAndroid;
   if (!bridge?.isNotificationPermissionGranted()) {
-    return { registered: false, welcomeSent: false };
+    return { registered: false, welcomeSent: false, tokensRegistered: 0 };
   }
 
   bridge.registerPushToken();
-  await sleep(1800);
+  const status = await waitForAndroidPushRegisteredOnServer();
+  if (status.tokens_registered <= 0) {
+    return {
+      registered: false,
+      welcomeSent: false,
+      tokensRegistered: 0,
+    };
+  }
 
   const welcomeSent = await sendAndroidWelcomeTestPushIfNeeded();
-  return { registered: true, welcomeSent };
+  return {
+    registered: true,
+    welcomeSent,
+    tokensRegistered: status.tokens_registered,
+  };
 }
 
 /**
@@ -146,7 +179,7 @@ export async function sendAndroidWelcomeTestPushIfNeeded() {
       body: 'Push-уведомления «Спасибо» работают. Вы будете получать новости и спасибки.',
       url: '/',
     });
-    if ((data?.delivered ?? 0) > 0) {
+    if ((data?.fcm_delivered ?? 0) > 0 || ((data?.delivered ?? 0) > 0 && (data?.fcm_tokens ?? 0) > 0)) {
       try {
         localStorage.setItem(WELCOME_PUSH_SENT_KEY, '1');
       } catch {
@@ -184,8 +217,37 @@ export async function enableAndroidNativePush() {
     }
   }
 
-  const { welcomeSent } = await registerAndroidPushAndSendWelcome();
-  return { ok: true, welcomeSent };
+  const registration = await registerAndroidPushAndSendWelcome();
+  if (!registration.registered) {
+    return {
+      ok: false,
+      reason: 'fcm_token_missing',
+      detail:
+        'Разрешение выдано, но FCM-токен не зарегистрирован. Проверьте google-services.json в APK и Google Play Services на телефоне.',
+    };
+  }
+  return { ok: true, welcomeSent: registration.welcomeSent };
+}
+
+/** Проверяет, зарегистрирован ли FCM-токен этого телефона на сервере. */
+export async function fetchAndroidPushServerStatus() {
+  if (!isSpasiboAndroidApp()) {
+    return { fcm_enabled: false, tokens_registered: 0, ready: false };
+  }
+  return getAndroidPushStatus();
+}
+
+/** Push на Android готов: разрешение выдано и токен есть на сервере. */
+export async function isAndroidPushReady() {
+  if (!isAndroidNativePushGranted()) {
+    return false;
+  }
+  try {
+    const status = await getAndroidPushStatus();
+    return Boolean(status.ready);
+  } catch {
+    return false;
+  }
 }
 
 /** Регистрирует FCM, если разрешение уже выдано (без запроса диалога). */

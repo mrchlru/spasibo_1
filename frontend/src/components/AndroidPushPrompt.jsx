@@ -51,7 +51,9 @@ function AndroidPushPrompt({ user }) {
         setVisible(false);
         return;
       }
-      if (result.reason !== 'permission_dismissed') {
+      if (result.reason === 'fcm_token_missing') {
+        window.SpasiboAndroid?.showNativeToast?.(result.detail);
+      } else if (result.reason !== 'permission_dismissed') {
         window.SpasiboAndroid?.openAppNotificationSettings?.();
       }
     } finally {

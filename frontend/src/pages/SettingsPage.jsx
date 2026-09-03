@@ -17,6 +17,7 @@ import {
 import {
   enableAndroidNativePush,
   isAndroidNativePushGranted,
+  isAndroidPushReady,
   isSpasiboAndroidApp,
   registerAndroidPushAndSendWelcome,
 } from '../pwa/androidNativePush.js';
@@ -47,6 +48,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [testPushLoading, setTestPushLoading] = useState(false);
+  const [androidPushPending, setAndroidPushPending] = useState(false);
 
   const isAndroidApp = isSpasiboAndroidApp();
   const pushControlsAvailable = isAndroidApp || isPushApiAvailable();
@@ -55,8 +57,11 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
     let cancelled = false;
     async function loadPushState() {
       if (isAndroidApp) {
+        const permissionGranted = isAndroidNativePushGranted();
+        const ready = permissionGranted ? await isAndroidPushReady() : false;
         if (!cancelled) {
-          setPushEnabled(isAndroidNativePushGranted());
+          setPushEnabled(ready);
+          setAndroidPushPending(permissionGranted && !ready);
         }
         return;
       }
@@ -79,9 +84,16 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
       setPushLoading(true);
       try {
         const result = await enableAndroidNativePush();
-        if (result.ok) {
-          setPushEnabled(true);
-          showAlert('Push-уведомления включены', 'success');
+        const ready = await isAndroidPushReady();
+        setPushEnabled(ready);
+        setAndroidPushPending(!ready && isAndroidNativePushGranted());
+        if (result.ok && ready) {
+          showAlert('Push-уведомления включены на этом телефоне', 'success');
+        } else if (result.ok && !ready) {
+          showAlert(
+            'Разрешение выдано, но телефон не подключился к серверу. Проверьте google-services.json в APK и Logcat (SpasiboWebView).',
+            'error',
+          );
         } else {
           showAlert(
             result.detail || pushBlockReasonMessage(result.reason),
@@ -116,7 +128,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
   };
 
   const handleTestPush = async () => {
-    if (!pushEnabled) {
+    if (!pushEnabled && !(isAndroidApp && androidPushPending)) {
       showAlert('Сначала включите push-уведомления', 'error');
       return;
     }
@@ -134,6 +146,37 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
         url: '/',
       });
       const delivered = data?.delivered ?? 0;
+      const fcmDelivered = data?.fcm_delivered ?? 0;
+      const webDelivered = data?.web_delivered ?? 0;
+      const fcmTokens = data?.fcm_tokens ?? 0;
+
+      if (isAndroidApp) {
+        if (fcmDelivered > 0) {
+          setPushEnabled(true);
+          setAndroidPushPending(false);
+          showAlert('Push доставлен на этот Android-телефон', 'success');
+          return;
+        }
+        if (fcmTokens === 0) {
+          setPushEnabled(false);
+          setAndroidPushPending(isAndroidNativePushGranted());
+          showAlert(
+            'FCM-токен этого телефона не зарегистрирован на сервере. Проверьте google-services.json в APK (Firebase) и Logcat: SpasiboWebView.',
+            'error',
+          );
+          return;
+        }
+        if (webDelivered > 0) {
+          showAlert(
+            'Уведомление ушло на iPhone (Web Push), но не на Android. Переустановите APK с правильным google-services.json.',
+            'error',
+          );
+          return;
+        }
+        showAlert('Сервер не смог доставить push на Android (FCM).', 'error');
+        return;
+      }
+
       if (delivered > 0) {
         showAlert('Тестовое уведомление отправлено', 'success');
       } else {
@@ -231,17 +274,21 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
           <button
             type="button"
             onClick={handleEnablePush}
-            disabled={pushLoading || pushEnabled}
+            disabled={pushLoading || (pushEnabled && !androidPushPending)}
             className={styles.settingsItem}
           >
             <FaBell className={styles.icon} />
             <span>
-              {pushEnabled ? 'Push-уведомления включены' : 'Включить push-уведомления'}
+              {pushEnabled
+                ? 'Push-уведомления включены'
+                : androidPushPending
+                  ? 'Подключить push на этом телефоне'
+                  : 'Включить push-уведомления'}
             </span>
           </button>
         )}
 
-        {pushControlsAvailable && pushEnabled && (
+        {pushControlsAvailable && (pushEnabled || androidPushPending) && (
           <button
             type="button"
             onClick={handleTestPush}

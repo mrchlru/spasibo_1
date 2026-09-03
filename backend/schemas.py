@@ -747,6 +747,19 @@ class AndroidPushConfigResponse(BaseModel):
     enabled: bool
 
 
+class AndroidPushStatusResponse(BaseModel):
+    fcm_enabled: bool
+    tokens_registered: int
+    ready: bool
+
+
+class PushTestResponse(BaseModel):
+    delivered: int
+    web_delivered: int
+    fcm_delivered: int
+    fcm_tokens: int
+
+
 FeedPostAttachmentKind = Literal["image", "document"]
 
 
