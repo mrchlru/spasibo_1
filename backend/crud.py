@@ -594,7 +594,9 @@ async def get_active_items(db: AsyncSession, include_codes: bool = False):
                 item.stock = 999999
         items.append(item)
 
-    return items
+    from market_item_order_service import sort_active_market_items
+
+    return sort_active_market_items(items)
     
 async def create_market_item(db: AsyncSession, item: schemas.MarketItemCreate):
     db_item = models.MarketItem(**item.model_dump())
@@ -1300,6 +1302,9 @@ async def _invalidate_feed_and_leaderboard(reason: str):
 
 # Мы переименуем старую функцию create_market_item
 async def admin_create_market_item(db: AsyncSession, item: schemas.MarketItemCreate):
+    from market_item_order_service import next_market_item_sort_order
+    from object_storage import slugify_prize_folder
+
     calculated_price = item.price_rub // 30
     
     codes = []
@@ -1319,7 +1324,9 @@ async def admin_create_market_item(db: AsyncSession, item: schemas.MarketItemCre
         original_price=item.original_price,
         is_auto_issuance=item.is_auto_issuance,
         is_shared_gift=item.is_shared_gift,
-        is_local_purchase=item.is_local_purchase
+        is_local_purchase=item.is_local_purchase,
+        sort_order=await next_market_item_sort_order(db),
+        prize_folder_slug=slugify_prize_folder(item.name) if item.is_auto_issuance and codes else None,
     )
     
     # Сначала добавляем основной товар в сессию, чтобы он получил ID
@@ -1373,6 +1380,8 @@ async def admin_update_market_item(db: AsyncSession, item_id: int, item_data: sc
         print(f"--- [UPDATE ITEM {item_id}] ОШИБКА: Товар не найден ---") # <-- Lог ошибки
         return None
 
+    old_name = db_item.name
+
     item_before_update = SimpleNamespace(
         price=db_item.price,
         original_price=db_item.original_price,
@@ -1405,6 +1414,23 @@ async def admin_update_market_item(db: AsyncSession, item_id: int, item_data: sc
                  print(f"--- [UPDATE ITEM {item_id}] Обновляем поле '{key}': '{getattr(db_item, key)}' -> '{value}' ---") # <-- Лог 3.1
                  setattr(db_item, key, value)
                  updated_fields_count += 1
+
+    if (
+        db_item.is_auto_issuance
+        and "name" in update_data
+        and isinstance(update_data.get("name"), str)
+        and update_data["name"].strip()
+        and update_data["name"].strip() != old_name
+    ):
+        from market_prize_asset_service import sync_prize_folder_after_rename
+
+        await sync_prize_folder_after_rename(
+            db,
+            db_item,
+            update_data["name"].strip(),
+            previous_name=old_name,
+        )
+        updated_fields_count += 1
 
     # Логика для обычных товаров
     stock_changed = False

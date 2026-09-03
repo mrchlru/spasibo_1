@@ -1,13 +1,30 @@
 // frontend/src/pages/admin/ItemCreation.jsx
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { clearCache } from '../../storage';
-import { createMarketItem, getAllMarketItems, updateMarketItem, archiveMarketItem, getArchivedMarketItems, restoreMarketItem, deleteMarketItemPermanently } from '../../api';
+import {
+  createMarketItem,
+  getAllMarketItems,
+  updateMarketItem,
+  archiveMarketItem,
+  getArchivedMarketItems,
+  restoreMarketItem,
+  deleteMarketItemPermanently,
+  reorderMarketItems,
+  uploadPrizeImage,
+} from '../../api';
 import AdminImageUrlField from '../../components/AdminImageUrlField';
-import { FaArchive, FaTrash } from 'react-icons/fa';
+import { FaArchive, FaTrash, FaPen } from 'react-icons/fa';
 import { useModalAlert } from '../../contexts/ModalAlertContext';
 import { useConfirmation } from '../../contexts/ConfirmationContext';
+import { useDragReorder } from '../../hooks/useDragReorder';
 import styles from '../AdminPage.module.css';
+import sortStyles from '../../components/SortableList.module.css';
+import prizeStyles from './ItemCreationPrize.module.css';
+
+function isPrizeImageUrl(value) {
+  return typeof value === 'string' && value.includes('/market-prizes/');
+}
 
 const initialItemState = {
   name: '',
@@ -21,7 +38,7 @@ const initialItemState = {
   is_local_purchase: false,
   codes_text: '',
   added_stock: '',
-  new_item_codes: ''
+  new_item_codes: '',
 };
 
 const ItemCreation = () => {
@@ -33,6 +50,12 @@ const ItemCreation = () => {
   const [form, setForm] = useState(initialItemState);
   const [editingItemId, setEditingItemId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [issuanceMode, setIssuanceMode] = useState('codes');
+  const [prizeUrls, setPrizeUrls] = useState([]);
+  const [prizeUploading, setPrizeUploading] = useState(false);
+  const [prizeUploadDone, setPrizeUploadDone] = useState(0);
+  const [prizeUploadTotal, setPrizeUploadTotal] = useState(0);
+  const prizeFileInputRef = useRef(null);
 
   const fetchItems = async () => {
     setLoading(true);
@@ -53,6 +76,28 @@ const ItemCreation = () => {
   useEffect(() => {
     fetchItems();
   }, []);
+
+  const persistOrder = useCallback(async (orderedIds) => {
+    try {
+      const response = await reorderMarketItems(orderedIds);
+      setItems(response.data);
+      clearCache('market');
+    } catch (error) {
+      showAlert(error.response?.data?.detail || 'Не удалось сохранить порядок товаров.', 'error');
+      await fetchItems();
+      throw error;
+    }
+  }, [showAlert]);
+
+  const {
+    dragId,
+    handleDragStart,
+    handleDragOver,
+    handleDragEnd,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+  } = useDragReorder(items, setItems, persistOrder);
 
   const calculatedPrice = useMemo(() => {
       if (!form.price_rub || form.price_rub <= 0) return 0;
@@ -107,6 +152,10 @@ const ItemCreation = () => {
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
+    if (prizeUploading) {
+      showAlert('Дождитесь окончания загрузки картинок.', 'error');
+      return;
+    }
     setLoading(true);
 
     const isEditing = !!editingItemId;
@@ -114,7 +163,11 @@ const ItemCreation = () => {
 
     try {
       if (isEditing) {
-        const newCodes = form.is_auto_issuance ? form.new_item_codes.split('\n').filter(Boolean) : [];
+        const newCodes = form.is_auto_issuance
+          ? (issuanceMode === 'images'
+            ? prizeUrls
+            : form.new_item_codes.split('\n').filter(Boolean))
+          : [];
         itemDataToSend = {
           name: form.name,
           description: form.description,
@@ -131,9 +184,18 @@ const ItemCreation = () => {
         await updateMarketItem(editingItemId, itemDataToSend);
         showAlert('Товар успешно обновлен!', 'success');
       } else {
-        const codes = form.is_auto_issuance ? form.codes_text.split('\n').filter(Boolean) : [];
+        const codes = form.is_auto_issuance
+          ? (issuanceMode === 'images'
+            ? prizeUrls
+            : form.codes_text.split('\n').filter(Boolean))
+          : [];
         if (form.is_auto_issuance && codes.length === 0) {
-          showAlert('Для товаров с автовыдачей добавьте хотя бы один код.', 'error');
+          showAlert(
+            issuanceMode === 'images'
+              ? 'Загрузите хотя бы одну призовую картинку.'
+              : 'Для товаров с автовыдачей добавьте хотя бы один код.',
+            'error',
+          );
           setLoading(false);
           return;
         }
@@ -163,8 +225,48 @@ const ItemCreation = () => {
     }
   };
 
+  async function handlePrizeFilesSelected(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (files.length === 0) {
+      return;
+    }
+    const productName = String(form.name || '').trim();
+    if (!productName) {
+      showAlert('Сначала укажите название товара — от него зависит папка в хранилище.', 'error');
+      return;
+    }
+    setPrizeUploading(true);
+    setPrizeUploadDone(0);
+    setPrizeUploadTotal(files.length);
+    const uploaded = [];
+    try {
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        const response = await uploadPrizeImage(file, productName);
+        uploaded.push(response.data.url);
+        setPrizeUploadDone(index + 1);
+      }
+      setPrizeUrls((prev) => [...prev, ...uploaded]);
+      showAlert(`Загружено картинок: ${uploaded.length}`, 'success');
+    } catch (error) {
+      showAlert(error.response?.data?.detail || 'Не удалось загрузить одну из картинок.', 'error');
+      if (uploaded.length > 0) {
+        setPrizeUrls((prev) => [...prev, ...uploaded]);
+      }
+    } finally {
+      setPrizeUploading(false);
+      setPrizeUploadDone(0);
+      setPrizeUploadTotal(0);
+    }
+  }
+
   const handleEdit = (item) => {
     setEditingItemId(item.id);
+    const codeValues = item.codes ? item.codes.map((c) => c.code_value) : [];
+    const prizeCodeValues = codeValues.filter(isPrizeImageUrl);
+    setIssuanceMode(prizeCodeValues.length > 0 ? 'images' : 'codes');
+    setPrizeUrls([]);
     setForm({
         name: item.name,
         description: item.description || '',
@@ -175,9 +277,9 @@ const ItemCreation = () => {
         is_auto_issuance: item.is_auto_issuance,
         is_shared_gift: item.is_shared_gift || false,
         is_local_purchase: item.is_local_purchase || false,
-        codes_text: item.codes ? item.codes.map(c => c.code_value).join('\n') : '',
+        codes_text: codeValues.join('\n'),
         added_stock: '',
-        new_item_codes: ''
+        new_item_codes: '',
     });
     window.scrollTo(0, 0);
   };
@@ -185,6 +287,11 @@ const ItemCreation = () => {
   const resetForm = () => {
     setForm(initialItemState);
     setEditingItemId(null);
+    setIssuanceMode('codes');
+    setPrizeUrls([]);
+    setPrizeUploading(false);
+    setPrizeUploadDone(0);
+    setPrizeUploadTotal(0);
   };
   
   const handleArchive = async (itemId) => {
@@ -231,6 +338,100 @@ const ItemCreation = () => {
       }
     }
   };
+
+  function renderActiveList() {
+    return (
+      <>
+        <p className={sortStyles.dragHint}>
+          Зажмите ⋮⋮ и перетащите товар выше или ниже — так он отобразится в магазине у пользователей.
+        </p>
+        <ul className={sortStyles.sortableList}>
+          {items.map((item, index) => (
+            <li
+              key={item.id}
+              data-sortable-id={item.id}
+              className={`${sortStyles.sortableRow} ${dragId === item.id ? sortStyles.sortableRowDragging : ''}`}
+              draggable
+              onDragStart={() => handleDragStart(item.id)}
+              onDragOver={(event) => handleDragOver(event, item.id)}
+              onDragEnd={() => {
+                void handleDragEnd().catch(() => undefined);
+              }}
+              onTouchStart={(event) => handleTouchStart(event, item.id)}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={() => {
+                void handleTouchEnd().catch(() => undefined);
+              }}
+            >
+              <span className={sortStyles.dragHandle} aria-hidden="true">
+                ⋮⋮
+              </span>
+              <span className={sortStyles.orderBadge}>{index + 1}</span>
+              {item.image_url ? (
+                <img src={item.image_url} alt="" className={sortStyles.rowThumb} loading="lazy" />
+              ) : (
+                <span className={sortStyles.rowThumb} aria-hidden="true" />
+              )}
+              <div className={sortStyles.rowBody}>
+                <strong>{item.name}</strong>
+                {item.is_auto_issuance && <span style={{ color: '#007bff' }}>Автовыдача</span>}
+                {item.is_shared_gift && <span style={{ color: '#28a745' }}>Совместный подарок</span>}
+                {item.is_local_purchase && <span style={{ color: '#ff9800' }}>Локальный подарок</span>}
+                {item.original_price && item.original_price > item.price ? (
+                  <span>
+                    Цена: {item.price} (было <s style={{ color: '#999' }}>{item.original_price}</s>) спасибок
+                  </span>
+                ) : (
+                  <span>
+                    Цена: {item.price} спасибок ({item.price_rub} ₽)
+                  </span>
+                )}
+                <span>Остаток: {item.stock} шт.</span>
+              </div>
+              <div
+                className={styles.listItemActions}
+                onMouseDown={(event) => event.stopPropagation()}
+                onTouchStart={(event) => event.stopPropagation()}
+              >
+                <button type="button" onClick={() => handleEdit(item)} className={styles.buttonSmall} aria-label="Редактировать">
+                  <FaPen size={12} />
+                </button>
+                <button type="button" onClick={() => handleArchive(item.id)} className={styles.buttonSmallRed} aria-label="В архив">
+                  <FaTrash size={12} />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </>
+    );
+  }
+
+  function renderArchivedList() {
+    return (
+      <div className={styles.list}>
+        {archivedItems.map((item) => (
+          <div key={item.id} className={styles.listItem}>
+            {item.image_url && <img src={item.image_url} alt={item.name} className={styles.listItemImage} loading="lazy" />}
+            <div className={styles.listItemContent}>
+              <p><strong>{item.name}</strong></p>
+              <p>Цена: {item.price} спасибок ({item.price_rub} ₽)</p>
+              <p>Остаток: {item.stock} шт.</p>
+            </div>
+            <div className={styles.listItemActions}>
+              <button type="button" onClick={() => handleRestore(item.id)} className={styles.restoreButton}>
+                <FaArchive />
+                Восстановить
+              </button>
+              <button type="button" onClick={() => handleDeletePermanently(item.id, item.name)} className={styles.buttonSmallRed}>
+                <FaTrash /> Удалить
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <>
@@ -315,29 +516,124 @@ const ItemCreation = () => {
 
           {form.is_auto_issuance ? (
             <>
-              {editingItemId ? (
-                <textarea
-                  name="new_item_codes"
-                  value={form.new_item_codes}
-                  onChange={handleFormChange}
-                  placeholder="Добавить новые коды/ссылки (каждый с новой строки)"
-                  className={styles.textarea}
-                  rows={4}
-                />
-              ) : (
-                <textarea
-                  name="codes_text"
-                  value={form.codes_text}
-                  onChange={handleFormChange}
-                  placeholder="Вставьте сюда коды или ссылки. Каждый код с новой строки."
-                  className={styles.textarea}
-                  rows={5}
-                />
-              )}
-              <div className={styles.pricePreview}>
-                <p>Текущий остаток: <strong>{editingItemId ? form.stock : '...'}</strong></p>
-                <p>Будет добавлено: <strong>{(editingItemId ? form.new_item_codes : form.codes_text).split('\n').filter(Boolean).length}</strong></p>
+              <div className={prizeStyles.issuanceModes}>
+                <button
+                  type="button"
+                  className={`${prizeStyles.modeBtn} ${issuanceMode === 'codes' ? prizeStyles.modeBtnActive : ''}`}
+                  onClick={() => setIssuanceMode('codes')}
+                  disabled={prizeUploading}
+                >
+                  Коды / ссылки
+                </button>
+                <button
+                  type="button"
+                  className={`${prizeStyles.modeBtn} ${issuanceMode === 'images' ? prizeStyles.modeBtnActive : ''}`}
+                  onClick={() => setIssuanceMode('images')}
+                  disabled={prizeUploading}
+                >
+                  Картинки (JPEG в S3)
+                </button>
               </div>
+
+              {issuanceMode === 'codes' ? (
+                <>
+                  {editingItemId ? (
+                    <textarea
+                      name="new_item_codes"
+                      value={form.new_item_codes}
+                      onChange={handleFormChange}
+                      placeholder="Добавить новые коды/ссылки (каждый с новой строки)"
+                      className={styles.textarea}
+                      rows={4}
+                    />
+                  ) : (
+                    <textarea
+                      name="codes_text"
+                      value={form.codes_text}
+                      onChange={handleFormChange}
+                      placeholder="Вставьте сюда коды или ссылки. Каждый код с новой строки."
+                      className={styles.textarea}
+                      rows={5}
+                    />
+                  )}
+                  <div className={styles.pricePreview}>
+                    <p>Текущий остаток: <strong>{editingItemId ? form.stock : '...'}</strong></p>
+                    <p>
+                      Будет добавлено:{' '}
+                      <strong>
+                        {(editingItemId ? form.new_item_codes : form.codes_text)
+                          .split('\n')
+                          .filter(Boolean).length}
+                      </strong>
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className={prizeStyles.hint}>
+                    Картинки сохраняются в JPEG (без AVIF), чтобы их можно было открыть и скачать
+                    на телефоне. Папка в хранилище называется по названию товара
+                    {form.name.trim() ? ` («${form.name.trim()}»)` : ''}.
+                    {editingItemId
+                      ? ' Здесь добавляются новые картинки к уже существующим призам.'
+                      : ''}
+                  </p>
+                  <div className={prizeStyles.uploadRow}>
+                    <input
+                      ref={prizeFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className={prizeStyles.hiddenFile}
+                      onChange={(event) => {
+                        void handlePrizeFilesSelected(event);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className={styles.buttonGrey}
+                      disabled={prizeUploading || !form.name.trim()}
+                      onClick={() => prizeFileInputRef.current?.click()}
+                    >
+                      {prizeUploading ? 'Загрузка…' : 'Выбрать картинки'}
+                    </button>
+                  </div>
+                  {prizeUploading && (
+                    <div className={prizeStyles.progressBox} aria-live="polite">
+                      <span className={prizeStyles.spinner} aria-hidden="true" />
+                      <span className={prizeStyles.progressText}>
+                        Загружено {prizeUploadDone} из {prizeUploadTotal}
+                      </span>
+                    </div>
+                  )}
+                  {prizeUrls.length > 0 && (
+                    <div className={prizeStyles.thumbGrid}>
+                      {prizeUrls.map((url) => (
+                        <div key={url} className={prizeStyles.thumbCard}>
+                          <img src={url} alt="" className={prizeStyles.thumb} loading="lazy" />
+                          <button
+                            type="button"
+                            className={prizeStyles.removeThumb}
+                            aria-label="Удалить"
+                            disabled={prizeUploading}
+                            onClick={() =>
+                              setPrizeUrls((prev) => prev.filter((item) => item !== url))
+                            }
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className={styles.pricePreview}>
+                    <p>Текущий остаток: <strong>{editingItemId ? form.stock : '...'}</strong></p>
+                    <p>
+                      Будет добавлено картинок: <strong>{prizeUrls.length}</strong>
+                    </p>
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -349,7 +645,7 @@ const ItemCreation = () => {
             </>
           )}
 
-          <button type="submit" disabled={loading} className={styles.buttonGreen}>
+          <button type="submit" disabled={loading || prizeUploading} className={styles.buttonGreen}>
             {editingItemId ? 'Сохранить' : 'Создать'}
           </button>
           {editingItemId && <button type="button" onClick={resetForm} className={styles.buttonGrey}>Отмена</button>}
@@ -363,40 +659,7 @@ const ItemCreation = () => {
 
        <div className={styles.card}>
         <h2>{view === 'active' ? 'Активные товары' : 'Архив товаров'}</h2>
-        <div className={styles.list}>
-          {(view === 'active' ? items : archivedItems).map(item => (
-            <div key={item.id} className={styles.listItem}>
-              {item.image_url && <img src={item.image_url} alt={item.name} className={styles.listItemImage} loading="lazy" />}
-              <div className={styles.listItemContent}>
-                <p><strong>{item.name}</strong></p>
-                {item.is_auto_issuance && <p style={{color: '#007bff', fontSize: '12px', fontWeight: 'bold'}}>Автовыдача</p>}
-                {item.is_shared_gift && <p style={{color: '#28a745', fontSize: '12px', fontWeight: 'bold'}}>Совместный подарок</p>}
-                {item.is_local_purchase && <p style={{color: '#ff9800', fontSize: '12px', fontWeight: 'bold'}}>Локальный подарок</p>}
-                {item.original_price && item.original_price > item.price ? (
-                  <p>
-                    Цена: {item.price} (было <s style={{color: '#999'}}>{item.original_price}</s>) спасибок
-                  </p>
-                ) : (
-                  <p>Цена: {item.price} спасибок ({item.price_rub} ₽)</p>
-                )}
-                <p>Остаток: {item.stock} шт.</p>
-              </div>
-              <div className={styles.listItemActions}>
-                {view === 'active' ? (
-                  <>
-                    <button onClick={() => handleEdit(item)} className={styles.buttonSmall}>✏️</button>
-                    <button onClick={() => handleArchive(item.id)} className={styles.buttonSmallRed}>🗑️</button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={() => handleRestore(item.id)} className={styles.restoreButton}><FaArchive />Восстановить</button>
-                    <button onClick={() => handleDeletePermanently(item.id, item.name)} className={styles.buttonSmallRed}><FaTrash /> Удалить</button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+        {view === 'active' ? renderActiveList() : renderArchivedList()}
       </div>
     </>
   );

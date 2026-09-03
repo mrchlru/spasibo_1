@@ -277,8 +277,30 @@ export const uploadAdminMedia = (file) => {
   });
 };
 
+/** Призовая картинка автовыдачи: JPEG в папке товара (не AVIF). */
+export const uploadPrizeImage = (file, productName) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post(
+    `/admin/media/upload-prize-image?product_name=${encodeURIComponent(productName)}`,
+    formData,
+    {
+      headers: {
+        ...getAuthHeaders().headers,
+      },
+    },
+  );
+};
+
 export const getAllMarketItems = () =>
   apiClient.get('/admin/market-items', getAuthHeaders());
+
+export const reorderMarketItems = (orderedIds) =>
+  apiClient.put(
+    '/admin/market-items/reorder',
+    { ordered_ids: orderedIds },
+    getAuthHeaders(),
+  );
 
 export const updateMarketItem = (itemId, itemData) =>
   apiClient.put(`/admin/market-items/${itemId}`, itemData, getAuthHeaders());

@@ -104,6 +104,8 @@ class MarketItem(Base):
     is_auto_issuance: Mapped[bool] = mapped_column(default=False)
     is_shared_gift: Mapped[bool] = mapped_column(default=False)
     is_local_purchase: Mapped[bool] = mapped_column(default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    prize_folder_slug: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     purchases = relationship("Purchase", back_populates="item")
     codes = relationship("ItemCode", back_populates="market_item", cascade="all, delete-orphan")
 

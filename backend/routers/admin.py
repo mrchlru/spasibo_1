@@ -55,6 +55,24 @@ async def create_new_market_item(
             detail="Один или несколько из предоставленных кодов уже существуют. Убедитесь, что все коды уникальны."
         )
 
+@router.put("/market-items/reorder", response_model=List[schemas.MarketItemResponse])
+async def reorder_market_items_route(
+    payload: schemas.MarketItemReorderRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    """Обновляет порядок товаров магазина (drag-and-drop).
+
+    Маршрут объявлен до ``/market-items/{item_id}``, иначе FastAPI
+    воспринимает ``reorder`` как item_id.
+    """
+    from market_item_order_service import reorder_market_items
+
+    await reorder_market_items(db, payload.ordered_ids)
+    await crud._invalidate_market_cache("изменение порядка товаров")
+    items = await crud.get_active_items(db, include_codes=True)
+    return items
+
 @router.put("/market-items/{item_id}", response_model=schemas.MarketItemResponse)
 async def update_market_item_route(
     item_id: int,

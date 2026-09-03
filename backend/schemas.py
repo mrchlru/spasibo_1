@@ -152,6 +152,7 @@ class MarketItemResponse(OrmBase):
     is_auto_issuance: bool
     is_shared_gift: bool
     is_local_purchase: bool
+    sort_order: int = 0
     codes: List[ItemCodeResponse] = []
 
 
@@ -707,6 +708,21 @@ class AdminMediaStatusResponse(BaseModel):
     """Доступность загрузки в S3-совместимое хранилище."""
 
     enabled: bool
+
+
+class AdminPrizeImageUploadResponse(BaseModel):
+    """Ответ после загрузки призовой картинки автовыдачи (JPEG)."""
+
+    url: str
+    content_type: str = "image/jpeg"
+    folder_slug: str
+    object_key: str
+
+
+class MarketItemReorderRequest(BaseModel):
+    """Новый порядок товаров магазина после drag-and-drop."""
+
+    ordered_ids: list[int] = Field(..., min_length=1)
 
 
 class PushSubscriptionKeys(BaseModel):

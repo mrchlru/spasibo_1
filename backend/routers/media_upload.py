@@ -4,7 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import schemas
@@ -158,3 +158,48 @@ async def upload_admin_image(
     """Принимает изображение, конвертирует в AVIF и загружает в S3 (Timeweb / совместимое API)."""
     url = await store_uploaded_image_file(db, file, key_prefix="media")
     return schemas.AdminMediaUploadResponse(url=url, content_type="image/avif")
+
+
+@router.post("/admin/media/upload-prize-image", response_model=schemas.AdminPrizeImageUploadResponse)
+async def upload_admin_prize_image(
+    _admin: User = Depends(get_current_admin_user),
+    file: UploadFile = File(...),
+    product_name: str = Query(..., min_length=1, max_length=255),
+) -> schemas.AdminPrizeImageUploadResponse:
+    """Загружает призовую картинку автовыдачи: JPEG (без AVIF) в папку товара."""
+    from market_prize_asset_service import upload_prize_image_bytes
+    from object_storage import slugify_prize_folder
+
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    if not _content_type_allowed(content_type):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Неподдерживаемый тип файла: {content_type or '(пусто)'}",
+        )
+    if not is_object_storage_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Объектное хранилище не настроено",
+        )
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл пустой")
+    try:
+        url, key = await upload_prize_image_bytes(
+            raw,
+            product_name=product_name,
+            original_filename=file.filename,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    return schemas.AdminPrizeImageUploadResponse(
+        url=url,
+        content_type="image/jpeg",
+        folder_slug=slugify_prize_folder(product_name),
+        object_key=key,
+    )
