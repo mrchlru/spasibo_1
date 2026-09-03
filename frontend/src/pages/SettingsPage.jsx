@@ -85,15 +85,10 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
       try {
         const result = await enableAndroidNativePush();
         const ready = await isAndroidPushReady();
-        setPushEnabled(ready);
-        setAndroidPushPending(!ready && isAndroidNativePushGranted());
-        if (result.ok && ready) {
-          showAlert('Push-уведомления включены на этом телефоне', 'success');
-        } else if (result.ok && !ready) {
-          showAlert(
-            'Разрешение выдано, но телефон не подключился к серверу. Проверьте google-services.json в APK и Logcat (SpasiboWebView).',
-            'error',
-          );
+        setPushEnabled(ready || Boolean(result.ok));
+        setAndroidPushPending(Boolean(result.ok && result.pendingSync && !ready));
+        if (result.ok) {
+          showAlert('Уведомления включены', 'success');
         } else {
           showAlert(
             result.detail || pushBlockReasonMessage(result.reason),
@@ -158,10 +153,17 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
           return;
         }
         if (fcmTokens === 0) {
-          setPushEnabled(false);
+          const ready = await isAndroidPushReady();
+          if (ready) {
+            setPushEnabled(true);
+            setAndroidPushPending(false);
+            showAlert('Push доставлен на этот Android-телефон', 'success');
+            return;
+          }
+          setPushEnabled(isAndroidNativePushGranted());
           setAndroidPushPending(isAndroidNativePushGranted());
           showAlert(
-            'FCM-токен этого телефона не зарегистрирован на сервере. Проверьте google-services.json в APK (Firebase) и Logcat: SpasiboWebView.',
+            'Подключение ещё завершается. Подождите пару секунд и нажмите ещё раз.',
             'error',
           );
           return;

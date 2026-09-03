@@ -110,10 +110,58 @@ async function waitForAndroidNotificationPermission(timeoutMs) {
   return poll;
 }
 
-async function waitForAndroidPushRegisteredOnServer(timeoutMs = 10_000) {
-  const step = 400;
+const ANDROID_PUSH_SERVER_WAIT_MS = 25_000;
+
+function readNativePushRegistrationStatus() {
+  try {
+    const raw = window.SpasiboAndroid?.getPushRegistrationStatus?.();
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** Нативная регистрация FCM на сервере прошла успешно. */
+function isNativePushRegistrationOk() {
+  return Boolean(readNativePushRegistrationStatus()?.ok);
+}
+
+/** Явный сбой получения/отправки FCM-токена (не просто «ещё не успело»). */
+function hasNativePushRegistrationHardFailure() {
+  const status = readNativePushRegistrationStatus();
+  if (!status || status.ok || status.detail === 'not_attempted') {
+    return false;
+  }
+  const detail = String(status.detail ?? '').toLowerCase();
+  return (
+    detail.includes('fcm token unavailable')
+    || detail.includes('network error')
+    || detail.includes('unable to resolve host')
+  );
+}
+
+async function waitForAndroidPushRegisteredOnServer(timeoutMs = ANDROID_PUSH_SERVER_WAIT_MS) {
+  const step = 500;
   let waited = 0;
   while (waited < timeoutMs) {
+    if (isNativePushRegistrationOk()) {
+      try {
+        const status = await getAndroidPushStatus();
+        if (status.tokens_registered > 0) {
+          return status;
+        }
+      } catch {
+        /* сервер ещё не видит токен */
+      }
+      return {
+        fcm_enabled: true,
+        tokens_registered: 1,
+        ready: true,
+      };
+    }
     try {
       const status = await getAndroidPushStatus();
       if (status.tokens_registered > 0) {
@@ -138,7 +186,7 @@ async function waitForAndroidPushRegisteredOnServer(timeoutMs = 10_000) {
  * @param {{ skipWelcome?: boolean, maxWaitMs?: number, forceRegister?: boolean }} [options]
  */
 export async function ensureAndroidPushRegistered(options = {}) {
-  const maxWaitMs = options.maxWaitMs ?? 10_000;
+  const maxWaitMs = options.maxWaitMs ?? ANDROID_PUSH_SERVER_WAIT_MS;
   const forceRegister = options.forceRegister ?? false;
 
   if (!isAndroidNativePushGranted()) {
@@ -146,6 +194,9 @@ export async function ensureAndroidPushRegistered(options = {}) {
   }
 
   if (!forceRegister) {
+    if (isNativePushRegistrationOk()) {
+      return { registered: true, tokensRegistered: 1 };
+    }
     try {
       const status = await getAndroidPushStatus();
       if (status.tokens_registered > 0) {
@@ -161,9 +212,10 @@ export async function ensureAndroidPushRegistered(options = {}) {
 
   window.SpasiboAndroid?.registerPushToken();
   const status = await waitForAndroidPushRegisteredOnServer(maxWaitMs);
+  const registered = status.tokens_registered > 0 || isNativePushRegistrationOk();
   return {
-    registered: status.tokens_registered > 0,
-    tokensRegistered: status.tokens_registered,
+    registered,
+    tokensRegistered: Math.max(status.tokens_registered, registered ? 1 : 0),
   };
 }
 
@@ -172,8 +224,11 @@ export async function ensureAndroidPushRegistered(options = {}) {
  *
  * @returns {Promise<{ registered: boolean, welcomeSent: boolean, tokensRegistered?: number }>}
  */
-export async function registerAndroidPushAndSendWelcome() {
-  const registration = await ensureAndroidPushRegistered({ maxWaitMs: 10_000 });
+export async function registerAndroidPushAndSendWelcome(options = {}) {
+  const registration = await ensureAndroidPushRegistered({
+    maxWaitMs: options.maxWaitMs ?? ANDROID_PUSH_SERVER_WAIT_MS,
+    forceRegister: options.forceRegister,
+  });
   if (!registration.registered) {
     return {
       registered: false,
@@ -251,16 +306,28 @@ export async function enableAndroidNativePush() {
     }
   }
 
-  const registration = await registerAndroidPushAndSendWelcome();
-  if (!registration.registered) {
-    return {
-      ok: false,
-      reason: 'fcm_token_missing',
-      detail:
-        'Разрешение выдано, но FCM-токен не зарегистрирован. Проверьте google-services.json в APK и Google Play Services на телефоне.',
-    };
+  window.SpasiboAndroid?.registerPushToken();
+  const registration = await registerAndroidPushAndSendWelcome({ forceRegister: true });
+
+  if (registration.registered) {
+    return { ok: true, welcomeSent: registration.welcomeSent };
   }
-  return { ok: true, welcomeSent: registration.welcomeSent };
+
+  if (isNativePushRegistrationOk()) {
+    void sendAndroidWelcomeTestPushIfNeeded();
+    return { ok: true, welcomeSent: false, pendingSync: true };
+  }
+
+  if (isAndroidNativePushGranted() && !hasNativePushRegistrationHardFailure()) {
+    void ensureAndroidPushRegistered({ maxWaitMs: ANDROID_PUSH_SERVER_WAIT_MS, forceRegister: true });
+    return { ok: true, welcomeSent: false, pendingSync: true };
+  }
+
+  return {
+    ok: false,
+    reason: 'fcm_token_missing',
+    detail: 'Не удалось подключить уведомления. Проверьте интернет и Google Play Services на телефоне.',
+  };
 }
 
 /** Проверяет, зарегистрирован ли FCM-токен этого телефона на сервере. */
@@ -271,10 +338,13 @@ export async function fetchAndroidPushServerStatus() {
   return getAndroidPushStatus();
 }
 
-/** Push на Android готов: разрешение выдано и токен есть на сервере. */
+/** Push на Android готов: разрешение выдано и (токен на сервере или нативная регистрация ok). */
 export async function isAndroidPushReady() {
   if (!isAndroidNativePushGranted()) {
     return false;
+  }
+  if (isNativePushRegistrationOk()) {
+    return true;
   }
   try {
     const status = await getAndroidPushStatus();
