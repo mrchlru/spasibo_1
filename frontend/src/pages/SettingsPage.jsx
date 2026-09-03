@@ -16,10 +16,10 @@ import {
 } from '../pwa/pushNotifications.js';
 import {
   enableAndroidNativePush,
+  ensureAndroidPushRegistered,
   isAndroidNativePushGranted,
   isAndroidPushReady,
   isSpasiboAndroidApp,
-  registerAndroidPushAndSendWelcome,
 } from '../pwa/androidNativePush.js';
 import {
   getPushBlockReason,
@@ -135,8 +135,8 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
 
     setTestPushLoading(true);
     try {
-      if (isAndroidApp) {
-        await registerAndroidPushAndSendWelcome();
+      if (isAndroidApp && !pushEnabled) {
+        await ensureAndroidPushRegistered({ maxWaitMs: 3000 });
       }
       const { data } = await sendTestPush({
         title: isAndroidApp ? 'Уведомления включены' : 'Тест «Спасибо»',

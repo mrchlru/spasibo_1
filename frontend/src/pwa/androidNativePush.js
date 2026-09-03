@@ -106,7 +106,7 @@ async function waitForAndroidNotificationPermission(timeoutMs) {
 }
 
 async function waitForAndroidPushRegisteredOnServer(timeoutMs = 10_000) {
-  const step = 800;
+  const step = 400;
   let waited = 0;
   while (waited < timeoutMs) {
     try {
@@ -128,19 +128,48 @@ async function waitForAndroidPushRegisteredOnServer(timeoutMs = 10_000) {
 }
 
 /**
+ * Гарантирует регистрацию FCM-токена на сервере.
+ *
+ * @param {{ skipWelcome?: boolean, maxWaitMs?: number, forceRegister?: boolean }} [options]
+ */
+export async function ensureAndroidPushRegistered(options = {}) {
+  const maxWaitMs = options.maxWaitMs ?? 10_000;
+  const forceRegister = options.forceRegister ?? false;
+
+  if (!isAndroidNativePushGranted()) {
+    return { registered: false, tokensRegistered: 0 };
+  }
+
+  if (!forceRegister) {
+    try {
+      const status = await getAndroidPushStatus();
+      if (status.tokens_registered > 0) {
+        return {
+          registered: true,
+          tokensRegistered: status.tokens_registered,
+        };
+      }
+    } catch {
+      /* проверим после registerPushToken */
+    }
+  }
+
+  window.SpasiboAndroid?.registerPushToken();
+  const status = await waitForAndroidPushRegisteredOnServer(maxWaitMs);
+  return {
+    registered: status.tokens_registered > 0,
+    tokensRegistered: status.tokens_registered,
+  };
+}
+
+/**
  * Регистрирует FCM-токен и отправляет приветственный push один раз.
  *
  * @returns {Promise<{ registered: boolean, welcomeSent: boolean, tokensRegistered?: number }>}
  */
 export async function registerAndroidPushAndSendWelcome() {
-  const bridge = window.SpasiboAndroid;
-  if (!bridge?.isNotificationPermissionGranted()) {
-    return { registered: false, welcomeSent: false, tokensRegistered: 0 };
-  }
-
-  bridge.registerPushToken();
-  const status = await waitForAndroidPushRegisteredOnServer();
-  if (status.tokens_registered <= 0) {
+  const registration = await ensureAndroidPushRegistered({ maxWaitMs: 10_000 });
+  if (!registration.registered) {
     return {
       registered: false,
       welcomeSent: false,
@@ -152,7 +181,7 @@ export async function registerAndroidPushAndSendWelcome() {
   return {
     registered: true,
     welcomeSent,
-    tokensRegistered: status.tokens_registered,
+    tokensRegistered: registration.tokensRegistered,
   };
 }
 
@@ -250,10 +279,10 @@ export async function isAndroidPushReady() {
   }
 }
 
-/** Регистрирует FCM, если разрешение уже выдано (без запроса диалога). */
-export async function syncAndroidPushIfAlreadyGranted() {
+/** Регистрирует FCM в фоне после входа (не блокирует UI). */
+export function syncAndroidPushIfAlreadyGranted() {
   if (!isSpasiboAndroidApp() || !isAndroidNativePushGranted()) {
     return;
   }
-  await registerAndroidPushAndSendWelcome();
+  void registerAndroidPushAndSendWelcome();
 }
