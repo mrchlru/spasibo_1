@@ -1,8 +1,23 @@
 import { getFeed, getBanners, getMarketItems, getLeaderboard } from '../api';
-import { setCachedData, getCachedData } from '../storage';
+import { setCachedData, getCachedData, hasWarmBootCache } from '../storage';
 import { collectBootMediaUrls, prefetchImageUrls } from '../utils/prefetchMedia';
 
 const DEFAULT_BOOT_TIMEOUT_MS = 2500;
+const ANDROID_BOOT_TIMEOUT_MS = 600;
+
+/**
+ * Обновляет ленту и баннеры в фоне, не блокируя UI.
+ */
+async function refreshCriticalContentInBackground() {
+  await Promise.allSettled([
+    getFeed()
+      .then((response) => setCachedData('feed', response.data))
+      .catch(() => null),
+    getBanners()
+      .then((response) => setCachedData('banners', response.data))
+      .catch(() => null),
+  ]);
+}
 
 /**
  * Ждёт promise не дольше timeoutMs.
@@ -34,23 +49,40 @@ async function raceWithTimeout(promise, timeoutMs) {
  */
 export async function preloadAppContent(options = {}) {
   const timeoutMs = options.timeoutMs ?? DEFAULT_BOOT_TIMEOUT_MS;
+  const skipWaitIfCached = options.skipWaitIfCached !== false;
 
-  const critical = Promise.allSettled([
-    getFeed()
-      .then((response) => setCachedData('feed', response.data))
-      .catch(() => null),
-    getBanners()
-      .then((response) => setCachedData('banners', response.data))
-      .catch(() => null),
-  ]);
+  if (skipWaitIfCached && hasWarmBootCache()) {
+    const banners = getCachedData('banners') || [];
+    const feed = getCachedData('feed') || [];
+    prefetchImageUrls(collectBootMediaUrls(banners, feed), 50);
+    void refreshCriticalContentInBackground();
+    void prefetchSecondaryContent();
+    return {
+      ready: true,
+      timedOut: false,
+      fromCache: true,
+    };
+  }
 
+  const critical = refreshCriticalContentInBackground();
   const timedOut = await raceWithTimeout(critical, timeoutMs);
 
   const banners = getCachedData('banners') || [];
   const feed = getCachedData('feed') || [];
   prefetchImageUrls(collectBootMediaUrls(banners, feed), 50);
 
-  void Promise.allSettled([
+  void prefetchSecondaryContent();
+
+  return {
+    ready: true,
+    timedOut,
+    fromCache: false,
+  };
+}
+
+/** Прогревает магазин и рейтинг в фоне. */
+async function prefetchSecondaryContent() {
+  await Promise.allSettled([
     getMarketItems()
       .then((response) => setCachedData('market', response.data))
       .catch(() => null),
@@ -58,9 +90,6 @@ export async function preloadAppContent(options = {}) {
       .then((response) => setCachedData('leaderboard', response.data))
       .catch(() => null),
   ]);
-
-  return {
-    ready: true,
-    timedOut,
-  };
 }
+
+export { ANDROID_BOOT_TIMEOUT_MS, DEFAULT_BOOT_TIMEOUT_MS };

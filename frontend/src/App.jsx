@@ -18,8 +18,9 @@ import {
   getTelegramPhotoProxyUrl,
   resolveAvatarUrl,
 } from './api';
-import { initializeCache, clearCache, setCachedData } from './storage';
-import { preloadAppContent } from './boot/preloadAppContent';
+import { initializeCache, clearCache, setCachedData, hasWarmBootCache } from './storage';
+import { preloadAppContent, ANDROID_BOOT_TIMEOUT_MS } from './boot/preloadAppContent';
+import { isSpasiboAndroidApp } from './pwa/androidNativePush';
 
 // Компоненты навигации (загружаются сразу, так как всегда видны)
 import BottomNav from './components/BottomNav';
@@ -60,9 +61,9 @@ const STATUS_CHECK_INTERVAL = 5000; // Проверяем статус кажд�
 // Без initData это заглушка SDK (браузер / Android WebView), не настоящий Telegram.
 const tg = window.Telegram?.WebApp?.initData ? window.Telegram.WebApp : null;
 const isTelegramWebApp = Boolean(window.Telegram?.WebApp?.initData);
+const isAndroidShell = isSpasiboAndroidApp();
 
 function App() {
-  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [bootReady, setBootReady] = useState(false);
   const [page, setPage] = useState('home');
@@ -272,6 +273,9 @@ function App() {
         try {
           const parsedUser = JSON.parse(savedUser);
           setUser(parsedUser);
+          if (isAndroidShell) {
+            setLoading(false);
+          }
         } catch (err) {
           console.error('Ошибка парсинга сохраненного пользователя:', err);
         }
@@ -290,7 +294,9 @@ function App() {
               console.warn('Не удалось проверить статус пользователя, используем сохраненные данные:', err);
             }
           } finally {
-            setLoading(false);
+            if (!isAndroidShell) {
+              setLoading(false);
+            }
           }
         };
 
@@ -502,9 +508,17 @@ function App() {
       return undefined;
     }
 
+    const bootTimeoutMs = isAndroidShell ? ANDROID_BOOT_TIMEOUT_MS : 2500;
+    const canShowHomeImmediately = isAndroidShell && hasWarmBootCache();
+
     let cancelled = false;
-    setBootReady(false);
-    preloadAppContent({ timeoutMs: 2500 }).finally(() => {
+    if (canShowHomeImmediately) {
+      setBootReady(true);
+    } else {
+      setBootReady(false);
+    }
+
+    preloadAppContent({ timeoutMs: bootTimeoutMs }).finally(() => {
       if (!cancelled) {
         setBootReady(true);
       }

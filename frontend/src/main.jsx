@@ -8,9 +8,19 @@ import './index.css';
 import './styles/iosLiquidGlass.css';
 import { applyPlatformTheme } from './platform/iosGlass.js';
 import { registerServiceWorker } from './pwa/registerServiceWorker.js';
+import { isSpasiboAndroidApp } from './pwa/androidNativePush.js';
 
 applyPlatformTheme();
-registerServiceWorker();
+
+if (isSpasiboAndroidApp()) {
+  window.addEventListener('load', () => {
+    window.setTimeout(() => {
+      void registerServiceWorker();
+    }, 5000);
+  }, { once: true });
+} else {
+  registerServiceWorker();
+}
 
 // 1. Импортируем наши ПРАВИЛЬНЫЕ Provider'ы
 import { ModalAlertProvider } from './contexts/ModalAlertContext.jsx';
