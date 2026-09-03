@@ -49,6 +49,7 @@ const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const OnboardingStories = lazy(() => import('./components/OnboardingStories'));
 import EmailPromptModal from './components/EmailPromptModal';
 import AndroidNativeSessionBridge from './pwa/AndroidNativeSessionBridge.jsx';
+import AndroidPushPrompt from './components/AndroidPushPrompt.jsx';
 
 import { startSession, pingSession } from './api';
 
@@ -880,6 +881,7 @@ function App() {
   return (
     <div className="app-container">
       <AndroidNativeSessionBridge user={user} />
+      <AndroidPushPrompt user={user} />
       {/* Теперь меню показываются на основе новых, правильных переменных */}
       {shouldShowSideNav && <SideNav user={user} activePage={page} onNavigate={navigate} />}
       {shouldShowBottomNav && <BottomNav user={user} activePage={page} onNavigate={navigate} />}

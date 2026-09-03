@@ -15,6 +15,12 @@ import {
   startNotificationPermissionRequest,
 } from '../pwa/pushNotifications.js';
 import {
+  enableAndroidNativePush,
+  isAndroidNativePushGranted,
+  isSpasiboAndroidApp,
+  registerAndroidPushAndSendWelcome,
+} from '../pwa/androidNativePush.js';
+import {
   getPushBlockReason,
   isPushApiAvailable,
   pushBlockReasonMessage,
@@ -42,9 +48,18 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
   const [pushLoading, setPushLoading] = useState(false);
   const [testPushLoading, setTestPushLoading] = useState(false);
 
+  const isAndroidApp = isSpasiboAndroidApp();
+  const pushControlsAvailable = isAndroidApp || isPushApiAvailable();
+
   useEffect(() => {
     let cancelled = false;
     async function loadPushState() {
+      if (isAndroidApp) {
+        if (!cancelled) {
+          setPushEnabled(isAndroidNativePushGranted());
+        }
+        return;
+      }
       if (!isPushApiAvailable()) {
         return;
       }
@@ -57,9 +72,28 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAndroidApp]);
 
   const handleEnablePush = async () => {
+    if (isAndroidApp) {
+      setPushLoading(true);
+      try {
+        const result = await enableAndroidNativePush();
+        if (result.ok) {
+          setPushEnabled(true);
+          showAlert('Push-уведомления включены', 'success');
+        } else {
+          showAlert(
+            result.detail || pushBlockReasonMessage(result.reason),
+            'error',
+          );
+        }
+      } finally {
+        setPushLoading(false);
+      }
+      return;
+    }
+
     const blockReason = getPushBlockReason();
     if (blockReason) {
       showAlert(pushBlockReasonMessage(blockReason), 'error');
@@ -89,9 +123,14 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
 
     setTestPushLoading(true);
     try {
+      if (isAndroidApp) {
+        await registerAndroidPushAndSendWelcome();
+      }
       const { data } = await sendTestPush({
-        title: 'Тест «Спасибо»',
-        body: 'Push-канал работает',
+        title: isAndroidApp ? 'Уведомления включены' : 'Тест «Спасибо»',
+        body: isAndroidApp
+          ? 'Push-уведомления «Спасибо» работают.'
+          : 'Push-канал работает',
         url: '/',
       });
       const delivered = data?.delivered ?? 0;
@@ -188,7 +227,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
           <span>Часто задаваемые вопросы (FAQ)</span>
         </button>
 
-        {isPushApiAvailable() && (
+        {pushControlsAvailable && (
           <button
             type="button"
             onClick={handleEnablePush}
@@ -202,7 +241,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
           </button>
         )}
 
-        {isPushApiAvailable() && pushEnabled && (
+        {pushControlsAvailable && pushEnabled && (
           <button
             type="button"
             onClick={handleTestPush}

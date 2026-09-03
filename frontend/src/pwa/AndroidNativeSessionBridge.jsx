@@ -3,8 +3,8 @@ import { getApiBaseUrl } from '../api.js';
 import {
   clearAndroidNativeSession,
   isSpasiboAndroidApp,
-  requestAndroidNotificationPermissionAfterLogin,
   syncAndroidNativeSession,
+  syncAndroidPushIfAlreadyGranted,
 } from './androidNativePush.js';
 
 /** Передаёт сессию в нативную Android-оболочку для регистрации FCM. */
@@ -21,7 +21,7 @@ function AndroidNativeSessionBridge({ user }) {
     }
 
     syncAndroidNativeSession(user.id, apiBaseUrl);
-    void requestAndroidNotificationPermissionAfterLogin();
+    void syncAndroidPushIfAlreadyGranted();
   }, [user?.id, user?.status]);
 
   return null;

@@ -3,6 +3,11 @@
  * Нативный код инжектирует window.SpasiboAndroid и UA SpasiboAndroid/1.
  */
 
+import { sendTestPush } from '../api.js';
+
+const WELCOME_PUSH_SENT_KEY = 'android_push_welcome_sent';
+const PROMPT_DISMISSED_SESSION_KEY = 'android_push_prompt_dismissed_session';
+
 function sleep(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
@@ -28,6 +33,35 @@ export function syncAndroidNativeSession(userId, apiBaseUrl) {
 /** Сбрасывает сессию в нативной оболочке (logout). */
 export function clearAndroidNativeSession() {
   window.SpasiboAndroid?.clearSession();
+}
+
+/** True, если системное разрешение на уведомления уже выдано. */
+export function isAndroidNativePushGranted() {
+  return Boolean(window.SpasiboAndroid?.isNotificationPermissionGranted());
+}
+
+/** Нужно ли показывать промпт включения push при входе в Android-приложение. */
+export function shouldShowAndroidPushPrompt() {
+  if (!isSpasiboAndroidApp()) {
+    return false;
+  }
+  if (isAndroidNativePushGranted()) {
+    return false;
+  }
+  try {
+    return sessionStorage.getItem(PROMPT_DISMISSED_SESSION_KEY) !== '1';
+  } catch {
+    return true;
+  }
+}
+
+/** Скрывает промпт до конца текущей сессии (кнопка «Не сейчас»). */
+export function dismissAndroidPushPromptForSession() {
+  try {
+    sessionStorage.setItem(PROMPT_DISMISSED_SESSION_KEY, '1');
+  } catch {
+    /* ignore */
+  }
 }
 
 async function waitForAndroidNotificationPermission(timeoutMs) {
@@ -71,7 +105,66 @@ async function waitForAndroidNotificationPermission(timeoutMs) {
   return poll;
 }
 
-/** Включает push через FCM в Android WebView (без Web Push / Service Worker). */
+/**
+ * Регистрирует FCM-токен и отправляет приветственный push один раз.
+ *
+ * @returns {Promise<{ registered: boolean, welcomeSent: boolean }>}
+ */
+export async function registerAndroidPushAndSendWelcome() {
+  const bridge = window.SpasiboAndroid;
+  if (!bridge?.isNotificationPermissionGranted()) {
+    return { registered: false, welcomeSent: false };
+  }
+
+  bridge.registerPushToken();
+  await sleep(1800);
+
+  const welcomeSent = await sendAndroidWelcomeTestPushIfNeeded();
+  return { registered: true, welcomeSent };
+}
+
+/**
+ * Отправляет тестовый push «уведомления включены», если ещё не отправляли.
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function sendAndroidWelcomeTestPushIfNeeded() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  try {
+    if (localStorage.getItem(WELCOME_PUSH_SENT_KEY) === '1') {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  try {
+    const { data } = await sendTestPush({
+      title: 'Уведомления включены',
+      body: 'Push-уведомления «Спасибо» работают. Вы будете получать новости и спасибки.',
+      url: '/',
+    });
+    if ((data?.delivered ?? 0) > 0) {
+      try {
+        localStorage.setItem(WELCOME_PUSH_SENT_KEY, '1');
+      } catch {
+        /* ignore */
+      }
+      return true;
+    }
+  } catch {
+    /* токен мог ещё не успеть зарегистрироваться на сервере */
+  }
+  return false;
+}
+
+/**
+ * Включает push через FCM в Android WebView (жест пользователя → системный диалог).
+ *
+ * @returns {Promise<{ ok: boolean, reason?: string, detail?: string, welcomeSent?: boolean }>}
+ */
 export async function enableAndroidNativePush() {
   const bridge = window.SpasiboAndroid;
   if (!bridge) {
@@ -91,29 +184,14 @@ export async function enableAndroidNativePush() {
     }
   }
 
-  bridge.registerPushToken();
-  await sleep(1500);
-  return { ok: true };
+  const { welcomeSent } = await registerAndroidPushAndSendWelcome();
+  return { ok: true, welcomeSent };
 }
 
-/** True, если системное разрешение на уведомления уже выдано. */
-export function isAndroidNativePushGranted() {
-  return Boolean(window.SpasiboAndroid?.isNotificationPermissionGranted());
-}
-
-/** Запрашивает разрешение и регистрирует FCM после входа (без блокировки UI). */
-export async function requestAndroidNotificationPermissionAfterLogin() {
-  const bridge = window.SpasiboAndroid;
-  if (!bridge) {
+/** Регистрирует FCM, если разрешение уже выдано (без запроса диалога). */
+export async function syncAndroidPushIfAlreadyGranted() {
+  if (!isSpasiboAndroidApp() || !isAndroidNativePushGranted()) {
     return;
   }
-  if (bridge.isNotificationPermissionGranted()) {
-    bridge.registerPushToken();
-    return;
-  }
-  bridge.requestNotificationPermission();
-  const granted = await waitForAndroidNotificationPermission(30_000);
-  if (granted) {
-    bridge.registerPushToken();
-  }
+  await registerAndroidPushAndSendWelcome();
 }
