@@ -7,6 +7,11 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
+/** Базовый URL API (для Android-моста и абсолютных ссылок). */
+export function getApiBaseUrl() {
+  return API_BASE_URL.replace(/\/$/, '');
+}
+
 export const getTelegramPhotoProxyUrl = (photoUrl) => {
   if (!photoUrl) return '';
   if (photoUrl.includes('/telegram/photo-proxy?')) return photoUrl;
