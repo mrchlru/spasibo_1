@@ -1,5 +1,3 @@
-import { resolveMediaUrl } from './resolveMediaUrl.js';
-
 /** @typedef {string} ImageUrl */
 
 const prefetchedUrls = new Set();
@@ -20,7 +18,7 @@ export function prefetchImageUrls(urls, limit = 80) {
     if (!rawUrl || count >= limit) {
       break;
     }
-    const url = resolveMediaUrl(String(rawUrl).trim());
+    const url = String(rawUrl).trim();
     if (!url || prefetchedUrls.has(url)) {
       continue;
     }
