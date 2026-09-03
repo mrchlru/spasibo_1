@@ -64,6 +64,7 @@ const isTelegramWebApp = Boolean(window.Telegram?.WebApp?.initData);
 const isAndroidShell = isSpasiboAndroidApp();
 
 function App() {
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [bootReady, setBootReady] = useState(false);
   const [page, setPage] = useState('home');
