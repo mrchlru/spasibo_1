@@ -5,6 +5,7 @@ import android.net.Uri
 import android.webkit.JavascriptInterface
 import android.widget.Toast
 import org.json.JSONObject
+import ru.spasibo.app.BuildConfig
 import ru.spasibo.app.MainActivity
 import ru.spasibo.app.push.PushRegistrar
 import ru.spasibo.app.push.PushSession
@@ -16,11 +17,14 @@ class SpasiboWebAppBridge(
 ) {
     @JavascriptInterface
     fun syncSession(userId: Int, apiBaseUrl: String) {
-        if (userId <= 0 || apiBaseUrl.isBlank()) {
+        val resolvedBase = apiBaseUrl.trim().trimEnd('/').ifBlank {
+            BuildConfig.PWA_URL.trim().trimEnd('/')
+        }
+        if (userId <= 0 || resolvedBase.isBlank()) {
             return
         }
         PushSessionStore(activity.applicationContext).save(
-            PushSession(userId, apiBaseUrl.trim()),
+            PushSession(userId, resolvedBase),
         )
         activity.runOnUiThread {
             PushRegistrar.registerIfPossible(activity.applicationContext)

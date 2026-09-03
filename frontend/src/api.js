@@ -7,9 +7,19 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
-/** Базовый URL API (для Android-моста и абсолютных ссылок). */
+/**
+ * Базовый URL API (для Android-моста и абсолютных ссылок).
+ * На стенде VITE_API_URL часто пустой — тогда API на том же origin, что и PWA.
+ */
 export function getApiBaseUrl() {
-  return API_BASE_URL.replace(/\/$/, '');
+  const configured = API_BASE_URL.replace(/\/$/, '');
+  if (configured) {
+    return configured;
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, '');
+  }
+  return '';
 }
 
 export const getTelegramPhotoProxyUrl = (photoUrl) => {

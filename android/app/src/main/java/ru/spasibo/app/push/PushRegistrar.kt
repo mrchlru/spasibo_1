@@ -10,9 +10,17 @@ object PushRegistrar {
         val appContext = context.applicationContext
         val session = PushSessionStore(appContext).read()
         if (session == null) {
-            Log.w(MainActivity.LOG_TAG, "FCM: сессия не сохранена — войдите в аккаунт")
+            Log.w(
+                MainActivity.LOG_TAG,
+                "FCM: сессия не сохранена — войдите в аккаунт (userId/apiBaseUrl)",
+            )
             return
         }
+
+        Log.i(
+            MainActivity.LOG_TAG,
+            "FCM: регистрация token userId=${session.userId} api=${session.apiBaseUrl}",
+        )
 
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
             if (!task.isSuccessful) {
@@ -29,6 +37,7 @@ object PushRegistrar {
                 Log.e(MainActivity.LOG_TAG, "FCM: пустой token")
                 return@addOnCompleteListener
             }
+            Log.i(MainActivity.LOG_TAG, "FCM token получен (${token.take(12)}…)")
             PushSessionStore(appContext).saveFcmToken(token)
             Thread {
                 PushApiClient.registerToken(appContext, session, token)
