@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, BigInteger, Boolean, Date, Text, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, BigInteger, Boolean, Date, Text, func, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.dialects.postgresql import JSON, BYTEA
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -63,6 +63,11 @@ class User(Base):
         passive_deletes=True
     )
     purchases = relationship("Purchase", back_populates="user")
+    market_item_favorites = relationship(
+        "MarketItemFavorite",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     pending_updates = relationship("PendingUpdate", back_populates="user")
 
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
@@ -108,6 +113,28 @@ class MarketItem(Base):
     prize_folder_slug: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     purchases = relationship("Purchase", back_populates="item")
     codes = relationship("ItemCode", back_populates="market_item", cascade="all, delete-orphan")
+    favorites = relationship(
+        "MarketItemFavorite",
+        back_populates="market_item",
+        cascade="all, delete-orphan",
+    )
+
+class MarketItemFavorite(Base):
+    __tablename__ = "market_item_favorites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "market_item_id", name="uq_market_item_favorites_user_item"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    market_item_id: Mapped[int] = mapped_column(
+        ForeignKey("market_items.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+    user = relationship("User", back_populates="market_item_favorites")
+    market_item = relationship("MarketItem", back_populates="favorites")
 
 class Purchase(Base):
     __tablename__ = "purchases"
@@ -259,6 +286,7 @@ class FeedPost(Base):
     is_pinned = Column(Boolean, default=False, server_default="false", nullable=False)
     pin_order = Column(Integer, default=0, server_default="0", nullable=False)
     is_published = Column(Boolean, default=True, server_default="true", nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     published_at = Column(DateTime, server_default=func.now(), nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)

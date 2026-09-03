@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Спасибо</string>
+    <string name="notification_channel_name">Уведомления «Спасибо»</string>
+    <string name="notification_channel_description">Push-уведомления приложения «Спасибо»</string>
+    <string name="download_description">Загрузка из приложения «Спасибо»</string>
+    <string name="download_started">Файл сохраняется в «Загрузки»</string>
+    <string name="download_failed">Не удалось начать загрузку</string>
+    <string name="offline_message">Нет подключения к интернету. Проверьте сеть и попробуйте снова.</string>
+    <string name="offline_retry">Попробовать снова</string>
+</resources>

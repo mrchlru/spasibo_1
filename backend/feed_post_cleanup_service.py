@@ -46,6 +46,7 @@ async def cleanup_feed_posts_outside_visible_feed(
         .where(
             models.FeedPost.is_pinned.is_(False),
             models.FeedPost.is_published.is_(True),
+            models.FeedPost.is_deleted.is_(False),
         )
     )
     candidates = list(result.scalars().unique().all())

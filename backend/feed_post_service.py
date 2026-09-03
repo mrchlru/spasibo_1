@@ -98,6 +98,7 @@ async def list_visible_feed_posts(
     query = (
         select(models.FeedPost)
         .options(*_feed_post_load_options())
+        .where(models.FeedPost.is_deleted.is_(False))
         .order_by(
             models.FeedPost.is_pinned.desc(),
             models.FeedPost.pin_order.desc(),
@@ -112,6 +113,40 @@ async def list_visible_feed_posts(
     result = await db.execute(query)
     posts = list(result.scalars().unique().all())
     return [post for post in posts if _can_view_post(post, viewer)]
+
+
+async def list_admin_feed_posts(db: AsyncSession) -> list[models.FeedPost]:
+    """Все неудалённые новости для админ-панели."""
+    result = await db.execute(
+        select(models.FeedPost)
+        .options(*_feed_post_load_options())
+        .where(models.FeedPost.is_deleted.is_(False))
+        .order_by(
+            models.FeedPost.created_at.desc(),
+            models.FeedPost.id.desc(),
+        )
+    )
+    return list(result.scalars().unique().all())
+
+
+async def soft_delete_feed_post(
+    db: AsyncSession,
+    user: models.User,
+    post_id: int,
+) -> None:
+    """Помечает новость удалённой (скрывает из ленты и админ-списка активных)."""
+    if not user_can_publish_feed_posts(user):
+        raise ValueError("Нет прав на удаление новостей")
+
+    post = await get_feed_post_by_id(db, post_id)
+    if post is None or post.is_deleted:
+        raise ValueError("Новость не найдена")
+
+    post.is_deleted = True
+    post.is_pinned = False
+    post.pin_order = 0
+    post.updated_at = datetime.utcnow()
+    await db.commit()
 
 
 async def create_publisher_feed_post(
@@ -156,7 +191,7 @@ async def update_publisher_feed_post(
         raise ValueError("Нет прав на редактирование новостей")
 
     post = await get_feed_post_by_id(db, post_id)
-    if post is None:
+    if post is None or post.is_deleted:
         raise ValueError("Новость не найдена")
 
     data = payload.model_dump(exclude_unset=True, exclude={"attachments"})

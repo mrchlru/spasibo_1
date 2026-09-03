@@ -28,6 +28,20 @@ class PurchaseForUserResponse(OrmBase):
     timestamp: datetime
     item: MarketItemBase
 
+
+class MyPurchaseItemResponse(BaseModel):
+    """Покупка пользователя для блока «Купленные товары» в профиле."""
+
+    id: int
+    purchased_at: datetime
+    item_id: int
+    item_name: str
+    image_url: Optional[str] = None
+    price: int
+    is_auto_issuance: bool = False
+    issued_code: Optional[str] = None
+    delivery_instructions: Optional[str] = None
+
 class PurchaseForMarketResponse(OrmBase):
     id: int
     timestamp: datetime
@@ -231,7 +245,7 @@ class PurchaseResponse(BaseModel):
     
 class MarketItemCreate(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=300)
     price_rub: int
     stock: int
     image_url: Optional[str] = None
@@ -244,7 +258,7 @@ class MarketItemCreate(BaseModel):
 
 class MarketItemUpdate(BaseModel):
     name: Optional[str] = None
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=300)
     price_rub: Optional[int] = None
     stock: Optional[int] = None
     image_url: Optional[str] = None
@@ -354,6 +368,19 @@ class PopularItem(OrmBase):
     
 class PopularItemsStats(BaseModel):
     items: List['PopularItem']
+
+
+class FavoriteItem(OrmBase):
+    item: MarketItemResponse
+    favorite_count: int
+
+
+class FavoriteItemsStats(BaseModel):
+    items: List['FavoriteItem']
+
+
+class MarketFavoriteIdsResponse(BaseModel):
+    item_ids: List[int]
 
 class InactiveUsersStats(BaseModel):
     users: List[UserResponse]

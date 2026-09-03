@@ -22,6 +22,10 @@ function revokePreviewUrl(attachment) {
   }
 }
 
+function isPersistableAttachmentUrl(url) {
+  return typeof url === 'string' && url.length > 0 && !url.startsWith('blob:');
+}
+
 function mapExistingAttachments(attachments = []) {
   return attachments.map((item, index) => ({
     clientId: `existing-${item.id}-${index}`,
@@ -42,7 +46,6 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
   const [isPinned, setIsPinned] = useState(false);
   const [hideFromAll, setHideFromAll] = useState(false);
   const [attachments, setAttachments] = useState([]);
-  const [uploadingCount, setUploadingCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const imageInputRef = useRef(null);
@@ -53,6 +56,7 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
     if (isOpen) {
       setRenderModal(true);
       setError('');
+      setSubmitting(false);
       setTitle(editPost?.title || '');
       setBody(editPost?.body || '');
       setIsPinned(editPost?.is_pinned || false);
@@ -73,6 +77,7 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
       setBody('');
       setIsPinned(false);
       setHideFromAll(false);
+      setSubmitting(false);
       setError('');
     }, 280);
     return () => window.clearTimeout(timer);
@@ -80,7 +85,7 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
 
   const trimmedTitle = title.trim();
   const trimmedBody = body.trim();
-  const isUploading = uploadingCount > 0;
+  const isUploading = attachments.some((item) => item.uploading);
   const canSubmit =
     trimmedTitle.length >= MIN_TITLE_LENGTH &&
     trimmedTitle.length <= MAX_TITLE_LENGTH &&
@@ -108,7 +113,6 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
       },
     ]);
 
-    setUploadingCount((value) => value + 1);
     try {
       const response = await uploadFeedPostImage(file);
       setAttachments((prev) =>
@@ -124,15 +128,13 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
           };
         }),
       );
-    } catch (uploadError) {
+    } catch {
       setAttachments((prev) => {
         const target = prev.find((item) => item.clientId === clientId);
         if (target) revokePreviewUrl(target);
         return prev.filter((item) => item.clientId !== clientId);
       });
       setError('Не удалось загрузить изображение');
-    } finally {
-      setUploadingCount((value) => value - 1);
     }
   }
 
@@ -154,7 +156,6 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
       },
     ]);
 
-    setUploadingCount((value) => value + 1);
     try {
       const response = await uploadFeedPostDocument(file);
       setAttachments((prev) =>
@@ -173,8 +174,6 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
     } catch {
       setAttachments((prev) => prev.filter((item) => item.clientId !== clientId));
       setError('Не удалось загрузить файл');
-    } finally {
-      setUploadingCount((value) => value - 1);
     }
   }
 
@@ -193,7 +192,7 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
     setError('');
     setSubmitting(true);
     const payloadAttachments = attachments
-      .filter((item) => !item.uploading && item.url)
+      .filter((item) => !item.uploading && isPersistableAttachmentUrl(item.url))
       .map((item, index) => ({
         kind: item.kind,
         url: item.url,
@@ -287,7 +286,10 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
             <ul className={styles.attachmentList}>
               {attachments.map((attachment) => (
                 <li key={attachment.clientId} className={styles.attachmentItem}>
-                  <span>{attachment.filename || (attachment.kind === 'image' ? 'Фото' : 'Документ')}</span>
+                  <span>
+                    {attachment.filename || (attachment.kind === 'image' ? 'Фото' : 'Документ')}
+                    {attachment.uploading ? ' (загрузка…)' : ''}
+                  </span>
                   <button type="button" onClick={() => removeAttachment(attachment.clientId)} aria-label="Удалить">
                     <FaTrashCan size={12} />
                   </button>
@@ -309,6 +311,10 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
           </label>
 
           {error && <p className={styles.error}>{error}</p>}
+
+          {!canSubmit && trimmedTitle.length > 0 && trimmedTitle.length < MIN_TITLE_LENGTH && (
+            <p className={styles.hint}>Заголовок — минимум {MIN_TITLE_LENGTH} символа</p>
+          )}
 
           <button type="submit" className={styles.submitBtn} disabled={!canSubmit}>
             {submitting ? 'Сохраняем…' : isEditMode ? 'Сохранить' : hideFromAll ? 'Сохранить черновик' : 'Опубликовать'}

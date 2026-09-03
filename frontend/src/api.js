@@ -193,6 +193,12 @@ export const pinFeedPost = (postId) =>
 export const unpinFeedPost = (postId) =>
   apiClient.post(`/feed-posts/${postId}/unpin`, {}, getAuthHeaders());
 
+export const getAdminFeedPosts = () =>
+  apiClient.get('/admin/feed-posts', getAuthHeaders());
+
+export const deleteFeedPost = (postId) =>
+  apiClient.delete(`/admin/feed-posts/${postId}`, getAuthHeaders());
+
 export const uploadFeedPostImage = (file) => {
   const formData = new FormData();
   formData.append('file', file);
@@ -233,6 +239,18 @@ export const purchaseLocalItem = (userId, itemId, city, websiteUrl) => {
     website_url: websiteUrl
   });
 };
+
+export const getMyPurchases = () =>
+  apiClient.get('/market/purchases/me', getAuthHeaders());
+
+export const getFavoriteItemIds = () =>
+  apiClient.get('/market/favorites/ids', getAuthHeaders());
+
+export const addFavoriteItem = (itemId) =>
+  apiClient.post(`/market/favorites/${itemId}`, null, getAuthHeaders());
+
+export const removeFavoriteItem = (itemId) =>
+  apiClient.delete(`/market/favorites/${itemId}`, getAuthHeaders());
 
 export const getUserTransactions = (userId) => {
   return apiClient.get(`/users/${userId}/transactions`);
@@ -407,6 +425,10 @@ export const getUserEngagementStats = () => {
 
 export const getPopularItemsStats = () => {
   return apiClient.get('/admin/statistics/popular_items', getAuthHeaders());
+};
+
+export const getFavoriteItemsStats = () => {
+  return apiClient.get('/admin/statistics/favorite_items', getAuthHeaders());
 };
 
 export const getInactiveUsers = () => {

@@ -639,6 +639,56 @@ async def admin_restore_market_item(db: AsyncSession, item_id: int):
 
 # --- КОНЕЦ БЛОКА ---
 
+async def list_purchases_for_user(
+    db: AsyncSession,
+    user_id: int,
+) -> list[dict]:
+    """История покупок пользователя с данными о выдаче."""
+    result = await db.execute(
+        select(models.Purchase, models.MarketItem, models.ItemCode)
+        .join(models.MarketItem, models.MarketItem.id == models.Purchase.item_id)
+        .outerjoin(
+            models.ItemCode,
+            models.ItemCode.purchase_id == models.Purchase.id,
+        )
+        .where(models.Purchase.user_id == user_id)
+        .order_by(models.Purchase.timestamp.desc(), models.Purchase.id.desc())
+    )
+    rows = result.all()
+    items: list[dict] = []
+    for purchase, market_item, item_code in rows:
+        issued = item_code.code_value if item_code is not None else None
+        if issued is None and market_item.is_auto_issuance:
+            fallback = (
+                await db.execute(
+                    select(models.ItemCode)
+                    .where(
+                        models.ItemCode.market_item_id == market_item.id,
+                        models.ItemCode.issued_to_user_id == user_id,
+                        models.ItemCode.is_issued == True,  # noqa: E712
+                    )
+                    .order_by(models.ItemCode.id.desc())
+                    .limit(1)
+                )
+            ).scalars().first()
+            if fallback is not None:
+                issued = fallback.code_value
+        items.append(
+            {
+                "id": purchase.id,
+                "purchased_at": purchase.timestamp,
+                "item_id": market_item.id,
+                "item_name": market_item.name,
+                "image_url": market_item.image_url,
+                "price": market_item.price,
+                "is_auto_issuance": bool(market_item.is_auto_issuance),
+                "issued_code": issued,
+                "delivery_instructions": market_item.description,
+            }
+        )
+    return items
+
+
 async def create_purchase(db: AsyncSession, pr: schemas.PurchaseRequest):
     issued_code_value = None
     item = await db.get(models.MarketItem, pr.item_id)
@@ -1302,6 +1352,7 @@ async def _invalidate_feed_and_leaderboard(reason: str):
 
 # Мы переименуем старую функцию create_market_item
 async def admin_create_market_item(db: AsyncSession, item: schemas.MarketItemCreate):
+    from market_favorites_service import normalize_market_item_description
     from market_item_order_service import next_market_item_sort_order
     from object_storage import slugify_prize_folder
 
@@ -1314,9 +1365,14 @@ async def admin_create_market_item(db: AsyncSession, item: schemas.MarketItemCre
     else:
         stock = item.stock
 
+    try:
+        normalized_description = normalize_market_item_description(item.description)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
     db_item = models.MarketItem(
         name=item.name,
-        description=item.description,
+        description=normalized_description,
         price=calculated_price, 
         price_rub=item.price_rub,
         stock=stock,
@@ -1391,6 +1447,16 @@ async def admin_update_market_item(db: AsyncSession, item_id: int, item_data: sc
 
     # Обновляем основные данные товара
     update_data = item_data.model_dump(exclude_unset=True)
+    if "description" in update_data:
+        from market_favorites_service import normalize_market_item_description
+
+        try:
+            update_data["description"] = normalize_market_item_description(
+                update_data.get("description"),
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
     updated_fields_count = 0 # Счетчик реальных изменений
     for key, value in update_data.items():
         # Исключаем поля, которые обрабатываются отдельно

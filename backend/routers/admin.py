@@ -674,6 +674,23 @@ async def get_popular_items(db: AsyncSession = Depends(get_db)):
     ]
     return {"items": popular_items_schema}
 
+
+@router.get("/statistics/favorite_items", response_model=schemas.FavoriteItemsStats)
+async def get_favorite_items_statistics(
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+):
+    """Топ товаров по числу добавлений в избранное."""
+    from market_favorites_service import get_favorite_items_stats
+
+    rows = await get_favorite_items_stats(db, limit=limit)
+    return {
+        "items": [
+            {"item": row[0], "favorite_count": row.favorite_count}
+            for row in rows
+        ],
+    }
+
 @router.get("/statistics/inactive_users", response_model=schemas.InactiveUsersStats)
 async def get_inactive_users_list(db: AsyncSession = Depends(get_db)):
     inactive_users = await crud.get_inactive_users(db)
@@ -1089,3 +1106,30 @@ def _append_dict_rows_sheet(workbook: Workbook, title: str, rows: list[dict[str,
     """Создаёт лист и пишет таблицу из списка словарей (ключи первой строки — заголовки)."""
     ws = workbook.create_sheet(title)
     _write_dict_rows_on_sheet(ws, rows)
+
+
+@router.get("/feed-posts", response_model=List[schemas.FeedPostResponse])
+async def list_admin_feed_posts_route(
+    db: AsyncSession = Depends(get_db),
+):
+    """Список всех неудалённых новостей для админ-панели."""
+    import feed_post_service
+
+    posts = await feed_post_service.list_admin_feed_posts(db)
+    return [feed_post_service.feed_post_to_response(post) for post in posts]
+
+
+@router.delete("/feed-posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_admin_feed_post_route(
+    post_id: int,
+    current_user: models.User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Мягко удаляет новость (скрывает из ленты)."""
+    import feed_post_service
+
+    try:
+        await feed_post_service.soft_delete_feed_post(db, current_user, post_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

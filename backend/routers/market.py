@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
 import crud
+import models
 import schemas
 from database import get_db
+from dependencies import get_current_user
 from redis_cache import redis_cache
 
 logger = logging.getLogger(__name__)
@@ -107,3 +109,63 @@ async def purchase_statix_bonus(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@router.get("/market/purchases/me", response_model=List[schemas.MyPurchaseItemResponse])
+async def list_my_purchases(
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """История покупок текущего пользователя для профиля."""
+    rows = await crud.list_purchases_for_user(db, user.id)
+    return [schemas.MyPurchaseItemResponse.model_validate(row) for row in rows]
+
+
+@router.get("/market/favorites/ids", response_model=schemas.MarketFavoriteIdsResponse)
+async def list_favorite_item_ids(
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Возвращает id избранных товаров текущего пользователя."""
+    from market_favorites_service import get_user_favorite_item_ids
+
+    item_ids = sorted(await get_user_favorite_item_ids(db, user.id))
+    return schemas.MarketFavoriteIdsResponse(item_ids=item_ids)
+
+
+@router.get("/market/favorites", response_model=List[schemas.MarketItemPublic])
+async def list_favorite_items(
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Возвращает избранные товары текущего пользователя."""
+    from market_favorites_service import get_user_favorite_market_items
+
+    items = await get_user_favorite_market_items(db, user.id)
+    return [schemas.MarketItemPublic.model_validate(item) for item in items]
+
+
+@router.post("/market/favorites/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def add_favorite_item(
+    item_id: int,
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Добавляет товар в избранное."""
+    from market_favorites_service import add_market_item_favorite
+
+    await add_market_item_favorite(db, user.id, item_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/market/favorites/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_favorite_item(
+    item_id: int,
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Удаляет товар из избранного."""
+    from market_favorites_service import remove_market_item_favorite
+
+    await remove_market_item_favorite(db, user.id, item_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -767,13 +767,20 @@ button:active {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
+}
+
+.feedNewsMedia a {
+  display: block;
+  width: 100%;
 }
 
 .feedNewsImage {
   width: 100%;
+  height: auto;
+  display: block;
   border-radius: 12px;
-  object-fit: cover;
-  max-height: 320px;
+  object-fit: contain;
 }
 
 .feedNewsDocs {

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import styles from './StatisticsDashboard.module.css';
-import { FaChartBar, FaHourglassHalf, FaStar, FaChartLine, FaUsersSlash, FaCoins, FaSignInAlt, FaChartPie, FaFileExcel, FaClock } from 'react-icons/fa';
+import { FaChartBar, FaHourglassHalf, FaStar, FaChartLine, FaUsersSlash, FaCoins, FaSignInAlt, FaChartPie, FaFileExcel, FaClock, FaHeart } from 'react-icons/fa';
 import DateRangePicker from '../../components/DateRangePicker';
 import { exportConsolidatedReport } from '../../api';
 
@@ -11,6 +11,7 @@ import GeneralStats from './stats/GeneralStats';
 import HourlyActivityPage from './stats/HourlyActivityPage';
 import UserEngagementPage from './stats/UserEngagementPage';
 import PopularItemsPage from './stats/PopularItemsPage';
+import FavoriteItemsPage from './stats/FavoriteItemsPage';
 import InactiveUsersPage from './stats/InactiveUsersPage';
 import EconomyBalancePage from './stats/EconomyBalancePage';
 import LoginActivityPage from './stats/LoginActivityPage';
@@ -55,6 +56,7 @@ const StatisticsDashboard = () => {
         { id: 'ratio', label: 'Акт/Неакт', icon: <FaChartPie />, dateDependent: false },
         { id: 'engagement', label: 'Лидеры', icon: <FaStar />, dateDependent: false },
         { id: 'popular', label: 'Товары', icon: <FaChartLine />, dateDependent: false },
+        { id: 'favorites', label: 'Избранное', icon: <FaHeart />, dateDependent: false },
         { id: 'inactive', label: 'Неактивные', icon: <FaUsersSlash />, dateDependent: false },
         { id: 'economy', label: 'Экономика', icon: <FaCoins />, dateDependent: false },
     ];
@@ -72,6 +74,7 @@ const StatisticsDashboard = () => {
             case 'ratio': return <ActiveUserRatioPage />;
             case 'engagement': return <UserEngagementPage />;
             case 'popular': return <PopularItemsPage />;
+            case 'favorites': return <FavoriteItemsPage />;
             case 'inactive': return <InactiveUsersPage />;
             case 'economy': return <EconomyBalancePage />;
             default: return <GeneralStats {...dateProps} />;

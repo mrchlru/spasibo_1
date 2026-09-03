@@ -1,7 +1,7 @@
 /* Service Worker «Спасибо»: кэш оболочки + Web Push */
 
 const CACHE_NAME = 'spasibo-shell-v1';
-const SHELL_URLS = ['/', '/index.html', '/site.webmanifest', '/apple-touch-icon.png'];
+const SHELL_URLS = ['/', '/index.html', '/site.webmanifest', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

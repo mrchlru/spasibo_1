@@ -453,10 +453,10 @@ const ItemCreation = () => {
               placeholder="Описание"
               value={form.description}
               onChange={handleFormChange}
-              maxLength="120"
+              maxLength="300"
               className={styles.textarea}
             />
-            <span className={styles.charCounter}>{(form.description || '').length} / 120</span>
+            <span className={styles.charCounter}>{(form.description || '').length} / 300</span>
           </div>
           
           <input type="number" name="price_rub" value={form.price_rub} onChange={handleFormChange} placeholder="Цена в рублях" className={styles.input} required min="0" />
