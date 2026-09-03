@@ -315,16 +315,17 @@ def ready_check_slash(request: Request):
 
 @app.api_route("/", methods=["GET", "HEAD"], response_model=None)
 def read_root(request: Request):
-    """Корень: SPA или JSON; HEAD даёт 200 без тела.
+    """Корень: SPA или JSON.
 
-    Timeweb (и часть прокси) шлют ``HEAD /`` на корень; только ``GET`` давало **405**.
+    HEAD должен отдавать те же заголовки, что и GET (включая Content-Length),
+    иначе часть WebView (Huawei) показывает пустую страницу.
     """
-    if request.method == "HEAD":
-        return Response(status_code=200)
     if settings.SERVE_SPA:
         index = _static_root() / "index.html"
         if index.is_file():
             return FileResponse(index)
+    if request.method == "HEAD":
+        return Response(status_code=200)
     return {"message": "Welcome to the HR Spasibo API"}
 
 
