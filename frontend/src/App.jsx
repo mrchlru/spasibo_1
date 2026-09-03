@@ -20,7 +20,7 @@ import {
 } from './api';
 import { initializeCache, clearCache, setCachedData, hasWarmBootCache } from './storage';
 import { preloadAppContent, ANDROID_BOOT_TIMEOUT_MS } from './boot/preloadAppContent';
-import { isSpasiboAndroidApp } from './pwa/androidNativePush';
+import { isSpasiboAndroidApp, hideAndroidBootSplash } from './pwa/androidNativePush';
 
 // Компоненты навигации (загружаются сразу, так как всегда видны)
 import BottomNav from './components/BottomNav';
@@ -63,6 +63,7 @@ const STATUS_CHECK_INTERVAL = 5000; // Проверяем статус кажд�
 const tg = window.Telegram?.WebApp?.initData ? window.Telegram.WebApp : null;
 const isTelegramWebApp = Boolean(window.Telegram?.WebApp?.initData);
 const isAndroidShell = isSpasiboAndroidApp();
+const androidLoadingFallback = isAndroidShell ? null : <LoadingScreen />;
 
 function App() {
   const [user, setUser] = useState(null);
@@ -530,14 +531,25 @@ function App() {
       cancelled = true;
     };
   }, [loading, user?.id, user?.status, isOnboardingVisible]);
+
+  const isAndroidBootLoading =
+    loading ||
+    (user?.status === 'approved' && !isOnboardingVisible && !bootReady);
+
+  useEffect(() => {
+    if (!isAndroidShell || isAndroidBootLoading) {
+      return;
+    }
+    hideAndroidBootSplash();
+  }, [isAndroidBootLoading]);
   
   const renderPage = () => {
     if (loading) {
-      return <LoadingScreen />;
+      return androidLoadingFallback;
     }
 
     if (user?.status === 'approved' && !isOnboardingVisible && !bootReady) {
-      return <LoadingScreen />;
+      return androidLoadingFallback;
     }
   
     // Если не в Telegram WebApp, показываем страницу входа или регистрации
@@ -903,7 +915,7 @@ function App() {
               ⏳ Ваши изменения отправлены на согласование администраторам.
             </div>
         )}
-        <Suspense fallback={<LoadingScreen />}>
+        <Suspense fallback={androidLoadingFallback}>
           {renderPage()}
         </Suspense>
       </main>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Splash icon: мозаичное сердце почти на весь canvas (288dp). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp">
+    <item
+        android:width="256dp"
+        android:height="256dp"
+        android:gravity="center">
+        <bitmap
+            android:gravity="fill"
+            android:src="@drawable/ic_splash_heart" />
+    </item>
+</layer-list>

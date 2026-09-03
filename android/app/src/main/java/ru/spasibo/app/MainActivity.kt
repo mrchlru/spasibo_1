@@ -16,6 +16,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -25,7 +28,7 @@ import ru.spasibo.app.ui.theme.SpasiboTheme
 import ru.spasibo.app.web.WebAppScreen
 
 class MainActivity : ComponentActivity() {
-    private var keepSplashScreen = true
+    private var showBootSplash by mutableStateOf(true)
     private var webView: WebView? = null
     private var pendingPermissionCallback: ((Boolean) -> Unit)? = null
     private var pendingOpenUrl: String? = null
@@ -44,11 +47,11 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen().setKeepOnScreenCondition { keepSplashScreen }
+        installSplashScreen().setKeepOnScreenCondition { showBootSplash }
         super.onCreate(savedInstanceState)
 
         Handler(Looper.getMainLooper()).postDelayed({
-            keepSplashScreen = false
+            hideBootSplash()
         }, SPLASH_MAX_MS)
 
         Handler(Looper.getMainLooper()).post {
@@ -76,10 +79,17 @@ class MainActivity : ComponentActivity() {
                     initialUrl = pendingOpenUrl,
                     pendingOpenUrl = pendingOpenUrl,
                     onPendingOpenUrlHandled = { pendingOpenUrl = null },
-                    onInitialLoadFinished = { keepSplashScreen = false },
+                    showBootSplash = showBootSplash,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+        }
+    }
+
+    /** Скрывает нативный splash после полной загрузки PWA. */
+    fun hideBootSplash() {
+        runOnUiThread {
+            showBootSplash = false
         }
     }
 
@@ -187,7 +197,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_OPEN_URL = "ru.spasibo.app.extra.OPEN_URL"
-        private const val SPLASH_MAX_MS = 2_500L
+        private const val SPLASH_MAX_MS = 30_000L
         const val LOG_TAG = "SpasiboWebView"
         private const val PREFS_NAME = "spasibo_app"
         private const val KEY_NOTIF_PERMISSION_ASKED = "post_notifications_asked"

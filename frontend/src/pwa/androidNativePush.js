@@ -14,6 +14,11 @@ function sleep(ms) {
   });
 }
 
+/** Скрывает нативный splash с биением сердца после загрузки PWA. */
+export function hideAndroidBootSplash() {
+  window.SpasiboAndroid?.hideBootSplash?.();
+}
+
 /** Приложение открыто в Android WebView «Спасибо», а не в браузере. */
 export function isSpasiboAndroidApp() {
   if (typeof window === 'undefined') {

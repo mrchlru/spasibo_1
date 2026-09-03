@@ -91,6 +91,13 @@ class SpasiboWebAppBridge(
     }
 
     @JavascriptInterface
+    fun hideBootSplash() {
+        activity.runOnUiThread {
+            activity.hideBootSplash()
+        }
+    }
+
+    @JavascriptInterface
     fun openExternalUrl(url: String) {
         val trimmed = url.trim()
         if (trimmed.isBlank()) {

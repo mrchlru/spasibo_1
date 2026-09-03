@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.ByteArrayInputStream
@@ -53,6 +54,7 @@ import ru.spasibo.app.BuildConfig
 import ru.spasibo.app.MainActivity
 import ru.spasibo.app.R
 import ru.spasibo.app.ui.offline.OfflineScreen
+import ru.spasibo.app.ui.splash.HeartbeatSplashScreen
 import ru.spasibo.app.ui.theme.SpasiboAccent
 import ru.spasibo.app.ui.theme.SpasiboAppBackground
 import ru.spasibo.app.ui.theme.SpasiboStatusBarBackground
@@ -64,7 +66,7 @@ fun WebAppScreen(
     initialUrl: String? = null,
     pendingOpenUrl: String? = null,
     onPendingOpenUrlHandled: () -> Unit = {},
-    onInitialLoadFinished: () -> Unit,
+    showBootSplash: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -80,9 +82,7 @@ fun WebAppScreen(
 
     fun finishInitialLoad() {
         activity.runOnUiThread {
-            if (initialLoadDone.compareAndSet(false, true)) {
-                onInitialLoadFinished()
-            }
+            initialLoadDone.compareAndSet(false, true)
         }
     }
 
@@ -154,6 +154,12 @@ fun WebAppScreen(
         onDispose { unregister() }
     }
 
+    LaunchedEffect(showOffline) {
+        if (showOffline) {
+            activity.hideBootSplash()
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (!NetworkConnectivity.isNetworkAvailable(context)) {
             isOffline = true
@@ -197,7 +203,14 @@ fun WebAppScreen(
                 .background(SpasiboStatusBarBackground),
         )
 
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .graphicsLayer {
+                    alpha = if (showBootSplash && !showOffline) 0f else 1f
+                },
+        ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
@@ -457,7 +470,9 @@ fun WebAppScreen(
                 )
             }
 
-            if (isLoading && !showOffline) {
+            if (showBootSplash && !showOffline) {
+                HeartbeatSplashScreen(modifier = Modifier.fillMaxSize())
+            } else if (isLoading && !showOffline) {
                 LinearProgressIndicator(
                     progress = { loadProgress.coerceIn(0f, 1f) },
                     modifier = Modifier
