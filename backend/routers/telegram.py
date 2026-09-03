@@ -101,6 +101,79 @@ async def telegram_photo_proxy(url: str = Query(..., min_length=1)) -> Response:
     )
 
 
+@router.get("/telegram/webapp-sdk")
+async def telegram_webapp_sdk() -> Response:
+    """Заглушка Telegram WebApp SDK для браузера и Android WebView.
+
+    В Telegram Mini App настоящий SDK инжектирует клиент Telegram. В обычном
+    браузере и нативной оболочке отдаём no-op API, чтобы скрипт не ломал загрузку.
+    """
+    js = """
+(function(){
+  window.Telegram = window.Telegram || {};
+  if (window.Telegram.WebApp && window.Telegram.WebApp.__spasiboStub) {
+    return;
+  }
+  var noop = function(){};
+  window.Telegram.WebApp = {
+    __spasiboStub: true,
+    initData: '',
+    initDataUnsafe: {},
+    version: '6.0',
+    platform: 'unknown',
+    colorScheme: 'light',
+    themeParams: {},
+    isExpanded: true,
+    viewportHeight: window.innerHeight,
+    viewportStableHeight: window.innerHeight,
+    ready: noop,
+    expand: noop,
+    close: noop,
+    enableClosingConfirmation: noop,
+    disableClosingConfirmation: noop,
+    setBackgroundColor: noop,
+    setHeaderColor: noop,
+    onEvent: noop,
+    offEvent: noop,
+    openLink: function(url){ window.open(url, '_blank'); },
+    openTelegramLink: function(url){ window.open(url, '_blank'); },
+    showPopup: function(params, callback){ if (callback) callback('ok'); },
+    showAlert: function(message, callback){ if (callback) callback(); },
+    showConfirm: function(message, callback){ if (callback) callback(true); },
+    MainButton: {
+      text: '',
+      color: '',
+      textColor: '',
+      isVisible: false,
+      isActive: true,
+      isProgressVisible: false,
+      setText: noop,
+      onClick: noop,
+      offClick: noop,
+      show: noop,
+      hide: noop,
+      enable: noop,
+      disable: noop,
+      showProgress: noop,
+      hideProgress: noop
+    },
+    BackButton: {
+      isVisible: false,
+      onClick: noop,
+      offClick: noop,
+      show: noop,
+      hide: noop
+    }
+  };
+})();
+""".strip()
+    return Response(
+        content=js,
+        media_type="application/javascript; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 @router.post("/telegram/webhook")
 async def telegram_webhook(request: Request) -> dict[str, bool]:
     """Обрабатывает update от Telegram.

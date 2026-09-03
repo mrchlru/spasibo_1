@@ -47,6 +47,7 @@ const TransferPage = lazy(() => import('./pages/TransferPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const OnboardingStories = lazy(() => import('./components/OnboardingStories'));
 import EmailPromptModal from './components/EmailPromptModal';
+import AndroidNativeSessionBridge from './pwa/AndroidNativeSessionBridge.jsx';
 
 import { startSession, pingSession } from './api';
 
@@ -56,9 +57,9 @@ import './App.css';
 const PING_INTERVAL = 60000; // Пингуем каждую минуту (60 000 миллисекунд)
 const STATUS_CHECK_INTERVAL = 5000; // Проверяем статус каждые 5 секунд (5000 миллисекунд)
 
-// Безопасная инициализация Telegram WebApp
-const tg = window.Telegram?.WebApp || null;
-const isTelegramWebApp = !!window.Telegram?.WebApp;
+// Без initData это заглушка SDK (браузер / Android WebView), не настоящий Telegram.
+const tg = window.Telegram?.WebApp?.initData ? window.Telegram.WebApp : null;
+const isTelegramWebApp = Boolean(window.Telegram?.WebApp?.initData);
 
 function App() {
   const [user, setUser] = useState(null);
@@ -192,7 +193,7 @@ function App() {
       applyTelegramTheme(seasonThemeRef.current);
       
       // Включаем подтверждение закрытия для предотвращения случайного закрытия
-      tg.enableClosingConfirmation();
+      tg.enableClosingConfirmation?.();
       
       // Обработчик изменения видимости viewport (когда приложение становится видимым/невидимым)
       tg.onEvent('viewportChanged', (event) => {
@@ -863,6 +864,7 @@ function App() {
   
   return (
     <div className="app-container">
+      <AndroidNativeSessionBridge user={user} />
       {/* Теперь меню показываются на основе новых, правильных переменных */}
       {shouldShowSideNav && <SideNav user={user} activePage={page} onNavigate={navigate} />}
       {shouldShowBottomNav && <BottomNav user={user} activePage={page} onNavigate={navigate} />}
