@@ -320,10 +320,34 @@ def read_root(request: Request):
     return {"message": "Welcome to the HR Spasibo API"}
 
 
+_API_PATH_PREFIXES = (
+    "telegram/",
+    "users/",
+    "transactions/",
+    "market/",
+    "admin/",
+    "banners/",
+    "roulette/",
+    "scheduler/",
+    "sessions/",
+    "shared-gifts/",
+    "cache/",
+    "app-settings/",
+    "notifications/",
+    "push/",
+    "media/",
+    "feed/",
+)
+
+
 @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
 def spa_fallback(full_path: str):
     """Статика из корня dist (иконки, manifest) или index.html для маршрутов SPA."""
     if not settings.SERVE_SPA:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    normalized = full_path.strip().lstrip("/")
+    if any(normalized.startswith(prefix) for prefix in _API_PATH_PREFIXES):
         raise HTTPException(status_code=404, detail="Not found")
 
     dist_file = _safe_dist_static_file(full_path)
