@@ -32,6 +32,13 @@
   color: #666;
 }
 
+.nameRequiredHint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #c05621;
+}
+
 .uploadRow {
   display: flex;
   flex-wrap: wrap;

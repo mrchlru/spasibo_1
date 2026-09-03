@@ -578,6 +578,11 @@ const ItemCreation = () => {
                       ? ' Здесь добавляются новые картинки к уже существующим призам.'
                       : ''}
                   </p>
+                  {!form.name.trim() && (
+                    <p className={prizeStyles.nameRequiredHint}>
+                      Сначала заполните поле «Название товара» выше — без него загрузка недоступна.
+                    </p>
+                  )}
                   <div className={prizeStyles.uploadRow}>
                     <input
                       ref={prizeFileInputRef}
@@ -592,8 +597,14 @@ const ItemCreation = () => {
                     <button
                       type="button"
                       className={styles.buttonGrey}
-                      disabled={prizeUploading || !form.name.trim()}
-                      onClick={() => prizeFileInputRef.current?.click()}
+                      disabled={prizeUploading}
+                      onClick={() => {
+                        if (!form.name.trim()) {
+                          showAlert('Сначала укажите название товара — от него зависит папка в хранилище.', 'error');
+                          return;
+                        }
+                        prizeFileInputRef.current?.click();
+                      }}
                     >
                       {prizeUploading ? 'Загрузка…' : 'Выбрать картинки'}
                     </button>
