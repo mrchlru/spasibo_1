@@ -54,7 +54,6 @@ import ru.spasibo.app.BuildConfig
 import ru.spasibo.app.MainActivity
 import ru.spasibo.app.R
 import ru.spasibo.app.ui.offline.OfflineScreen
-import ru.spasibo.app.ui.splash.HeartbeatSplashScreen
 import ru.spasibo.app.ui.theme.SpasiboAccent
 import ru.spasibo.app.ui.theme.SpasiboAppBackground
 import ru.spasibo.app.ui.theme.SpasiboStatusBarBackground
@@ -468,11 +467,7 @@ fun WebAppScreen(
                         .fillMaxSize()
                         .background(SpasiboAppBackground),
                 )
-            }
-
-            if (showBootSplash && !showOffline) {
-                HeartbeatSplashScreen(modifier = Modifier.fillMaxSize())
-            } else if (isLoading && !showOffline) {
+            } else if (isLoading && !showBootSplash) {
                 LinearProgressIndicator(
                     progress = { loadProgress.coerceIn(0f, 1f) },
                     modifier = Modifier

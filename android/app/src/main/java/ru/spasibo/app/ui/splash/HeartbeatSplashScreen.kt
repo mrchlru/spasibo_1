@@ -21,21 +21,25 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import ru.spasibo.app.R
 
 private val SplashBackground = Color(0xFF243B09)
-private val DecorStroke = Color(0x332D5016)
-private val DecorLightStroke = Color(0x1AFFFFFF)
-private val DecorDot = Color(0x402D5016)
-private val DecorSparkle = Color(0x382D5016)
+private val DecorStroke = Color(0x662D5016)
+private val DecorLightStroke = Color(0x33FFFFFF)
+private val DecorDot = Color(0x662D5016)
+private val DecorSparkle = Color(0x552D5016)
 
 /** Полноэкранный splash с декоративным фоном и пульсацией сердца. */
 @Composable
 fun HeartbeatSplashScreen(
     modifier: Modifier = Modifier,
 ) {
+    val configuration = LocalConfiguration.current
+    val heartSizeDp = (configuration.screenWidthDp.coerceAtMost(configuration.screenHeightDp) * 0.72f).dp
+
     val infiniteTransition = rememberInfiniteTransition(label = "heartbeat")
     val heartScale by infiniteTransition.animateFloat(
         initialValue = 1f,
@@ -44,10 +48,10 @@ fun HeartbeatSplashScreen(
             animation = keyframes {
                 durationMillis = 1_400
                 1f at 0
-                1.12f at 180 using FastOutSlowInEasing
-                1f at 360 using FastOutSlowInEasing
-                1.07f at 520 using FastOutSlowInEasing
-                1f at 700 using FastOutSlowInEasing
+                1.14f at 160 using FastOutSlowInEasing
+                1f at 320 using FastOutSlowInEasing
+                1.08f at 480 using FastOutSlowInEasing
+                1f at 640 using FastOutSlowInEasing
                 1f at 1_400
             },
             repeatMode = RepeatMode.Restart,
@@ -64,47 +68,47 @@ fun HeartbeatSplashScreen(
 
             drawCircle(
                 color = DecorStroke,
-                radius = size.minDimension * 0.42f,
-                center = Offset(size.width * 0.5f, size.height * 0.46f),
-                style = Stroke(width = 2.5f),
+                radius = size.minDimension * 0.46f,
+                center = Offset(size.width * 0.5f, size.height * 0.48f),
+                style = Stroke(width = 3f),
             )
 
             drawCircle(
                 color = DecorLightStroke,
-                radius = size.minDimension * 0.28f,
-                center = Offset(size.width * 0.5f, size.height * 0.44f),
-                style = Stroke(width = 1.5f),
+                radius = size.minDimension * 0.32f,
+                center = Offset(size.width * 0.5f, size.height * 0.46f),
+                style = Stroke(width = 2f),
             )
 
             drawCircle(
                 color = DecorStroke,
-                radius = size.minDimension * 0.11f,
-                center = Offset(size.width * 0.14f, size.height * 0.18f),
-                style = Stroke(width = 2f),
+                radius = size.minDimension * 0.13f,
+                center = Offset(size.width * 0.12f, size.height * 0.16f),
+                style = Stroke(width = 2.5f),
             )
 
             drawHatchedCircle(
-                center = Offset(size.width * 0.14f, size.height * 0.18f),
-                radius = size.minDimension * 0.09f,
+                center = Offset(size.width * 0.12f, size.height * 0.16f),
+                radius = size.minDimension * 0.11f,
             )
 
             drawDotGrid(
-                topLeft = Offset(size.width * 0.08f, size.height * 0.72f),
-                columns = 5,
-                rows = 4,
-                spacing = size.minDimension * 0.022f,
+                topLeft = Offset(size.width * 0.06f, size.height * 0.74f),
+                columns = 6,
+                rows = 5,
+                spacing = size.minDimension * 0.024f,
             )
 
             drawSparkles(
-                center = Offset(size.width * 0.84f, size.height * 0.76f),
-                size = size.minDimension * 0.035f,
+                center = Offset(size.width * 0.86f, size.height * 0.78f),
+                size = size.minDimension * 0.04f,
             )
 
             drawCircle(
                 color = DecorStroke,
-                radius = size.minDimension * 0.22f,
-                center = Offset(size.width * 1.02f, size.height * 0.82f),
-                style = Stroke(width = 2f),
+                radius = size.minDimension * 0.24f,
+                center = Offset(size.width * 1.04f, size.height * 0.84f),
+                style = Stroke(width = 2.5f),
             )
         }
 
@@ -112,7 +116,7 @@ fun HeartbeatSplashScreen(
             painter = painterResource(R.drawable.ic_splash_heart),
             contentDescription = null,
             modifier = Modifier
-                .size(240.dp)
+                .size(heartSizeDp)
                 .graphicsLayer {
                     scaleX = heartScale
                     scaleY = heartScale
@@ -132,7 +136,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawHatchedCircle(
             color = DecorStroke,
             start = Offset(center.x + offset, center.y - radius),
             end = Offset(center.x + offset, center.y + radius),
-            strokeWidth = 1.2f,
+            strokeWidth = 1.5f,
         )
         offset += step
     }
@@ -148,7 +152,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDotGrid(
         for (column in 0 until columns) {
             drawCircle(
                 color = DecorDot,
-                radius = spacing * 0.22f,
+                radius = spacing * 0.24f,
                 center = Offset(
                     topLeft.x + column * spacing,
                     topLeft.y + row * spacing,

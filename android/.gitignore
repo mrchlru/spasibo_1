@@ -9,3 +9,5 @@ captures/
 app/google-services.json
 *.jks
 *.keystore
+keystore.properties
+RELEASE_SIGNING.local.txt

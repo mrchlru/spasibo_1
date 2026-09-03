@@ -15,6 +15,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,6 +25,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import ru.spasibo.app.push.NotificationHelper
 import ru.spasibo.app.push.PushRegistrar
+import ru.spasibo.app.ui.splash.HeartbeatSplashScreen
 import ru.spasibo.app.ui.theme.SpasiboTheme
 import ru.spasibo.app.web.WebAppScreen
 
@@ -47,7 +49,12 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen().setKeepOnScreenCondition { showBootSplash }
+        val splashScreen = installSplashScreen()
+        // Системный splash Android 12+ статичен и перекрывает Compose — убираем сразу.
+        splashScreen.setKeepOnScreenCondition { false }
+        splashScreen.setOnExitAnimationListener { provider ->
+            provider.remove()
+        }
         super.onCreate(savedInstanceState)
 
         Handler(Looper.getMainLooper()).postDelayed({
@@ -62,26 +69,26 @@ class MainActivity : ComponentActivity() {
         pendingOpenUrl = extractOpenUrl(intent)
 
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(
-                AndroidGraphicsColor.parseColor("#E5F5E3"),
-                AndroidGraphicsColor.parseColor("#E5F5E3"),
-            ),
-            navigationBarStyle = SystemBarStyle.light(
-                AndroidGraphicsColor.WHITE,
-                AndroidGraphicsColor.WHITE,
-            ),
+            statusBarStyle = SystemBarStyle.dark(AndroidGraphicsColor.parseColor("#243B09")),
+            navigationBarStyle = SystemBarStyle.dark(AndroidGraphicsColor.parseColor("#243B09")),
         )
 
         setContent {
+            val bootSplashVisible = showBootSplash
             SpasiboTheme {
-                WebAppScreen(
-                    activity = this@MainActivity,
-                    initialUrl = pendingOpenUrl,
-                    pendingOpenUrl = pendingOpenUrl,
-                    onPendingOpenUrlHandled = { pendingOpenUrl = null },
-                    showBootSplash = showBootSplash,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                Box(modifier = Modifier.fillMaxSize()) {
+                    WebAppScreen(
+                        activity = this@MainActivity,
+                        initialUrl = pendingOpenUrl,
+                        pendingOpenUrl = pendingOpenUrl,
+                        onPendingOpenUrlHandled = { pendingOpenUrl = null },
+                        showBootSplash = bootSplashVisible,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    if (bootSplashVisible) {
+                        HeartbeatSplashScreen(modifier = Modifier.fillMaxSize())
+                    }
+                }
             }
         }
     }
@@ -89,7 +96,20 @@ class MainActivity : ComponentActivity() {
     /** Скрывает нативный splash после полной загрузки PWA. */
     fun hideBootSplash() {
         runOnUiThread {
+            if (!showBootSplash) {
+                return@runOnUiThread
+            }
             showBootSplash = false
+            enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.light(
+                    AndroidGraphicsColor.parseColor("#E5F5E3"),
+                    AndroidGraphicsColor.parseColor("#E5F5E3"),
+                ),
+                navigationBarStyle = SystemBarStyle.light(
+                    AndroidGraphicsColor.WHITE,
+                    AndroidGraphicsColor.WHITE,
+                ),
+            )
         }
     }
 
