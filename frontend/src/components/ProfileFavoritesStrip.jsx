@@ -26,7 +26,7 @@ export function ProfileFavoritesStrip({ user, onPurchaseSuccess }) {
   const { confirm } = useConfirmation();
   const {
     loading: favoritesLoading,
-    togglingId,
+    togglingIds,
     isFavorite,
     toggleFavorite,
   } = useMarketFavorites({ enabled: Boolean(user) });
@@ -73,7 +73,11 @@ export function ProfileFavoritesStrip({ user, onPurchaseSuccess }) {
   }, []);
 
   const handleToggleFavorite = useCallback(async (itemId) => {
-    await toggleFavorite(itemId);
+    const toggled = await toggleFavorite(itemId);
+    if (!toggled) {
+      return;
+    }
+
     try {
       const response = await getFavoriteMarketItems();
       const activeItems = (response.data ?? []).filter((item) => !item.is_archived);
@@ -206,28 +210,30 @@ export function ProfileFavoritesStrip({ user, onPurchaseSuccess }) {
       <div className={styles.scroller}>
         {items.map((item) => (
           <article key={item.id} className={styles.cardArticle}>
-            <button
-              type="button"
-              className={styles.card}
-              onClick={() => setModalItem(item)}
-            >
-              <div className={styles.imageWrap}>
-                {item.image_url ? (
-                  <img src={item.image_url} alt="" className={styles.image} loading="lazy" />
-                ) : (
-                  <span className={styles.imageFallback} aria-hidden="true" />
-                )}
-                <span className={styles.favoriteSlot}>
-                  <MarketFavoriteButton
-                    active={isFavorite(item.id)}
-                    disabled={favoritesLoading || togglingId === item.id}
-                    onToggle={() => void handleToggleFavorite(item.id)}
-                  />
-                </span>
+            <div className={styles.cardSurface}>
+              <button
+                type="button"
+                className={styles.cardOpenBtn}
+                onClick={() => setModalItem(item)}
+              >
+                <div className={styles.imageWrap}>
+                  {item.image_url ? (
+                    <img src={item.image_url} alt="" className={styles.image} loading="lazy" />
+                  ) : (
+                    <span className={styles.imageFallback} aria-hidden="true" />
+                  )}
+                </div>
+                <span className={styles.name}>{item.name}</span>
+                <span className={styles.price}>{item.price} спасибок</span>
+              </button>
+              <div className={styles.favoriteSlot}>
+                <MarketFavoriteButton
+                  active={isFavorite(item.id)}
+                  disabled={favoritesLoading || togglingIds.has(item.id)}
+                  onToggle={() => void handleToggleFavorite(item.id)}
+                />
               </div>
-              <span className={styles.name}>{item.name}</span>
-              <span className={styles.price}>{item.price} спасибок</span>
-            </button>
+            </div>
           </article>
         ))}
       </div>

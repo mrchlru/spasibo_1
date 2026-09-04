@@ -28,7 +28,7 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
   const { confirm } = useConfirmation();
   const {
     loading: favoritesLoading,
-    togglingId,
+    togglingIds,
     isFavorite,
     toggleFavorite,
   } = useMarketFavorites({ enabled: Boolean(user) });
@@ -240,7 +240,7 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
                   </button>
                   <MarketFavoriteButton
                     active={isFavorite(item.id)}
-                    disabled={favoritesLoading || togglingId === item.id}
+                    disabled={favoritesLoading || togglingIds.has(item.id)}
                     onToggle={() => void toggleFavorite(item.id)}
                   />
                 </div>
