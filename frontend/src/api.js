@@ -25,6 +25,9 @@ export function getApiBaseUrl() {
 export const getTelegramPhotoProxyUrl = (photoUrl) => {
   if (!photoUrl) return '';
   if (photoUrl.includes('/telegram/photo-proxy?')) return photoUrl;
+  if (photoUrl.startsWith('/users/')) {
+    return resolveAvatarUrl(photoUrl);
+  }
 
   const base = API_BASE_URL.replace(/\/$/, '');
   return `${base}/telegram/photo-proxy?url=${encodeURIComponent(photoUrl)}`;
