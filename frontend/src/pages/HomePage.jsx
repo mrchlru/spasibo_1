@@ -13,6 +13,7 @@ import SectionSlider from '../components/SectionSlider';
 import LeaderboardContent from '../components/LeaderboardContent';
 import FeedSkeleton from '../components/FeedSkeleton';
 import { resolveSeasonAssets } from '../themeAssetDefaults';
+import { resolveMediaUrl } from '../utils/resolveMediaUrl';
 
 function normalizeFeedEntries(data) {
   if (!data || !Array.isArray(data)) return [];
@@ -49,8 +50,8 @@ function HomePage({
     () => resolveSeasonAssets(seasonKey, themeAssets),
     [seasonKey, themeAssets],
   );
-  const sendThanksImage = mergedAssets.thanks_button;
-  const feedLogoImage = mergedAssets.thanks_feed_logo;
+  const sendThanksImage = resolveMediaUrl(mergedAssets.thanks_button);
+  const feedLogoImage = resolveMediaUrl(mergedAssets.thanks_feed_logo);
   const initialFeedEntries = normalizeFeedEntries(getCachedData('feed'));
   const initialBanners = getCachedData('banners') || [];
   const hasInitialFeed = initialFeedEntries.length > 0;
@@ -413,7 +414,7 @@ function HomePage({
                   onClick={() => (banner.banner_type === 'image' || !banner.banner_type) && handleBannerClick(banner.link_url)}
                 >
                   {(banner.banner_type === 'image' || !banner.banner_type) ? (
-                    <img src={banner.image_url} alt="Banner" className={styles.bannerImage} />
+                    <img src={resolveMediaUrl(banner.image_url)} alt="Banner" className={styles.bannerImage} />
                   ) : (
                     <LeaderboardBanner banner={banner} onNavigate={onNavigate} />
                   )}
@@ -449,7 +450,7 @@ function HomePage({
             <div className={styles.photoFeedTrack}>
               {[...photoFeedBanners, ...photoFeedBanners].map((banner, index) => (
                 <div key={`${banner.id}-${index}`} className={styles.photoPlaceholder} onClick={() => handleBannerClick(banner.link_url)}>
-                  <img src={banner.image_url} alt="Photo feed banner" className={styles.photoFeedImage} loading="lazy" />
+                  <img src={resolveMediaUrl(banner.image_url)} alt="Photo feed banner" className={styles.photoFeedImage} loading="lazy" />
                 </div>
               ))}
             </div>
