@@ -27,6 +27,7 @@ const ADMIN_USER_UPDATE_FIELDS = [
     'email',
     'password',
     'browser_auth_enabled',
+    'can_publish_feed_posts',
 ];
 
 function buildEditUserFormState(user) {
@@ -45,6 +46,7 @@ function buildEditUserFormState(user) {
         login: user.login || '',
         password: '',
         browser_auth_enabled: user.browser_auth_enabled || false,
+        can_publish_feed_posts: user.can_publish_feed_posts || false,
     };
 }
 
@@ -186,6 +188,16 @@ function EditUserModal({ user, onClose, onSave, onDelete, onChangePassword, onDe
                                 style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                             />
                             <span>Включить вход через браузер (автоматически включается при наличии логина и пароля)</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', gridColumn: '1 / -1' }}>
+                            <input
+                                type="checkbox"
+                                name="can_publish_feed_posts"
+                                checked={formData.can_publish_feed_posts || false}
+                                onChange={handleChange}
+                                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                            />
+                            <span>Может писать новости в ленте</span>
                         </label>
                         {formData.login && (
                             <div style={{ gridColumn: '1 / -1', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>

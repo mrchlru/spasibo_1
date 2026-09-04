@@ -58,6 +58,21 @@ const memoryCache = {
 };
 
 /**
+ * Синхронно прогревает memoryCache из localStorage при импорте модуля,
+ * чтобы первый кадр React мог сразу отрисовать закешированную ленту.
+ */
+function warmMemoryCacheFromLocalStorage() {
+  for (const key of Object.keys(memoryCache)) {
+    const cached = fallbackStorage.getItem(key);
+    if (cached !== null) {
+      memoryCache[key] = cached;
+    }
+  }
+}
+
+warmMemoryCacheFromLocalStorage();
+
+/**
  * Чтение значения из Redis (только в Telegram) с фолбэком на localStorage.
  * Синхронные данные кешируются в memoryCache — туда мы их и положим.
  * @param {string} key
@@ -139,6 +154,14 @@ function scheduleIdle(callback, timeout = 2000) {
 export const getCachedData = (key) => {
   return memoryCache[key];
 };
+
+/**
+ * @returns {boolean} Есть ли в memoryCache данные для мгновенного показа Home.
+ */
+export function hasWarmBootCache() {
+  const feed = getCachedData('feed');
+  return Array.isArray(feed) && feed.length > 0;
+}
 
 /**
  * Кладёт данные в memoryCache + localStorage (+ Redis в Telegram).

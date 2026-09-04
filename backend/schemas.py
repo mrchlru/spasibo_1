@@ -21,11 +21,26 @@ class UserBase(OrmBase):
     last_name: str
     department: str
     username: Optional[str] = None
+    telegram_photo_url: Optional[str] = None
 
 class PurchaseForUserResponse(OrmBase):
     id: int
     timestamp: datetime
     item: MarketItemBase
+
+
+class MyPurchaseItemResponse(BaseModel):
+    """Покупка пользователя для блока «Купленные товары» в профиле."""
+
+    id: int
+    purchased_at: datetime
+    item_id: int
+    item_name: str
+    image_url: Optional[str] = None
+    price: int
+    is_auto_issuance: bool = False
+    issued_code: Optional[str] = None
+    delivery_instructions: Optional[str] = None
 
 class PurchaseForMarketResponse(OrmBase):
     id: int
@@ -51,6 +66,7 @@ class UserResponse(UserBase):
     login: Optional[str] = None
     password_plain: Optional[str] = None  # Пароль в открытом виде (только для админов)
     browser_auth_enabled: bool = False
+    can_publish_feed_posts: bool = False
     registration_date: Optional[datetime] = None
 
     @field_serializer('date_of_birth')
@@ -105,6 +121,7 @@ def panel_admin_user_response(email: str) -> UserResponse:
         login=None,
         password_plain=None,
         browser_auth_enabled=False,
+        can_publish_feed_posts=True,
         registration_date=None,
     )
 
@@ -149,6 +166,7 @@ class MarketItemResponse(OrmBase):
     is_auto_issuance: bool
     is_shared_gift: bool
     is_local_purchase: bool
+    sort_order: int = 0
     codes: List[ItemCodeResponse] = []
 
 
@@ -227,7 +245,7 @@ class PurchaseResponse(BaseModel):
     
 class MarketItemCreate(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=300)
     price_rub: int
     stock: int
     image_url: Optional[str] = None
@@ -240,7 +258,7 @@ class MarketItemCreate(BaseModel):
 
 class MarketItemUpdate(BaseModel):
     name: Optional[str] = None
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=300)
     price_rub: Optional[int] = None
     stock: Optional[int] = None
     image_url: Optional[str] = None
@@ -256,7 +274,6 @@ class UserUpdate(BaseModel):
     department: Optional[str] = None
     position: Optional[str] = None
     phone_number: Optional[str] = None
-    date_of_birth: Optional[str] = None
     email: Optional[str] = None
 
 class ProfileUpdateRequest(BaseModel):
@@ -264,7 +281,6 @@ class ProfileUpdateRequest(BaseModel):
     department: Optional[str] = None
     position: Optional[str] = None
     phone_number: Optional[str] = None
-    date_of_birth: Optional[str] = None
     email: Optional[str] = None
 
 class AdminUserUpdate(BaseModel):
@@ -283,6 +299,7 @@ class AdminUserUpdate(BaseModel):
     email: Optional[str] = None
     password: Optional[str] = None
     browser_auth_enabled: Optional[bool] = None
+    can_publish_feed_posts: Optional[bool] = None
 
 class BannerBase(OrmBase):
     image_url: Optional[str] = None
@@ -351,6 +368,19 @@ class PopularItem(OrmBase):
     
 class PopularItemsStats(BaseModel):
     items: List['PopularItem']
+
+
+class FavoriteItem(OrmBase):
+    item: MarketItemResponse
+    favorite_count: int
+
+
+class FavoriteItemsStats(BaseModel):
+    items: List['FavoriteItem']
+
+
+class MarketFavoriteIdsResponse(BaseModel):
+    item_ids: List[int]
 
 class InactiveUsersStats(BaseModel):
     users: List[UserResponse]
@@ -705,3 +735,152 @@ class AdminMediaStatusResponse(BaseModel):
     """Доступность загрузки в S3-совместимое хранилище."""
 
     enabled: bool
+
+
+class AdminPrizeImageUploadResponse(BaseModel):
+    """Ответ после загрузки призовой картинки автовыдачи (JPEG)."""
+
+    url: str
+    content_type: str = "image/jpeg"
+    folder_slug: str
+    object_key: str
+
+
+class MarketItemReorderRequest(BaseModel):
+    """Новый порядок товаров магазина после drag-and-drop."""
+
+    ordered_ids: list[int] = Field(..., min_length=1)
+
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscribeRequest(BaseModel):
+    endpoint: str = Field(..., min_length=10)
+    keys: PushSubscriptionKeys
+
+
+class PushUnsubscribeRequest(BaseModel):
+    endpoint: str = Field(..., min_length=10)
+
+
+class PushVapidPublicKeyResponse(BaseModel):
+    public_key: str
+    enabled: bool
+
+
+class PushTestRequest(BaseModel):
+    title: str = "Тестовое уведомление"
+    body: str = "Push-канал «Спасибо» работает"
+    url: str = "/"
+
+
+class AndroidPushRegisterRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=4096)
+    device_name: Optional[str] = Field(None, max_length=128)
+
+
+class AndroidPushUnregisterRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=4096)
+
+
+class AndroidPushConfigResponse(BaseModel):
+    enabled: bool
+
+
+class AndroidPushStatusResponse(BaseModel):
+    fcm_enabled: bool
+    tokens_registered: int
+    ready: bool
+
+
+class PushTestResponse(BaseModel):
+    delivered: int
+    web_delivered: int
+    fcm_delivered: int
+    fcm_tokens: int
+
+
+FeedPostAttachmentKind = Literal["image", "document"]
+
+
+class FeedPostAttachmentInput(BaseModel):
+    kind: FeedPostAttachmentKind
+    url: str = Field(..., min_length=1, max_length=1024)
+    filename: Optional[str] = Field(default=None, max_length=512)
+    content_type: Optional[str] = Field(default=None, max_length=128)
+    sort_order: int = 0
+
+
+class FeedPostAttachmentResponse(FeedPostAttachmentInput):
+    id: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FeedPostPublisherCreate(BaseModel):
+    """Публикация новости из PWA."""
+
+    title: str = Field(..., min_length=1, max_length=255)
+    body: Optional[str] = None
+    is_pinned: bool = False
+    is_published: bool = True
+    attachments: list[FeedPostAttachmentInput] = Field(default_factory=list)
+
+
+class FeedPostPublisherUpdate(BaseModel):
+    """Редактирование новости из PWA."""
+
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    body: Optional[str] = None
+    is_pinned: Optional[bool] = None
+    attachments: Optional[list[FeedPostAttachmentInput]] = None
+
+
+class FeedPostAuthor(BaseModel):
+    id: int
+    first_name: Optional[str] = None
+    last_name: str
+    username: Optional[str] = None
+    telegram_photo_url: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FeedPostResponse(BaseModel):
+    id: int
+    title: str
+    body: Optional[str] = None
+    is_pinned: bool
+    pin_order: int
+    is_published: bool
+    created_by_user_id: Optional[int] = None
+    author: Optional[FeedPostAuthor] = None
+    published_at: datetime
+    created_at: datetime
+    updated_at: datetime
+    attachments: list[FeedPostAttachmentResponse] = Field(default_factory=list)
+
+
+class UnifiedFeedEntry(BaseModel):
+    kind: Literal["post", "transaction", "birthday"]
+    timestamp: datetime
+    post: Optional[FeedPostResponse] = None
+    transaction: Optional[FeedItem] = None
+    birthday: Optional["BirthdayFeedItem"] = None
+
+
+class BirthdayFeedItem(BaseModel):
+    user_id: int
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    username: Optional[str] = None
+    telegram_photo_url: Optional[str] = None
+    bonus_amount: int = 15
+    display_name: str
+
+
+class AdminDocumentUploadResponse(BaseModel):
+    url: str
+    filename: str
+    content_type: str

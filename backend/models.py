@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, BigInteger, Boolean, Date, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, BigInteger, Boolean, Date, Text, func, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import JSON, BYTEA
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from database import Base
 from datetime import date, datetime
@@ -19,6 +19,7 @@ class User(Base):
     telegram_photo_url = Column(String, nullable=True)
     phone_number = Column(String, nullable=False)
     date_of_birth = Column(Date, nullable=True)
+    last_birthday_bonus_date = Column(Date, nullable=True)
     email = Column(String, nullable=True)  # Email пользователя для рассылок и уведомлений
     balance = Column(Integer, default=0)
     reserved_balance = Column(Integer, default=0)
@@ -40,6 +41,10 @@ class User(Base):
     password_hash = Column(String(255), nullable=True) # Хеш пароля для входа в браузере (может быть NULL)
     password_plain = Column(String(255), nullable=True) # Пароль в открытом виде (только для админов, может быть NULL)
     browser_auth_enabled = Column(Boolean, default=False, nullable=False) # Флаг, что пользователь может входить через браузер
+    can_publish_feed_posts = Column(Boolean, default=False, server_default='false', nullable=False)
+    avatar_storage_key = Column(String(512), nullable=True)
+    avatar_updated_at = Column(DateTime, nullable=True)
+    avatar_webp: Mapped[Optional[bytes]] = mapped_column(BYTEA, nullable=True)
 
     has_seen_onboarding: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
     has_interacted_with_bot: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
@@ -58,6 +63,11 @@ class User(Base):
         passive_deletes=True
     )
     purchases = relationship("Purchase", back_populates="user")
+    market_item_favorites = relationship(
+        "MarketItemFavorite",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     pending_updates = relationship("PendingUpdate", back_populates="user")
 
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
@@ -99,8 +109,32 @@ class MarketItem(Base):
     is_auto_issuance: Mapped[bool] = mapped_column(default=False)
     is_shared_gift: Mapped[bool] = mapped_column(default=False)
     is_local_purchase: Mapped[bool] = mapped_column(default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    prize_folder_slug: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     purchases = relationship("Purchase", back_populates="item")
     codes = relationship("ItemCode", back_populates="market_item", cascade="all, delete-orphan")
+    favorites = relationship(
+        "MarketItemFavorite",
+        back_populates="market_item",
+        cascade="all, delete-orphan",
+    )
+
+class MarketItemFavorite(Base):
+    __tablename__ = "market_item_favorites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "market_item_id", name="uq_market_item_favorites_user_item"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    market_item_id: Mapped[int] = mapped_column(
+        ForeignKey("market_items.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+    user = relationship("User", back_populates="market_item_favorites")
+    market_item = relationship("MarketItem", back_populates="favorites")
 
 class Purchase(Base):
     __tablename__ = "purchases"
@@ -212,6 +246,76 @@ class Notification(Base):
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     user = relationship("User")
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    endpoint = Column(String, unique=True, nullable=False, index=True)
+    p256dh = Column(String, nullable=False)
+    auth = Column(String, nullable=False)
+    user_agent = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True, server_default="true", nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+
+class AndroidFcmToken(Base):
+    __tablename__ = "android_fcm_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token = Column(String, unique=True, nullable=False, index=True)
+    device_name = Column(String(128), nullable=True)
+    is_active = Column(Boolean, default=True, server_default="true", nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+
+class FeedPost(Base):
+    """Новость в объединённой ленте приложения."""
+
+    __tablename__ = "feed_posts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    body = Column(Text, nullable=True)
+    is_pinned = Column(Boolean, default=False, server_default="false", nullable=False)
+    pin_order = Column(Integer, default=0, server_default="0", nullable=False)
+    is_published = Column(Boolean, default=True, server_default="true", nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    published_at = Column(DateTime, server_default=func.now(), nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    attachments = relationship(
+        "FeedPostAttachment",
+        back_populates="post",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+
+
+class FeedPostAttachment(Base):
+    """Вложение к новости ленты."""
+
+    __tablename__ = "feed_post_attachments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    feed_post_id = Column(Integer, ForeignKey("feed_posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = Column(String(16), nullable=False)
+    url = Column(String(1024), nullable=False)
+    filename = Column(String(512), nullable=True)
+    content_type = Column(String(128), nullable=True)
+    sort_order = Column(Integer, default=0, server_default="0", nullable=False)
+
+    post = relationship("FeedPost", back_populates="attachments")
+
 
 class AppSettings(Base):
     __tablename__ = "app_settings"

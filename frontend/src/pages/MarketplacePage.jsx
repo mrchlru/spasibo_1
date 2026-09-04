@@ -9,24 +9,29 @@ import PageLayout from '../components/PageLayout';
 import StatixBonusCard from '../components/StatixBonusCard';
 import ColleagueSelector from '../components/ColleagueSelector';
 import LocalGiftModal from '../components/LocalGiftModal';
+import ShopItemModal from '../components/ShopItemModal';
+import { MarketFavoriteButton } from '../components/MarketFavoriteButton';
+import { useMarketFavorites } from '../hooks/useMarketFavorites';
 import styles from './MarketplacePage.module.css';
-import { FaStar, FaCopy, FaUsers } from 'react-icons/fa';
-import PurchaseSuccessModal from '../components/PurchaseSuccessModal';
+import { FaStar, FaUsers } from 'react-icons/fa';
 
 function MarketplacePage({ user, onPurchaseSuccess }) {
-  // stale-while-revalidate: если в memoryCache уже есть товары — мгновенно
-  // показываем их и обновляем в фоне. Это убирает «белое окно» при заходе
-  // на вкладку «Магазин» — раньше каждый клик ждал тяжёлый сетевой запрос.
   const cachedItems = getCachedData('market');
   const hasCachedItems = Array.isArray(cachedItems) && cachedItems.length > 0;
   const [items, setItems] = useState(hasCachedItems ? cachedItems : []);
   const [isLoading, setIsLoading] = useState(!hasCachedItems);
-  const [purchaseSuccessData, setPurchaseSuccessData] = useState(null);
   const [showColleagueSelector, setShowColleagueSelector] = useState(false);
   const [showLocalGiftModal, setShowLocalGiftModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [modalItem, setModalItem] = useState(null);
   const { showAlert } = useModalAlert();
   const { confirm } = useConfirmation();
+  const {
+    loading: favoritesLoading,
+    togglingIds,
+    isFavorite,
+    toggleFavorite,
+  } = useMarketFavorites({ enabled: Boolean(user) });
 
   useEffect(() => {
     let cancelled = false;
@@ -35,13 +40,10 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
         const response = await getMarketItems();
         if (cancelled) return;
         setItems(response.data);
-        // Сразу прогреваем кеш, чтобы следующий вход на страницу был мгновенным.
         setCachedData('market', response.data);
       } catch (error) {
         if (cancelled) return;
         console.error("Failed to fetch market items", error);
-        // Не показываем алерт, если уже есть закешированный список —
-        // пользователь видит товары, а проблема будет залогирована.
         if (!hasCachedItems) {
           showAlert("Не удалось загрузить товары. Попробуйте позже.", 'error');
         }
@@ -53,49 +55,52 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
     return () => {
       cancelled = true;
     };
-    // showAlert/hasCachedItems стабильны на момент монтирования; намеренно не
-    // включаем их в зависимости, чтобы не делать повторных запросов.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handlePurchase = async (item) => {
-    if (item.is_shared_gift) {
-      // Для совместных подарков показываем диалог выбора коллеги
+  const updateItemStock = (itemId) => {
+    setItems((prev) => {
+      const next = prev.map((it) =>
+        it.id === itemId ? { ...it, stock: Math.max(0, (it.stock ?? 0) - 1) } : it
+      );
+      setCachedData('market', next);
+      return next;
+    });
+  };
+
+  const handleSpecialPurchase = async (item, type) => {
+    if (type === 'shared') {
       setSelectedItem(item);
       setShowColleagueSelector(true);
-    } else if (item.is_local_purchase) {
-      // Для локальных подарков показываем модальное окно для ввода города и ссылки
+    } else if (type === 'local') {
       setSelectedItem(item);
       setShowLocalGiftModal(true);
-    } else {
-      // Обычная покупка
-      const isConfirmed = await confirm(`Вы уверены, что хотите купить "${item.name}" за ${item.price} спасибок?`);
-      if (isConfirmed) {
-        await processPurchase(item);
-      }
     }
   };
 
-  const processPurchase = async (item) => {
+  const handleModalPurchase = async (item) => {
+    const isConfirmed = await confirm(
+      `Вы уверены, что хотите купить "${item.name}" за ${item.price} спасибок?`
+    );
+    if (!isConfirmed) {
+      throw new Error('Покупка отменена');
+    }
+
     try {
       const response = await purchaseItem(user.telegram_id, item.id);
       const { new_balance, issued_code } = response.data;
 
       onPurchaseSuccess({ balance: new_balance });
-      setPurchaseSuccessData({ ...item, issued_code });
+      updateItemStock(item.id);
 
-      // Локально уменьшаем остаток выбранного товара, чтобы не дёргать заново
-      // тяжёлый /market/items — публичный кеш на бэкенде сам обновится по TTL.
-      setItems(prev => {
-        const next = prev.map(it =>
-          it.id === item.id ? { ...it, stock: Math.max(0, (it.stock ?? 0) - 1) } : it
-        );
-        setCachedData('market', next);
-        return next;
-      });
+      if (modalItem?.id === item.id) {
+        setModalItem((prev) => (prev ? { ...prev, stock: Math.max(0, (prev.stock ?? 0) - 1) } : prev));
+      }
+
+      return { issued_code };
     } catch (error) {
-      console.error("Purchase failed:", error);
-      showAlert(error.response?.data?.detail || "Произошла ошибка при покупке.", 'error');
+      const detail = error.response?.data?.detail;
+      throw new Error(typeof detail === 'string' ? detail : 'Не удалось оформить покупку');
     }
   };
 
@@ -124,8 +129,6 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
           `Заявка на локальный подарок создана! Зарезервировано ${reserved_balance} спасибок. Ожидайте решения администратора.`,
           'success'
         );
-        // Список товаров не перетягиваем: локальные подарки имеют «безлимитный»
-        // остаток, а тяжёлый /market/items обновится по TTL публичного кеша.
       } catch (error) {
         console.error("Local gift failed:", error);
         showAlert(error.response?.data?.detail || "Произошла ошибка при создании заявки.", 'error');
@@ -152,9 +155,6 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
           `Приглашение отправлено ${colleague.first_name} ${colleague.last_name}!`,
           'success'
         );
-        // Не перезапрашиваем /market/items: приглашение само по себе не меняет
-        // остатки до подтверждения коллеги, а актуальные данные подтянутся
-        // при следующем входе на страницу или по TTL публичного кеша.
       } catch (error) {
         console.error("Failed to create shared gift invitation:", error);
         showAlert(error.response?.data?.detail || "Ошибка при отправке приглашения.", 'error');
@@ -177,10 +177,9 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
           </span>
         )}
       </p>
-      
-      {/* Statix Bonus Card - показываем первым */}
+
       <StatixBonusCard user={user} onPurchaseSuccess={onPurchaseSuccess} />
-      
+
       {isLoading ? <p>Загрузка товаров...</p> : (
         <div className={styles.itemsGrid}>
           {activeItems.map(item => {
@@ -190,8 +189,7 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
             const discountPercent = hasDiscount ? Math.round(((originalPrice - currentPrice) / originalPrice) * 100) : 0;
 
             return (
-              <div key={item.id} className={styles.itemCard}>
-                
+              <article key={item.id} className={styles.itemCard}>
                 {hasDiscount && (
                   <div className={styles.discountBadge}>
                     <FaStar className={styles.discountIcon} />
@@ -201,66 +199,65 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
                   </div>
                 )}
 
-                {item.image_url ? (
-                  <img src={item.image_url} alt={item.name} className={styles.itemImage} loading="lazy" />
-                ) : (
-                  <div className={styles.imagePlaceholder}></div>
-                )}
-                
-                <div className={styles.itemContent}>
-                  <h2 className={styles.itemName}>{item.name}</h2>
-                  <p className={styles.itemDescription}>{item.description}</p>
-                  
-                  <div className={styles.priceContainer}>
-                    <span className={styles.itemPrice}>{currentPrice} спасибок</span>
-                    {hasDiscount && (
-                      <span className={styles.originalPrice}>
-                        {originalPrice}
-                      </span>
+                <div className={styles.itemImageWrap}>
+                  <button
+                    type="button"
+                    className={styles.itemOpenBtn}
+                    onClick={() => setModalItem(item)}
+                    aria-label={`Открыть товар ${item.name}`}
+                  >
+                    {item.image_url ? (
+                      <img src={item.image_url} alt={item.name} className={styles.itemImage} loading="lazy" />
+                    ) : (
+                      <div className={styles.imagePlaceholder} />
                     )}
-                  </div>
+                  </button>
+                </div>
 
+                <div className={styles.itemMeta}>
+                  <button
+                    type="button"
+                    className={styles.itemBodyBtn}
+                    onClick={() => setModalItem(item)}
+                  >
+                    <h2 className={styles.itemName}>{item.name}</h2>
+                    <div className={styles.priceContainer}>
+                      <span className={styles.itemPrice}>{currentPrice} спасибок</span>
+                      {hasDiscount && (
+                        <span className={styles.originalPrice}>
+                          {originalPrice}
+                        </span>
+                      )}
+                      {item.is_shared_gift && (
+                        <span className={styles.specialBadge}>
+                          <FaUsers size={12} /> Совместный
+                        </span>
+                      )}
+                      {item.is_local_purchase && (
+                        <span className={styles.specialBadge}>Локальный</span>
+                      )}
+                    </div>
+                  </button>
+                  <MarketFavoriteButton
+                    active={isFavorite(item.id)}
+                    disabled={favoritesLoading || togglingIds.has(item.id)}
+                    onToggle={() => void toggleFavorite(item.id)}
+                  />
                 </div>
-                <div className={styles.buttonWrapper}>
-                  {item.is_shared_gift ? (
-                    <button 
-                      onClick={() => handlePurchase(item)}
-                      className={styles.sharedGiftButton}
-                      disabled={user?.balance < currentPrice || item.stock <= 0} 
-                    >
-                      <FaUsers style={{ marginRight: '8px' }} />
-                      {item.stock > 0 ? 'Совместный подарок' : 'Нет в наличии'}
-                    </button>
-                  ) : item.is_local_purchase ? (
-                    <button 
-                      onClick={() => handlePurchase(item)}
-                      className={styles.purchaseButton}
-                      disabled={(user?.balance - (user?.reserved_balance || 0)) < currentPrice || item.stock <= 0} 
-                    >
-                      {item.stock > 0 ? 'Локальный подарок' : 'Нет в наличии'}
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => handlePurchase(item)}
-                      className={styles.purchaseButton}
-                      disabled={user?.balance < currentPrice || item.stock <= 0} 
-                    >
-                      {item.stock > 0 ? 'Купить' : 'Нет в наличии'}
-                    </button>
-                  )}
-                </div>
-              </div>
+              </article>
             );
           })}
         </div>
       )}
 
-      {purchaseSuccessData && (
-        <PurchaseSuccessModal
-          item={purchaseSuccessData}
-          onClose={() => setPurchaseSuccessData(null)}
-        />
-      )}
+      <ShopItemModal
+        item={modalItem}
+        user={user}
+        isOpen={modalItem !== null}
+        onClose={() => setModalItem(null)}
+        onPurchase={handleModalPurchase}
+        onSpecialPurchase={handleSpecialPurchase}
+      />
 
       <ColleagueSelector
         isOpen={showColleagueSelector}

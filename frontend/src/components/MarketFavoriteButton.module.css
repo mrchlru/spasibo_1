@@ -1,0 +1,41 @@
+.button {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--theme-border-strong);
+  background: rgba(92, 161, 74, 0.08);
+  color: #8aa88a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.button:hover {
+  transform: scale(1.04);
+  color: var(--theme-primary);
+  border-color: rgba(92, 161, 74, 0.45);
+}
+
+.button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.buttonActive {
+  background: rgba(230, 57, 70, 0.14);
+  border-color: rgba(230, 57, 70, 0.55);
+  color: #e63946;
+}
+
+.buttonActive svg {
+  filter: drop-shadow(0 0 4px rgba(230, 57, 70, 0.35));
+}

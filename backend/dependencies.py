@@ -70,6 +70,15 @@ async def get_current_user(
     return user
 
 
+async def get_optional_current_user(
+    telegram_id: Optional[str] = Header(alias="X-Telegram-Id", default=None),
+    header_user_id: Optional[str] = Header(alias="X-User-Id", default=None),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[User]:
+    """Возвращает текущего пользователя или None, если заголовков нет."""
+    return await _resolve_user_from_headers(telegram_id, header_user_id, db)
+
+
 async def get_current_admin_user(
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
     telegram_id: Optional[str] = Header(alias="X-Telegram-Id", default=None),

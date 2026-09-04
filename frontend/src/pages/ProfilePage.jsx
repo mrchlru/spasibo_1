@@ -4,10 +4,12 @@ import React, { useState, useEffect } from 'react';
 import styles from './ProfilePage.module.css';
 import { FaCog, FaCreditCard, FaPencilAlt, FaBell } from 'react-icons/fa';
 import PageLayout from '../components/PageLayout';
+import { ProfileFavoritesStrip } from '../components/ProfileFavoritesStrip';
+import { ProfilePurchasesStrip } from '../components/ProfilePurchasesStrip';
 import { formatDateForDisplay } from '../utils/dateFormatter';
 import { getUnreadNotificationCount } from '../api';
 
-function ProfilePage({ user, telegramPhotoUrl, onNavigate }) {
+function ProfilePage({ user, telegramPhotoUrl, onNavigate, onPurchaseSuccess }) {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
@@ -69,7 +71,10 @@ function ProfilePage({ user, telegramPhotoUrl, onNavigate }) {
         </p>
         <p className={styles.infoItem}><span className={styles.label}>Билеты для рулетки:</span> {user.tickets} шт.</p>
         <p className={styles.infoItem}><span className={styles.label}>Части билетов:</span> {user.ticket_parts} / 4</p>
-      </div>
+      </div>
+
+      <ProfileFavoritesStrip user={user} onPurchaseSuccess={onPurchaseSuccess} />
+      <ProfilePurchasesStrip />
 
       <div className={styles.actionsGrid}>
         <button onClick={() => onNavigate('history')} className={styles.actionButton}>История транзакций</button>

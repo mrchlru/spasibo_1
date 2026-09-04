@@ -37,6 +37,10 @@
   padding-bottom: calc(80px + env(safe-area-inset-bottom)); /* Учитываем кнопки навигации Android */
 }
 
+html[data-platform='ios'] .app-container {
+  padding-bottom: calc(96px + env(safe-area-inset-bottom)); /* Floating glass dock на iOS */
+}
+
 /* --- ДОБАВЬТЕ ЭТОТ СТИЛЬ В КОНЕЦ ФАЙЛА --- */
 .pending-update-banner {
   background: var(--theme-soft-gradient);

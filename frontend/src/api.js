@@ -7,12 +7,40 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
+/**
+ * Базовый URL API (для Android-моста и абсолютных ссылок).
+ * На стенде VITE_API_URL часто пустой — тогда API на том же origin, что и PWA.
+ */
+export function getApiBaseUrl() {
+  const configured = API_BASE_URL.replace(/\/$/, '');
+  if (configured) {
+    return configured;
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, '');
+  }
+  return '';
+}
+
 export const getTelegramPhotoProxyUrl = (photoUrl) => {
   if (!photoUrl) return '';
   if (photoUrl.includes('/telegram/photo-proxy?')) return photoUrl;
 
   const base = API_BASE_URL.replace(/\/$/, '');
   return `${base}/telegram/photo-proxy?url=${encodeURIComponent(photoUrl)}`;
+};
+
+/** URL аватара: локальный /users/{id}/avatar или прокси Telegram. */
+export const resolveAvatarUrl = (photoUrl) => {
+  if (!photoUrl) return '';
+  if (photoUrl.startsWith('/users/')) {
+    const base = API_BASE_URL.replace(/\/$/, '');
+    return `${base}${photoUrl}`;
+  }
+  if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+    return getTelegramPhotoProxyUrl(photoUrl);
+  }
+  return photoUrl;
 };
 
 // Таймаут axios предохраняет UI от «вечно крутящегося» состояния, если
@@ -148,7 +176,44 @@ export const requestProfileUpdate = (updateData) =>
 export const updateMe = (updateData) =>
   apiClient.put('/users/me', updateData, getAuthHeaders());
 
-export const getFeed = () => apiClient.get('/transactions/feed');
+export const getFeed = () => apiClient.get('/feed', getAuthHeaders());
+
+export const createFeedPost = (payload) =>
+  apiClient.post('/feed-posts', payload, getAuthHeaders());
+
+export const updateFeedPost = (postId, payload) =>
+  apiClient.put(`/feed-posts/${postId}`, payload, getAuthHeaders());
+
+export const publishFeedPost = (postId) =>
+  apiClient.post(`/feed-posts/${postId}/publish`, {}, getAuthHeaders());
+
+export const pinFeedPost = (postId) =>
+  apiClient.post(`/feed-posts/${postId}/pin`, {}, getAuthHeaders());
+
+export const unpinFeedPost = (postId) =>
+  apiClient.post(`/feed-posts/${postId}/unpin`, {}, getAuthHeaders());
+
+export const getAdminFeedPosts = () =>
+  apiClient.get('/admin/feed-posts', getAuthHeaders());
+
+export const deleteFeedPost = (postId) =>
+  apiClient.delete(`/admin/feed-posts/${postId}`, getAuthHeaders());
+
+export const uploadFeedPostImage = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post('/feed-posts/media/upload', formData, {
+    headers: { ...getAuthHeaders().headers },
+  });
+};
+
+export const uploadFeedPostDocument = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post('/feed-posts/documents/upload', formData, {
+    headers: { ...getAuthHeaders().headers },
+  });
+};
 
 export const getLeaderboard = ({ period, type }) =>
   apiClient.get(`/leaderboard/?period=${period}&type=${type}`, getAuthHeaders());
@@ -174,6 +239,21 @@ export const purchaseLocalItem = (userId, itemId, city, websiteUrl) => {
     website_url: websiteUrl
   });
 };
+
+export const getMyPurchases = () =>
+  apiClient.get('/market/purchases/me', getAuthHeaders());
+
+export const getFavoriteItemIds = () =>
+  apiClient.get('/market/favorites/ids', getAuthHeaders());
+
+export const getFavoriteMarketItems = () =>
+  apiClient.get('/market/favorites', getAuthHeaders());
+
+export const addFavoriteItem = (itemId) =>
+  apiClient.post(`/market/favorites/${itemId}`, null, getAuthHeaders());
+
+export const removeFavoriteItem = (itemId) =>
+  apiClient.delete(`/market/favorites/${itemId}`, getAuthHeaders());
 
 export const getUserTransactions = (userId) => {
   return apiClient.get(`/users/${userId}/transactions`);
@@ -218,8 +298,30 @@ export const uploadAdminMedia = (file) => {
   });
 };
 
+/** Призовая картинка автовыдачи: JPEG в папке товара (не AVIF). */
+export const uploadPrizeImage = (file, productName) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post(
+    `/admin/media/upload-prize-image?product_name=${encodeURIComponent(productName)}`,
+    formData,
+    {
+      headers: {
+        ...getAuthHeaders().headers,
+      },
+    },
+  );
+};
+
 export const getAllMarketItems = () =>
   apiClient.get('/admin/market-items', getAuthHeaders());
+
+export const reorderMarketItems = (orderedIds) =>
+  apiClient.put(
+    '/admin/market-items/reorder',
+    { ordered_ids: orderedIds },
+    getAuthHeaders(),
+  );
 
 export const updateMarketItem = (itemId, itemData) =>
   apiClient.put(`/admin/market-items/${itemId}`, itemData, getAuthHeaders());
@@ -326,6 +428,10 @@ export const getUserEngagementStats = () => {
 
 export const getPopularItemsStats = () => {
   return apiClient.get('/admin/statistics/popular_items', getAuthHeaders());
+};
+
+export const getFavoriteItemsStats = () => {
+  return apiClient.get('/admin/statistics/favorite_items', getAuthHeaders());
 };
 
 export const getInactiveUsers = () => {
@@ -525,6 +631,25 @@ export const markNotificationRead = (notificationId) =>
 
 export const markAllNotificationsRead = () =>
   apiClient.put('/notifications/read-all', null, getAuthHeaders());
+
+// --- WEB PUSH ---
+export const getVapidPublicKey = () =>
+  apiClient.get('/push/vapid-public-key', getAuthHeaders()).then((res) => res.data);
+
+export const subscribePush = (payload) =>
+  apiClient.post('/push/subscribe', payload, getAuthHeaders());
+
+export const unsubscribePush = (endpoint) =>
+  apiClient.post('/push/unsubscribe', { endpoint }, getAuthHeaders());
+
+export const sendTestPush = (payload = {}) =>
+  apiClient.post('/push/test', payload, getAuthHeaders());
+
+export const getAndroidPushStatus = () =>
+  apiClient.get('/push/android/status', getAuthHeaders()).then((res) => res.data);
+
+export const unregisterAndroidPush = (token) =>
+  apiClient.post('/push/android/unregister', { token }, getAuthHeaders());
 
 // --- CARD UPLOAD ---
 export const uploadPkpassFile = (file) => {

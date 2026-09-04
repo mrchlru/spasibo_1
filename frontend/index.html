@@ -22,29 +22,12 @@
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/avif" href="/favicon.avif" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
 
     <title>Спасибо</title>
-
-    <!--
-      Telegram WebApp SDK раздаём через наш backend-прокси /telegram/webapp-sdk:
-        Браузер РФ → backend РФ (Timeweb) → Railway relay (зарубеж) → telegram.org
-      Backend кеширует SDK в памяти на час и поддерживает ETag/304, поэтому
-      реально внешний запрос идёт раз в час на процесс. Прямая ссылка на
-      telegram.org из Яндекс/российских сетей подвисала на десятки секунд и
-      замораживала всю загрузку — теперь этого нет.
-
-      defer + параллельная загрузка: main.jsx стартует только после парсинга
-      HTML, но скрипт скачивается параллельно и не блокирует ничего.
-
-      %VITE_API_URL% подставляется Vite при сборке. Если переменная не задана
-      (фронт и API на одном домене), останется относительный путь — он тоже
-      корректен.
-    -->
-    <script defer src="%VITE_API_URL%/telegram/webapp-sdk"></script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -101,5 +84,7 @@
     <div id="root"></div>
     <div id="initial-loader" aria-label="Загрузка"><div class="spinner"></div></div>
     <script type="module" src="/src/main.jsx"></script>
+    <!-- Telegram SDK — только для Mini App; async после React, чтобы не ломать WebView -->
+    <script async src="%VITE_API_URL%/telegram/webapp-sdk"></script>
   </body>
 </html>

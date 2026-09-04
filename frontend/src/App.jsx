@@ -16,8 +16,11 @@ import {
   getAppSettings,
   updateMe,
   getTelegramPhotoProxyUrl,
+  resolveAvatarUrl,
 } from './api';
-import { initializeCache, clearCache, setCachedData } from './storage';
+import { initializeCache, clearCache, setCachedData, hasWarmBootCache } from './storage';
+import { preloadAppContent, ANDROID_BOOT_TIMEOUT_MS } from './boot/preloadAppContent';
+import { isSpasiboAndroidApp, hideAndroidBootSplash } from './pwa/androidNativePush';
 
 // Компоненты навигации (загружаются сразу, так как всегда видны)
 import BottomNav from './components/BottomNav';
@@ -45,6 +48,9 @@ const TransferPage = lazy(() => import('./pages/TransferPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const OnboardingStories = lazy(() => import('./components/OnboardingStories'));
 import EmailPromptModal from './components/EmailPromptModal';
+import AndroidNativeSessionBridge from './pwa/AndroidNativeSessionBridge.jsx';
+import MobileWelcomeGuide from './components/MobileWelcomeGuide.jsx';
+import PushEnablePrompt from './components/PushEnablePrompt.jsx';
 
 import { startSession, pingSession } from './api';
 
@@ -54,14 +60,18 @@ import './App.css';
 const PING_INTERVAL = 60000; // Пингуем каждую минуту (60 000 миллисекунд)
 const STATUS_CHECK_INTERVAL = 5000; // Проверяем статус каждые 5 секунд (5000 миллисекунд)
 
-// Безопасная инициализация Telegram WebApp
-const tg = window.Telegram?.WebApp || null;
-const isTelegramWebApp = !!window.Telegram?.WebApp;
+// Без initData это заглушка SDK (браузер / Android WebView), не настоящий Telegram.
+const tg = window.Telegram?.WebApp?.initData ? window.Telegram.WebApp : null;
+const isTelegramWebApp = Boolean(window.Telegram?.WebApp?.initData);
+const isAndroidShell = isSpasiboAndroidApp();
+const androidLoadingFallback = isAndroidShell ? null : <LoadingScreen />;
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [bootReady, setBootReady] = useState(false);
   const [page, setPage] = useState('home');
+  const [homeSection, setHomeSection] = useState('feed');
   const [telegramPhotoUrl, setTelegramPhotoUrl] = useState(null);
   const [showPendingBanner, setShowPendingBanner] = useState(false);
  // 2. Добавляем новое состояние для принудительного показа обучения
@@ -188,7 +198,7 @@ function App() {
       applyTelegramTheme(seasonThemeRef.current);
       
       // Включаем подтверждение закрытия для предотвращения случайного закрытия
-      tg.enableClosingConfirmation();
+      tg.enableClosingConfirmation?.();
       
       // Обработчик изменения видимости viewport (когда приложение становится видимым/невидимым)
       tg.onEvent('viewportChanged', (event) => {
@@ -267,6 +277,9 @@ function App() {
         try {
           const parsedUser = JSON.parse(savedUser);
           setUser(parsedUser);
+          if (isAndroidShell) {
+            setLoading(false);
+          }
         } catch (err) {
           console.error('Ошибка парсинга сохраненного пользователя:', err);
         }
@@ -285,7 +298,9 @@ function App() {
               console.warn('Не удалось проверить статус пользователя, используем сохраненные данные:', err);
             }
           } finally {
-            setLoading(false);
+            if (!isAndroidShell) {
+              setLoading(false);
+            }
           }
         };
 
@@ -382,6 +397,14 @@ function App() {
   
   const navigate = (targetPage) => {
     setShowPendingBanner(false);
+    if (targetPage === 'leaderboard' && !isDesktop) {
+      setHomeSection('rating');
+      setPage('home');
+      return;
+    }
+    if (targetPage === 'home') {
+      setHomeSection('feed');
+    }
     setPage(targetPage);
   };
   
@@ -478,10 +501,56 @@ function App() {
   // --- 1. НОВАЯ ПЕРЕМЕННАЯ ДЛЯ УДОБСТВА ---
   // Эта переменная будет true, если нужно показать обучение, и false в противном случае.
   const isOnboardingVisible = (user && !user.has_seen_onboarding) || showOnboarding;
+
+  useEffect(() => {
+    if (loading || !user || user.status !== 'approved') {
+      setBootReady(false);
+      return undefined;
+    }
+    if (isOnboardingVisible) {
+      setBootReady(true);
+      return undefined;
+    }
+
+    const bootTimeoutMs = isAndroidShell ? ANDROID_BOOT_TIMEOUT_MS : 2500;
+    const canShowHomeImmediately = isAndroidShell && hasWarmBootCache();
+
+    let cancelled = false;
+    if (canShowHomeImmediately) {
+      setBootReady(true);
+    } else {
+      setBootReady(false);
+    }
+
+    preloadAppContent({ timeoutMs: bootTimeoutMs }).finally(() => {
+      if (!cancelled) {
+        setBootReady(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, user?.id, user?.status, isOnboardingVisible]);
+
+  const isAndroidBootLoading =
+    loading ||
+    (user?.status === 'approved' && !isOnboardingVisible && !bootReady);
+
+  useEffect(() => {
+    if (!isAndroidShell || isAndroidBootLoading) {
+      return;
+    }
+    hideAndroidBootSplash();
+  }, [isAndroidBootLoading]);
   
   const renderPage = () => {
     if (loading) {
-      return <LoadingScreen />;
+      return androidLoadingFallback;
+    }
+
+    if (user?.status === 'approved' && !isOnboardingVisible && !bootReady) {
+      return androidLoadingFallback;
     }
   
     // Если не в Telegram WebApp, показываем страницу входа или регистрации
@@ -566,12 +635,30 @@ function App() {
     }
     
     if (user.status === 'approved') {
-      const effectiveTelegramPhotoUrl = telegramPhotoUrl || getTelegramPhotoProxyUrl(user?.telegram_photo_url);
+      const effectiveTelegramPhotoUrl =
+        resolveAvatarUrl(user?.telegram_photo_url) ||
+        telegramPhotoUrl ||
+        getTelegramPhotoProxyUrl(user?.telegram_photo_url);
       switch (page) {
-        case 'leaderboard': return <LeaderboardPage user={user} seasonTheme={seasonTheme} themeAssets={themeAssets} />;
+        case 'leaderboard':
+          if (!isDesktop) {
+            return (
+              <HomePage
+                user={user}
+                telegramPhotoUrl={effectiveTelegramPhotoUrl}
+                onNavigate={navigate}
+                isDesktop={isDesktop}
+                seasonTheme={seasonTheme}
+                themeAssets={themeAssets}
+                homeSection="rating"
+                onHomeSectionChange={setHomeSection}
+              />
+            );
+          }
+          return <LeaderboardPage user={user} seasonTheme={seasonTheme} themeAssets={themeAssets} />;
         case 'roulette': return <RoulettePage user={user} onUpdateUser={updateUser} />;
         case 'marketplace': return <MarketplacePage user={user} onPurchaseSuccess={handlePurchaseAndUpdate} />;
-        case 'profile': return <ProfilePage user={user} telegramPhotoUrl={effectiveTelegramPhotoUrl} onNavigate={navigate} />;
+        case 'profile': return <ProfilePage user={user} telegramPhotoUrl={effectiveTelegramPhotoUrl} onNavigate={navigate} onPurchaseSuccess={handlePurchaseAndUpdate} />;
         case 'bonus_card': return <BonusCardPage user={user} onBack={() => navigate('profile')} onUpdateUser={updateUser} />;
         case 'edit_profile': return <EditProfilePage user={user} onBack={() => navigate('profile')} onSaveSuccess={handleProfileSaveSuccess} />;
         case 'notifications': return <NotificationsPage user={user} onBack={() => navigate('profile')} />;
@@ -591,7 +678,18 @@ function App() {
         case 'admin': return <AdminPage seasonTheme={seasonTheme} themeAssets={themeAssets} onAppearanceUpdated={handleAppearanceUpdated} />;
         case 'home':
         default:
-          return <HomePage user={user} telegramPhotoUrl={effectiveTelegramPhotoUrl} onNavigate={navigate} isDesktop={isDesktop} seasonTheme={seasonTheme} themeAssets={themeAssets} />;
+          return (
+            <HomePage
+              user={user}
+              telegramPhotoUrl={effectiveTelegramPhotoUrl}
+              onNavigate={navigate}
+              isDesktop={isDesktop}
+              seasonTheme={seasonTheme}
+              themeAssets={themeAssets}
+              homeSection={homeSection}
+              onHomeSectionChange={setHomeSection}
+            />
+          );
       }
     }
     
@@ -795,6 +893,19 @@ function App() {
   
   return (
     <div className="app-container">
+      <AndroidNativeSessionBridge user={user} />
+      <MobileWelcomeGuide
+        user={user}
+        bootReady={bootReady}
+        loading={loading}
+        isOnboardingVisible={isOnboardingVisible}
+      />
+      <PushEnablePrompt
+        user={user}
+        bootReady={bootReady}
+        loading={loading}
+        isOnboardingVisible={isOnboardingVisible}
+      />
       {/* Теперь меню показываются на основе новых, правильных переменных */}
       {shouldShowSideNav && <SideNav user={user} activePage={page} onNavigate={navigate} />}
       {shouldShowBottomNav && <BottomNav user={user} activePage={page} onNavigate={navigate} />}
@@ -816,7 +927,7 @@ function App() {
               ⏳ Ваши изменения отправлены на согласование администраторам.
             </div>
         )}
-        <Suspense fallback={<LoadingScreen />}>
+        <Suspense fallback={androidLoadingFallback}>
           {renderPage()}
         </Suspense>
       </main>

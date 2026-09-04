@@ -22,9 +22,11 @@ from routers import (
     app_settings,
     banners,
     cache,
+    feed,
     market,
     media_upload,
     notifications,
+    push,
     roulette,
     scheduler,
     sessions,
@@ -34,6 +36,7 @@ from routers import (
     users,
 )
 from dual_database_sync import start_dual_db_sync_background
+from internal_scheduler import start_internal_scheduler_background, stop_internal_scheduler
 from startup_background import run_background_startup
 
 logger = logging.getLogger(__name__)
@@ -57,6 +60,9 @@ def _is_protected_api_path(path: str) -> bool:
         "/cache",
         "/app-settings",
         "/notifications",
+        "/push",
+        "/feed",
+        "/feed-posts",
         "/points",
         "/leaderboard",
     )
@@ -77,6 +83,7 @@ async def lifespan(app: FastAPI):
             await run_background_startup()
             app.state.startup_ready = True
             start_dual_db_sync_background(app)
+            start_internal_scheduler_background(app)
         except Exception:
             logger.exception("Фоновая инициализация не удалась")
             app.state.startup_error = "startup_failed"
@@ -93,6 +100,8 @@ async def lifespan(app: FastAPI):
             await db_sync_task
         except asyncio.CancelledError:
             pass
+
+    await stop_internal_scheduler(app)
 
     task.cancel()
     try:
@@ -140,7 +149,7 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
             response.headers["Cache-Control"] = "public, max-age=60"
         elif path.startswith('/leaderboard'):
             response.headers["Cache-Control"] = "public, max-age=15"
-        elif path.startswith('/transactions/feed'):
+        elif path.startswith('/transactions/feed') or path.startswith('/feed'):
             response.headers["Cache-Control"] = "public, max-age=10"
         elif request.method == "GET" and not path.startswith('/users/me') and not path.startswith('/admin'):
             response.headers["Cache-Control"] = "public, max-age=15"
@@ -191,7 +200,9 @@ app.include_router(shared_gifts.router)
 app.include_router(cache.router)
 app.include_router(app_settings.router)
 app.include_router(notifications.router)
+app.include_router(push.router)
 app.include_router(media_upload.router)
+app.include_router(feed.router)
 
 
 def _static_root() -> Path:
@@ -304,23 +315,48 @@ def ready_check_slash(request: Request):
 
 @app.api_route("/", methods=["GET", "HEAD"], response_model=None)
 def read_root(request: Request):
-    """Корень: SPA или JSON; HEAD даёт 200 без тела.
+    """Корень: SPA или JSON.
 
-    Timeweb (и часть прокси) шлют ``HEAD /`` на корень; только ``GET`` давало **405**.
+    HEAD должен отдавать те же заголовки, что и GET (включая Content-Length),
+    иначе часть WebView (Huawei) показывает пустую страницу.
     """
-    if request.method == "HEAD":
-        return Response(status_code=200)
     if settings.SERVE_SPA:
         index = _static_root() / "index.html"
         if index.is_file():
             return FileResponse(index)
+    if request.method == "HEAD":
+        return Response(status_code=200)
     return {"message": "Welcome to the HR Spasibo API"}
+
+
+_API_PATH_PREFIXES = (
+    "telegram/",
+    "users/",
+    "transactions/",
+    "market/",
+    "admin/",
+    "banners/",
+    "roulette/",
+    "scheduler/",
+    "sessions/",
+    "shared-gifts/",
+    "cache/",
+    "app-settings/",
+    "notifications/",
+    "push/",
+    "media/",
+    "feed/",
+)
 
 
 @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
 def spa_fallback(full_path: str):
     """Статика из корня dist (иконки, manifest) или index.html для маршрутов SPA."""
     if not settings.SERVE_SPA:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    normalized = full_path.strip().lstrip("/")
+    if any(normalized.startswith(prefix) for prefix in _API_PATH_PREFIXES):
         raise HTTPException(status_code=404, detail="Not found")
 
     dist_file = _safe_dist_static_file(full_path)

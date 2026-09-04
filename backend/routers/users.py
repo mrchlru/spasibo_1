@@ -1,10 +1,11 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status, Header
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status, Header, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 import crud, schemas, models
 from database import get_db
 from dependencies import get_current_user
 from crud import verify_password, get_password_hash
+import avatar_service
 
 router = APIRouter(
     prefix="/users",
@@ -53,6 +54,7 @@ async def login_user(
                 await db.refresh(user)
             elif user.telegram_id == tg_id and telegram_photo_url:
                 user.telegram_photo_url = telegram_photo_url
+                await avatar_service.refresh_user_avatar_if_stale(db, user)
                 await db.commit()
                 await db.refresh(user)
             elif user.telegram_id != tg_id:
@@ -116,8 +118,34 @@ async def list_users(
     return [schemas.user_response_for_public_api(u) for u in users]
 
 @router.get("/me", response_model=schemas.UserResponse)
-async def get_self(user: models.User = Depends(get_current_user)):
+async def get_self(
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not avatar_service.user_has_local_avatar(user):
+        await avatar_service.refresh_user_avatar_if_stale(db, user)
+        await db.commit()
+        await db.refresh(user)
     return schemas.user_response_for_public_api(user)
+
+@router.get("/{user_id}/avatar")
+async def get_user_avatar(user_id: int, db: AsyncSession = Depends(get_db)) -> Response:
+    """Отдаёт локально сохранённый аватар пользователя."""
+    user = await crud.get_user(db, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    blob = avatar_service.read_avatar_bytes(user)
+    if blob:
+        content, content_type = blob
+        return Response(content=content, media_type=content_type, headers={"Cache-Control": "public, max-age=86400"})
+
+    stored = await avatar_service.read_avatar_from_storage(user)
+    if stored:
+        content, content_type = stored
+        return Response(content=content, media_type=content_type, headers={"Cache-Control": "public, max-age=86400"})
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Avatar not found")
 
 @router.put("/me", response_model=schemas.UserResponse)
 async def update_me(

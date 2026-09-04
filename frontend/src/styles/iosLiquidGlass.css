@@ -1,0 +1,27 @@
+/**
+ * Тема «liquid glass» для iPhone/iPad.
+ * Включается атрибутом html[data-platform="ios"].
+ */
+
+html[data-platform='ios'] {
+  --ios-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --ios-glass-bg: rgba(255, 255, 255, 0.58);
+  --ios-glass-border: rgba(255, 255, 255, 0.45);
+  --ios-glass-highlight: rgba(255, 255, 255, 0.65);
+  --nav-height: 88px;
+}
+
+html[data-platform='ios'] body {
+  -webkit-font-smoothing: antialiased;
+}
+
+html[data-platform='ios'] button {
+  transition-timing-function: var(--ios-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-platform='ios'] .loupe,
+  html[data-platform='ios'] button {
+    transition: none !important;
+  }
+}

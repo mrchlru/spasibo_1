@@ -1,0 +1,178 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.heading {
+  margin: 0;
+  font-size: 22px;
+}
+
+.subtitle {
+  margin: 0;
+  color: #6e7a85;
+  font-size: 14px;
+}
+
+.empty {
+  margin: 0;
+  color: #6e7a85;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e5efe5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.cardMain {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #f4fbf2;
+  flex-shrink: 0;
+}
+
+.thumbFallback {
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  background: #f4fbf2;
+  flex-shrink: 0;
+}
+
+.cardBody {
+  min-width: 0;
+  flex: 1;
+}
+
+.cardTop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badgeDraft,
+.badgePinned {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.badgeDraft {
+  background: #f0f0f0;
+  color: #666;
+}
+
+.badgePinned {
+  background: rgba(92, 161, 74, 0.14);
+  color: #3f7f35;
+}
+
+.cardText {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #555;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.meta {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #8a9590;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.publishBtn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: var(--theme-accent-gradient, linear-gradient(135deg, #6fbf4a 0%, #4a8c3a 100%));
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.iconBtn,
+.iconBtnDanger {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid #dce8dc;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #3f7f35;
+}
+
+.iconBtnDanger {
+  color: #c0392b;
+  border-color: #f0d4d0;
+}
+
+.iconBtn:disabled,
+.iconBtnDanger:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+@media (max-width: 640px) {
+  .card {
+    flex-direction: column;
+  }
+
+  .actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
