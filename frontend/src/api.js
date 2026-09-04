@@ -246,6 +246,9 @@ export const getMyPurchases = () =>
 export const getFavoriteItemIds = () =>
   apiClient.get('/market/favorites/ids', getAuthHeaders());
 
+export const getFavoriteMarketItems = () =>
+  apiClient.get('/market/favorites', getAuthHeaders());
+
 export const addFavoriteItem = (itemId) =>
   apiClient.post(`/market/favorites/${itemId}`, null, getAuthHeaders());
 

@@ -43,11 +43,38 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
+.cardArticle {
+  flex: 0 0 calc(50% - 6px);
+  max-width: calc(50% - 6px);
+  scroll-snap-align: start;
+}
+
+.cardArticle .card {
+  flex: none;
+  width: 100%;
+  max-width: 100%;
+}
+
 .imageWrap {
+  position: relative;
   width: 100%;
   aspect-ratio: 4 / 3;
   background: var(--theme-light);
   overflow: hidden;
+}
+
+.favoriteSlot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+}
+
+.price {
+  padding: 0 10px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--theme-primary-dark);
 }
 
 .image {
@@ -212,4 +239,26 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+@media (min-width: 768px) {
+  .card,
+  .cardArticle {
+    flex: 0 0 148px;
+    max-width: 148px;
+  }
+
+  .name {
+    font-size: 12px;
+    padding: 0 8px 4px;
+  }
+
+  .price {
+    padding: 0 8px 8px;
+    font-size: 11px;
+  }
+
+  .skeleton {
+    height: 108px;
+  }
 }
