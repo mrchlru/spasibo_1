@@ -44,4 +44,18 @@ object PushRegistrar {
             }.start()
         }
     }
+
+    fun unregisterIfPossible(context: Context) {
+        val appContext = context.applicationContext
+        val session = PushSessionStore(appContext).read()
+        val token = PushSessionStore(appContext).readFcmToken()
+        if (session == null || token.isNullOrBlank()) {
+            PushSessionStore(appContext).clearRegistrationStatus()
+            return
+        }
+
+        Thread {
+            PushApiClient.unregisterToken(appContext, session, token)
+        }.start()
+    }
 }

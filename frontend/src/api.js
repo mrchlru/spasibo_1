@@ -648,6 +648,9 @@ export const sendTestPush = (payload = {}) =>
 export const getAndroidPushStatus = () =>
   apiClient.get('/push/android/status', getAuthHeaders()).then((res) => res.data);
 
+export const unregisterAndroidPush = (token) =>
+  apiClient.post('/push/android/unregister', { token }, getAuthHeaders());
+
 // --- CARD UPLOAD ---
 export const uploadPkpassFile = (file) => {
   const formData = new FormData();

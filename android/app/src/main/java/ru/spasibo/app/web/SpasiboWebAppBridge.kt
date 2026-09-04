@@ -74,6 +74,18 @@ class SpasiboWebAppBridge(
     }
 
     @JavascriptInterface
+    fun getFcmToken(): String {
+        return PushSessionStore(activity.applicationContext).readFcmToken().orEmpty()
+    }
+
+    @JavascriptInterface
+    fun unregisterPushToken() {
+        activity.runOnUiThread {
+            PushRegistrar.unregisterIfPossible(activity.applicationContext)
+        }
+    }
+
+    @JavascriptInterface
     fun showNativeToast(message: String) {
         if (message.isBlank()) {
             return

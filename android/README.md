@@ -10,7 +10,7 @@
 
 ## URL PWA
 
-`https://mrchlru-spasibo-1-stand-2115.twc1.net/`
+`https://marchelxyz-muglehrbottopmanagment-8f80.twc1.net/`
 
 Задаётся в `app/build.gradle.kts` → `buildConfigField("PWA_URL", ...)`.
 

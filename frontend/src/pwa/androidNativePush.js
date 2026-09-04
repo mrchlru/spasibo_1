@@ -3,7 +3,7 @@
  * Нативный код инжектирует window.SpasiboAndroid и UA SpasiboAndroid/1.
  */
 
-import { getAndroidPushStatus, sendTestPush } from '../api.js';
+import { getAndroidPushStatus, sendTestPush, unregisterAndroidPush } from '../api.js';
 
 const WELCOME_PUSH_SENT_KEY = 'android_push_welcome_sent';
 const PROMPT_DISMISSED_SESSION_KEY = 'android_push_prompt_dismissed_session';
@@ -280,6 +280,32 @@ export async function sendAndroidWelcomeTestPushIfNeeded() {
     /* токен мог ещё не успеть зарегистрироваться на сервере */
   }
   return false;
+}
+
+/** Возвращает сохранённый FCM-токен из нативной оболочки. */
+export function getAndroidFcmToken() {
+  return window.SpasiboAndroid?.getFcmToken?.()?.trim() || '';
+}
+
+/** Отключает FCM на сервере для этого устройства. */
+export async function disableAndroidNativePush() {
+  const bridge = window.SpasiboAndroid;
+  if (!bridge) {
+    return { ok: false, reason: 'unsupported_browser' };
+  }
+
+  bridge.unregisterPushToken?.();
+
+  const token = getAndroidFcmToken();
+  if (token) {
+    try {
+      await unregisterAndroidPush(token);
+    } catch {
+      /* нативный unregister всё равно мог отработать */
+    }
+  }
+
+  return { ok: true };
 }
 
 /**

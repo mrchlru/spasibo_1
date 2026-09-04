@@ -30,6 +30,18 @@ class PushSessionStore(context: Context) {
         prefs.edit().putString(KEY_FCM_TOKEN, token).apply()
     }
 
+    fun readFcmToken(): String? {
+        return prefs.getString(KEY_FCM_TOKEN, null)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    fun clearRegistrationStatus() {
+        prefs.edit()
+            .remove(KEY_REG_OK)
+            .remove(KEY_REG_HTTP)
+            .remove(KEY_REG_DETAIL)
+            .apply()
+    }
+
     fun saveRegistrationStatus(ok: Boolean, httpCode: Int = 0, detail: String = "") {
         prefs.edit()
             .putBoolean(KEY_REG_OK, ok)

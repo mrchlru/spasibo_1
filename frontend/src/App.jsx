@@ -50,6 +50,7 @@ const OnboardingStories = lazy(() => import('./components/OnboardingStories'));
 import EmailPromptModal from './components/EmailPromptModal';
 import AndroidNativeSessionBridge from './pwa/AndroidNativeSessionBridge.jsx';
 import MobileWelcomeGuide from './components/MobileWelcomeGuide.jsx';
+import PushEnablePrompt from './components/PushEnablePrompt.jsx';
 
 import { startSession, pingSession } from './api';
 
@@ -894,6 +895,12 @@ function App() {
     <div className="app-container">
       <AndroidNativeSessionBridge user={user} />
       <MobileWelcomeGuide
+        user={user}
+        bootReady={bootReady}
+        loading={loading}
+        isOnboardingVisible={isOnboardingVisible}
+      />
+      <PushEnablePrompt
         user={user}
         bootReady={bootReady}
         loading={loading}

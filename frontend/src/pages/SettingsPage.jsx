@@ -1,33 +1,24 @@
 // frontend/src/pages/SettingsPage.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import styles from './SettingsPage.module.css';
-import { FaQuestionCircle, FaHeadset, FaFileContract, FaBookOpen, FaLock, FaSignOutAlt, FaBell } from 'react-icons/fa';
+import { FaQuestionCircle, FaHeadset, FaFileContract, FaBookOpen, FaLock, FaSignOutAlt, FaBell, FaPaperPlane } from 'react-icons/fa';
 import PageLayout from '../components/PageLayout';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 import { useConfirmation } from '../contexts/ConfirmationContext';
-import { changePassword, sendTestPush } from '../api';
-import { FaEye, FaEyeSlash, FaPaperPlane } from 'react-icons/fa';
+import { changePassword } from '../api';
+import { FaEye, FaEyeSlash } from 'react-icons/fa';
 import {
-  enablePushFromUserGesture,
-  getNotificationPermission,
-  hasBrowserPushSubscription,
-  startNotificationPermissionRequest,
-} from '../pwa/pushNotifications.js';
-import {
-  enableAndroidNativePush,
-  ensureAndroidPushRegistered,
-  isAndroidNativePushGranted,
-  isAndroidPushReady,
-  isSpasiboAndroidApp,
-} from '../pwa/androidNativePush.js';
-import {
-  getPushBlockReason,
-  isPushApiAvailable,
-  pushBlockReasonMessage,
-} from '../pwa/pushEnvironment.js';
+  arePushSettingsAvailable,
+  disablePushForUser,
+  enablePushWithTestPush,
+  formatPushEnableError,
+  isPushEnabledForUser,
+  isIosInstallRequiredForPush,
+  sendWelcomeTestPush,
+} from '../pwa/pushUserControls.js';
+import { isSpasiboAndroidApp } from '../pwa/androidNativePush.js';
 
-// Определяем, является ли это браузером (не Telegram WebApp)
 const isWebBrowser = !window.Telegram?.WebApp;
 
 function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
@@ -37,155 +28,103 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
-    confirmPassword: ''
+    confirmPassword: '',
   });
   const [showPasswords, setShowPasswords] = useState({
     current: false,
     new: false,
-    confirm: false
+    confirm: false,
   });
   const [isLoading, setIsLoading] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [testPushLoading, setTestPushLoading] = useState(false);
-  const [androidPushPending, setAndroidPushPending] = useState(false);
 
   const isAndroidApp = isSpasiboAndroidApp();
-  const pushControlsAvailable = isAndroidApp || isPushApiAvailable();
+  const pushControlsAvailable = arePushSettingsAvailable();
+  const iosInstallRequired = isIosInstallRequiredForPush();
+
+  const loadPushState = useCallback(async () => {
+    if (!pushControlsAvailable || iosInstallRequired) {
+      setPushEnabled(false);
+      return;
+    }
+    const enabled = await isPushEnabledForUser();
+    setPushEnabled(enabled);
+  }, [iosInstallRequired, pushControlsAvailable]);
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadPushState() {
-      if (isAndroidApp) {
-        const permissionGranted = isAndroidNativePushGranted();
-        const ready = permissionGranted ? await isAndroidPushReady() : false;
-        if (!cancelled) {
-          setPushEnabled(ready);
-          setAndroidPushPending(permissionGranted && !ready);
-        }
-        return;
-      }
-      if (!isPushApiAvailable()) {
-        return;
-      }
-      const subscribed = await hasBrowserPushSubscription();
-      if (!cancelled) {
-        setPushEnabled(subscribed || getNotificationPermission() === 'granted');
-      }
-    }
-    loadPushState();
-    return () => {
-      cancelled = true;
-    };
-  }, [isAndroidApp]);
+    void loadPushState();
+  }, [loadPushState]);
 
-  const handleEnablePush = async () => {
-    if (isAndroidApp) {
-      setPushLoading(true);
-      try {
-        const result = await enableAndroidNativePush();
-        const ready = await isAndroidPushReady();
-        setPushEnabled(ready || Boolean(result.ok));
-        setAndroidPushPending(Boolean(result.ok && result.pendingSync && !ready));
-        if (result.ok) {
-          showAlert('Уведомления включены', 'success');
-        } else {
-          showAlert(
-            result.detail || pushBlockReasonMessage(result.reason),
-            'error',
-          );
-        }
-      } finally {
-        setPushLoading(false);
-      }
+  useEffect(() => {
+    const onPermissionChange = () => {
+      void loadPushState();
+    };
+    window.addEventListener('spasibo:notification-permission', onPermissionChange);
+    return () => {
+      window.removeEventListener('spasibo:notification-permission', onPermissionChange);
+    };
+  }, [loadPushState]);
+
+  const handlePushToggle = async () => {
+    if (pushLoading) {
       return;
     }
 
-    const blockReason = getPushBlockReason();
-    if (blockReason) {
-      showAlert(pushBlockReasonMessage(blockReason), 'error');
+    if (iosInstallRequired) {
+      showAlert('Добавьте приложение на экран iPhone через «Поделиться → На экран Домой», затем включите уведомления.', 'error');
       return;
     }
 
     setPushLoading(true);
     try {
-      const permissionPromise = startNotificationPermissionRequest();
-      const result = await enablePushFromUserGesture(permissionPromise);
+      if (pushEnabled) {
+        const result = await disablePushForUser();
+        if (result.ok) {
+          setPushEnabled(false);
+          showAlert('Push-уведомления отключены', 'success');
+        } else {
+          showAlert('Не удалось отключить уведомления', 'error');
+        }
+        return;
+      }
+
+      const result = await enablePushWithTestPush();
       if (result.ok) {
         setPushEnabled(true);
-        showAlert('Push-уведомления включены', 'success');
-      } else {
-        showAlert(pushBlockReasonMessage(result.reason), 'error');
+        showAlert(
+          result.detail || 'Уведомления включены! Вы молодец — тестовое сообщение уже отправлено.',
+          'success',
+        );
+        return;
       }
+
+      if (isAndroidApp && result.reason === 'fcm_token_missing') {
+        window.SpasiboAndroid?.showNativeToast?.(formatPushEnableError(result));
+      } else if (isAndroidApp && result.reason !== 'permission_dismissed') {
+        window.SpasiboAndroid?.openAppNotificationSettings?.();
+      }
+      showAlert(formatPushEnableError(result), 'error');
     } finally {
       setPushLoading(false);
+      void loadPushState();
     }
   };
 
   const handleTestPush = async () => {
-    if (!pushEnabled && !(isAndroidApp && androidPushPending)) {
+    if (!pushEnabled) {
       showAlert('Сначала включите push-уведомления', 'error');
       return;
     }
 
     setTestPushLoading(true);
     try {
-      if (isAndroidApp && !pushEnabled) {
-        await ensureAndroidPushRegistered({ maxWaitMs: 3000 });
-      }
-      const { data } = await sendTestPush({
-        title: isAndroidApp ? 'Уведомления включены' : 'Тест «Спасибо»',
-        body: isAndroidApp
-          ? 'Push-уведомления «Спасибо» работают.'
-          : 'Push-канал работает',
-        url: '/',
-      });
-      const delivered = data?.delivered ?? 0;
-      const fcmDelivered = data?.fcm_delivered ?? 0;
-      const webDelivered = data?.web_delivered ?? 0;
-      const fcmTokens = data?.fcm_tokens ?? 0;
-
-      if (isAndroidApp) {
-        if (fcmDelivered > 0) {
-          setPushEnabled(true);
-          setAndroidPushPending(false);
-          showAlert('Push доставлен на этот Android-телефон', 'success');
-          return;
-        }
-        if (fcmTokens === 0) {
-          const ready = await isAndroidPushReady();
-          if (ready) {
-            setPushEnabled(true);
-            setAndroidPushPending(false);
-            showAlert('Push доставлен на этот Android-телефон', 'success');
-            return;
-          }
-          setPushEnabled(isAndroidNativePushGranted());
-          setAndroidPushPending(isAndroidNativePushGranted());
-          showAlert(
-            'Подключение ещё завершается. Подождите пару секунд и нажмите ещё раз.',
-            'error',
-          );
-          return;
-        }
-        if (webDelivered > 0) {
-          showAlert(
-            'Уведомление ушло на iPhone (Web Push), но не на Android. Переустановите APK с правильным google-services.json.',
-            'error',
-          );
-          return;
-        }
-        showAlert('Сервер не смог доставить push на Android (FCM).', 'error');
-        return;
-      }
-
-      if (delivered > 0) {
+      const result = await sendWelcomeTestPush();
+      if (result.sent) {
         showAlert('Тестовое уведомление отправлено', 'success');
       } else {
-        showAlert(
-          'Сервер не доставил push. Проверьте подписку и VAPID-ключи на сервере.',
-          'error',
-        );
+        showAlert('Сервер не смог доставить push. Попробуйте ещё раз через пару секунд.', 'error');
       }
     } catch (err) {
       const detail = err.response?.data?.detail;
@@ -195,18 +134,18 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
       );
     } finally {
       setTestPushLoading(false);
+      void loadPushState();
     }
   };
 
-  // Ссылка на ваш аккаунт поддержки в Telegram
-  const supportUrl = 'https://t.me/fix2Form'; // <-- НЕ ЗАБУДЬТЕ ЗАМЕНИТЬ НА ВАШ АККАУНТ
+  const supportUrl = 'https://t.me/fix2Form';
 
   const handleLogout = async () => {
     const isConfirmed = await confirm(
       'Выход из аккаунта',
       'Вы уверены, что хотите выйти из аккаунта?'
     );
-    
+
     if (isConfirmed) {
       localStorage.removeItem('userId');
       localStorage.removeItem('user');
@@ -216,12 +155,12 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
 
   const handlePasswordChange = (e) => {
     const { name, value } = e.target;
-    setPasswordData(prev => ({ ...prev, [name]: value }));
+    setPasswordData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
       showAlert('Пожалуйста, заполните все поля', 'error');
       return;
@@ -244,7 +183,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
       setPasswordData({
         currentPassword: '',
         newPassword: '',
-        confirmPassword: ''
+        confirmPassword: '',
       });
       setShowChangePassword(false);
     } catch (err) {
@@ -266,35 +205,44 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
           <FaBookOpen className={styles.icon} />
           <span>Пройти обучение повторно</span>
         </button>
-        
+
         <button onClick={() => onNavigate('faq')} className={styles.settingsItem}>
           <FaQuestionCircle className={styles.icon} />
           <span>Часто задаваемые вопросы (FAQ)</span>
         </button>
 
         {pushControlsAvailable && (
-          <button
-            type="button"
-            onClick={handleEnablePush}
-            disabled={pushLoading || (pushEnabled && !androidPushPending)}
-            className={styles.settingsItem}
-          >
+          <div className={styles.settingsItem}>
             <FaBell className={styles.icon} />
-            <span>
-              {pushEnabled
-                ? 'Push-уведомления включены'
-                : androidPushPending
-                  ? 'Подключить push на этом телефоне'
-                  : 'Включить push-уведомления'}
-            </span>
-          </button>
+            <div className={styles.pushRow}>
+              <div className={styles.pushRowText}>
+                <span className={styles.pushRowTitle}>Push-уведомления</span>
+                <span className={styles.pushRowHint}>
+                  {iosInstallRequired
+                    ? 'Сначала добавьте приложение на экран iPhone'
+                    : pushEnabled
+                      ? 'Уведомления включены'
+                      : 'Получайте спасибки и новости на телефон'}
+                </span>
+              </div>
+              <label className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  checked={pushEnabled}
+                  disabled={pushLoading || iosInstallRequired}
+                  onChange={() => void handlePushToggle()}
+                />
+                <span className={styles.toggleSlider} aria-hidden="true" />
+              </label>
+            </div>
+          </div>
         )}
 
-        {pushControlsAvailable && (pushEnabled || androidPushPending) && (
+        {pushControlsAvailable && pushEnabled && !iosInstallRequired && (
           <button
             type="button"
             onClick={handleTestPush}
-            disabled={testPushLoading}
+            disabled={testPushLoading || pushLoading}
             className={styles.settingsItem}
           >
             <FaPaperPlane className={styles.icon} />
@@ -314,7 +262,6 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
           </button>
         )}
 
-        {/* Кнопка выхода показывается только в браузере или для пользователей с браузерной авторизацией */}
         {(isWebBrowser || (user && user.login)) && (
           <button onClick={handleLogout} className={styles.settingsItem}>
             <FaSignOutAlt className={styles.icon} />
@@ -336,7 +283,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
               <div className={styles.passwordInputContainer}>
                 <input
                   name="currentPassword"
-                  type={showPasswords.current ? "text" : "password"}
+                  type={showPasswords.current ? 'text' : 'password'}
                   value={passwordData.currentPassword}
                   onChange={handlePasswordChange}
                   placeholder="Текущий пароль"
@@ -346,7 +293,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
                 <button
                   type="button"
                   className={styles.eyeButton}
-                  onClick={() => setShowPasswords(prev => ({ ...prev, current: !prev.current }))}
+                  onClick={() => setShowPasswords((prev) => ({ ...prev, current: !prev.current }))}
                 >
                   {showPasswords.current ? <FaEyeSlash /> : <FaEye />}
                 </button>
@@ -355,7 +302,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
               <div className={styles.passwordInputContainer}>
                 <input
                   name="newPassword"
-                  type={showPasswords.new ? "text" : "password"}
+                  type={showPasswords.new ? 'text' : 'password'}
                   value={passwordData.newPassword}
                   onChange={handlePasswordChange}
                   placeholder="Новый пароль"
@@ -365,7 +312,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
                 <button
                   type="button"
                   className={styles.eyeButton}
-                  onClick={() => setShowPasswords(prev => ({ ...prev, new: !prev.new }))}
+                  onClick={() => setShowPasswords((prev) => ({ ...prev, new: !prev.new }))}
                 >
                   {showPasswords.new ? <FaEyeSlash /> : <FaEye />}
                 </button>
@@ -374,7 +321,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
               <div className={styles.passwordInputContainer}>
                 <input
                   name="confirmPassword"
-                  type={showPasswords.confirm ? "text" : "password"}
+                  type={showPasswords.confirm ? 'text' : 'password'}
                   value={passwordData.confirmPassword}
                   onChange={handlePasswordChange}
                   placeholder="Подтвердите новый пароль"
@@ -384,7 +331,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
                 <button
                   type="button"
                   className={styles.eyeButton}
-                  onClick={() => setShowPasswords(prev => ({ ...prev, confirm: !prev.confirm }))}
+                  onClick={() => setShowPasswords((prev) => ({ ...prev, confirm: !prev.confirm }))}
                 >
                   {showPasswords.confirm ? <FaEyeSlash /> : <FaEye />}
                 </button>
@@ -401,7 +348,7 @@ function SettingsPage({ onBack, onNavigate, onRepeatOnboarding, user }) {
                     setPasswordData({
                       currentPassword: '',
                       newPassword: '',
-                      confirmPassword: ''
+                      confirmPassword: '',
                     });
                   }}
                   className={styles.cancelButton}

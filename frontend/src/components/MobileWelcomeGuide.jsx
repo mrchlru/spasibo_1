@@ -3,14 +3,17 @@ import { FaBell } from 'react-icons/fa';
 import styles from './MobileWelcomeGuide.module.css';
 import WelcomeVisual from './MobileWelcomeGuideVisuals.jsx';
 import {
-  areMobileNotificationsEnabled,
+  areMobileNotificationsEnabledSync,
   buildMobileWelcomeSlides,
-  enableMobileNotifications,
   getMobileWelcomePlatform,
   isMobileWelcomePlatform,
   isMobileWelcomeSeen,
   markMobileWelcomeSeen,
 } from '../pwa/mobileWelcomeGuide.js';
+import {
+  enablePushWithTestPush,
+  formatPushEnableError,
+} from '../pwa/pushUserControls.js';
 import { pushBlockReasonMessage } from '../pwa/pushEnvironment.js';
 
 /**
@@ -55,7 +58,7 @@ function MobileWelcomeGuide({
       return;
     }
 
-    const pushOn = platform ? await areMobileNotificationsEnabled(platform) : false;
+    const pushOn = platform ? areMobileNotificationsEnabledSync(platform) : false;
     setNotificationsEnabled(pushOn);
     setVisible(true);
   }, [bootReady, isOnboardingVisible, loading, platform, user?.id, user?.status]);
@@ -99,10 +102,10 @@ function MobileWelcomeGuide({
     setPushLoading(true);
     setPushMessage('');
     try {
-      const result = await enableMobileNotifications(platform);
+      const result = await enablePushWithTestPush();
       if (result.ok) {
         setNotificationsEnabled(true);
-        setPushMessage('Готово! Уведомления включены.');
+        setPushMessage(result.detail || 'Готово! Уведомления включены.');
         if (!isLastStep) {
           setStep((prev) => Math.min(prev + 1, slides.length - 1));
         } else {
@@ -115,7 +118,7 @@ function MobileWelcomeGuide({
       } else if (platform === 'android-app' && result.reason !== 'permission_dismissed') {
         window.SpasiboAndroid?.openAppNotificationSettings?.();
       }
-      setPushMessage(pushBlockReasonMessage(result.reason));
+      setPushMessage(formatPushEnableError(result) || pushBlockReasonMessage(result.reason));
     } finally {
       setPushLoading(false);
       refreshVisibility();
