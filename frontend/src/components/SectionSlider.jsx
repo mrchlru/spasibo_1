@@ -1,7 +1,9 @@
 import React, { useCallback, useState } from 'react';
 import styles from './SectionSlider.module.css';
 
-const MUG_KNOB_ASSET = '/assets/slider/mug-knob.avif';
+import { resolveMediaUrl } from '../utils/resolveMediaUrl';
+
+const MUG_KNOB_ASSET = resolveMediaUrl('/assets/slider/mug-knob.avif');
 
 const SECTIONS = [
   { id: 'feed', label: 'Лента' },

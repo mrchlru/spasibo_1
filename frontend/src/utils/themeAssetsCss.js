@@ -1,6 +1,8 @@
 /**
  * Инъекция CSS-переменных для фоновых картинок темы (шапки, лого в меню, полоса разделов).
  */
+import { resolveMediaUrl } from './resolveMediaUrl.js';
+
 const CSS_VAR_BY_KEY = {
   header_image_mobile: '--theme-header-image-mobile',
   header_image_desktop: '--theme-header-image-desktop',
@@ -9,7 +11,7 @@ const CSS_VAR_BY_KEY = {
 };
 
 function escapeUrlForCss(url) {
-  return String(url).trim().replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return encodeURI(String(url).trim()).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 export function injectThemeAssetStyles(themeAssets) {
@@ -28,7 +30,7 @@ export function injectThemeAssetStyles(themeAssets) {
     for (const [assetKey, cssVarName] of Object.entries(CSS_VAR_BY_KEY)) {
       const url = row[assetKey];
       if (url && String(url).trim()) {
-        parts.push(`${cssVarName}: url('${escapeUrlForCss(url)}')`);
+        parts.push(`${cssVarName}: url('${escapeUrlForCss(resolveMediaUrl(String(url).trim()))}')`);
       }
     }
     if (parts.length) {
