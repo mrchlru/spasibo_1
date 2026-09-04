@@ -1,4 +1,5 @@
 from typing import Optional
+import logging
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status, Header, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 import crud, schemas, models
@@ -6,6 +7,8 @@ from database import get_db
 from dependencies import get_current_user
 from crud import verify_password, get_password_hash
 import avatar_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/users",
@@ -122,10 +125,13 @@ async def get_self(
     user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if not avatar_service.user_has_local_avatar(user):
-        await avatar_service.refresh_user_avatar_if_stale(db, user)
-        await db.commit()
-        await db.refresh(user)
+    try:
+        if not avatar_service.user_has_local_avatar(user):
+            await avatar_service.refresh_user_avatar_if_stale(db, user)
+            await db.commit()
+            await db.refresh(user)
+    except Exception as exc:
+        logger.warning("Не удалось обновить аватар при GET /me user_id=%s: %s", user.id, exc)
     return schemas.user_response_for_public_api(user)
 
 @router.get("/{user_id}/avatar")

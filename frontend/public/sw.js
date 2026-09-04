@@ -1,6 +1,6 @@
 /* Service Worker «Спасибо»: кэш оболочки + Web Push */
 
-const CACHE_NAME = 'spasibo-shell-v1';
+const CACHE_NAME = 'spasibo-shell-v2';
 const SHELL_URLS = ['/', '/index.html', '/site.webmanifest', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -28,16 +28,16 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.pathname.startsWith('/assets/')) {
-    event.respondWith(
-      caches.match(event.request).then((cached) => cached || fetch(event.request)),
-    );
+    // После деплоя хэши чанков меняются — только сеть, без cache.match.
+    event.respondWith(fetch(event.request));
     return;
   }
 
-  if (event.request.mode === 'navigate') {
+  if (url.pathname === '/index.html' || url.pathname === '/') {
     event.respondWith(
       fetch(event.request).catch(() => caches.match('/index.html')),
     );
+    return;
   }
 });
 
