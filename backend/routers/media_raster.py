@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, status
@@ -70,16 +70,28 @@ async def _fetch_bytes(url: str) -> bytes:
     return body
 
 
+def _normalize_src_param(src: str) -> str:
+    """Снимает лишнее percent-encoding (CSS encodeURI поверх query string)."""
+    normalized = (src or "").strip()
+    for _ in range(3):
+        decoded = unquote(normalized)
+        if decoded == normalized:
+            break
+        normalized = decoded
+    return normalized
+
+
 @router.get("/media/raster")
 async def media_raster_fallback(
     src: str = Query(..., min_length=8, description="Публичный URL AVIF/WebP/PNG"),
 ) -> Response:
     """Конвертирует AVIF (и другие форматы) в WebP для старых WebView."""
-    if not _is_allowed_media_url(src):
+    normalized_src = _normalize_src_param(src)
+    if not _is_allowed_media_url(normalized_src):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="URL не разрешён")
 
     try:
-        raw = await _fetch_bytes(src)
+        raw = await _fetch_bytes(normalized_src)
         webp_bytes = await asyncio.to_thread(
             encode_image_bytes_to_webp,
             raw,
@@ -91,7 +103,7 @@ async def media_raster_fallback(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:
-        logger.exception("media/raster failed for %s", src)
+        logger.exception("media/raster failed for %s", normalized_src)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Не удалось сконвертировать изображение",

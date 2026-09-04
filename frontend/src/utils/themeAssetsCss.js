@@ -11,7 +11,9 @@ const CSS_VAR_BY_KEY = {
 };
 
 function escapeUrlForCss(url) {
-  return encodeURI(String(url).trim()).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  // resolveMediaUrl уже кодирует path и query; повторный encodeURI ломает
+  // /media/raster?src=https%3A%2F%2F... → %253A (двойное кодирование → 400).
+  return String(url).trim().replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 export function injectThemeAssetStyles(themeAssets) {
