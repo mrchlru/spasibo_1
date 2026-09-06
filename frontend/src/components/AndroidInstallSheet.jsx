@@ -34,6 +34,7 @@ export function AndroidInstallSheet({
     [release, promptMode],
   );
   const isPrimaryAdmin = isPrimaryAdminUser(user);
+  const isAdmin = Boolean(user?.is_admin);
   const [eligible, setEligible] = useState(false);
   const [sheetState, setSheetState] = useState('expanded');
   const sheetStateRef = useRef(sheetState);
@@ -53,7 +54,7 @@ export function AndroidInstallSheet({
       && !isOnboardingVisible
       && bootReady
       && isMobileWelcomeSeen()
-      && shouldShowAndroidInstallPrompt(release, { isPrimaryAdmin }),
+      && shouldShowAndroidInstallPrompt(release, { isPrimaryAdmin, isAdmin }),
     );
     setEligible(ok);
     if (!ok) {
@@ -63,11 +64,13 @@ export function AndroidInstallSheet({
     bootReady,
     isOnboardingVisible,
     isPrimaryAdmin,
+    isAdmin,
     loading,
     release.apk_url,
     release.enabled,
     release.version_code,
     user?.id,
+    user?.is_admin,
     user?.status,
   ]);
 
@@ -203,7 +206,7 @@ export function AndroidInstallSheet({
                 <p className={styles.version}>
                   Версия {release.version_name}
                 </p>
-                {isPrimaryAdmin && !release.enabled ? (
+                {isAdmin && !release.enabled ? (
                   <p className={styles.testBadge}>Только для теста (ещё не включено для всех)</p>
                 ) : null}
               </>
@@ -230,4 +233,4 @@ export function AndroidInstallSheet({
 }
 
 export default AndroidInstallSheet;
-
+
