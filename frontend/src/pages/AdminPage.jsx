@@ -14,6 +14,7 @@ import RegistrationManager from './admin/RegistrationManager';
 import PurchasesManager from './admin/PurchasesManager';
 import ApprovalsManager from './admin/ApprovalsManager';
 import AppearanceSettings from './admin/AppearanceSettings';
+import AndroidReleaseSettings from './admin/AndroidReleaseSettings';
 import EmailBroadcast from './admin/EmailBroadcast';
 import FeedPostManager from './admin/FeedPostManager';
 import { addPointsToAll, addTicketsToAll, adminGenerateLeaderboardBanners, adminGenerateTestLeaderboardBanners, resetDailyTransferLimits } from '../api';
@@ -90,7 +91,7 @@ function MassActions() {
 */
 
 // --- ИСПРАВЛЕННЫЙ ГЛАВНЫЙ КОМПОНЕНТ ---
-function AdminPage({ seasonTheme, themeAssets, onAppearanceUpdated }) {
+function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppSettingsUpdated }) {
   // Используем одну переменную для навигации. null - это главное меню.
   const [activeSection, setActiveSection] = useState(null);
 
@@ -99,6 +100,7 @@ function AdminPage({ seasonTheme, themeAssets, onAppearanceUpdated }) {
   const { showAlert } = useModalAlert();
   const { confirm } = useConfirmation();
   const [loading, setLoading] = useState(false); // Для отслеживания загрузки
+  const isPrimaryAdmin = Boolean(user?.is_primary_admin);
 
 // Это твоя старая функция, она вызывает баннеры за ПРОШЛЫЙ МЕСЯЦ
   const handleGenerateBanners = async () => {
@@ -172,6 +174,11 @@ function AdminPage({ seasonTheme, themeAssets, onAppearanceUpdated }) {
           <button onClick={() => setActiveSection('banners')} className={styles.gridButton}>Баннеры</button>
           <button onClick={() => setActiveSection('feed-posts')} className={styles.gridButton}>Новости</button>
           <button onClick={() => setActiveSection('appearance')} className={styles.gridButton}>Оформление</button>
+          {isPrimaryAdmin ? (
+            <button onClick={() => setActiveSection('android-release')} className={styles.gridButton}>
+              Android-приложение
+            </button>
+          ) : null}
           <button onClick={() => setActiveSection('credentials')} className={styles.gridButton}>Генерация учетных данных</button>
           <button onClick={() => setActiveSection('email-broadcast')} className={styles.gridButton}>Рассылка email / Telegram</button>
 {/* --- 3. ВОТ ТВОЯ НОВАЯ КНОПКА --- */}
@@ -216,6 +223,11 @@ function AdminPage({ seasonTheme, themeAssets, onAppearanceUpdated }) {
       case 'purchases': return <PurchasesManager />;
       case 'approvals': return <ApprovalsManager />;
       case 'appearance': return <AppearanceSettings seasonTheme={seasonTheme} themeAssets={themeAssets} onAppearanceUpdated={onAppearanceUpdated} />;
+      case 'android-release':
+        if (!isPrimaryAdmin) {
+          return null;
+        }
+        return <AndroidReleaseSettings onAppSettingsUpdated={onAppSettingsUpdated} />;
       case 'credentials': return <CredentialsGenerator />;
       case 'email-broadcast': return <EmailBroadcast />;
       default: return null; // На случай непредвиденного значения

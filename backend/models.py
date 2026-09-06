@@ -325,3 +325,5 @@ class AppSettings(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     # URL картинок интерфейса (лето/зима), JSON: { "summer": {...}, "winter": {...} }
     theme_assets = Column(JSON, nullable=True)
+    # Релиз Android APK для промпта установки в браузере
+    android_release = Column(JSON, nullable=True)
