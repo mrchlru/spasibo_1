@@ -57,10 +57,11 @@ export function isAndroidInstallPromptDismissed(release) {
  * Нужно ли показывать промпт для текущего релиза.
  *
  * @param {object | null | undefined} release
- * @param {{ isPrimaryAdmin?: boolean }} [options]
+ * @param {{ isPrimaryAdmin?: boolean, isAdmin?: boolean }} [options]
  */
 export function shouldShowAndroidInstallPrompt(release, options = {}) {
-  const { isPrimaryAdmin = false } = options;
+  const { isPrimaryAdmin = false, isAdmin = false } = options;
+  const canTestBeforeRollout = isPrimaryAdmin || isAdmin;
   const mode = getAndroidInstallPromptMode();
   if (!mode) {
     return false;
@@ -72,20 +73,20 @@ export function shouldShowAndroidInstallPrompt(release, options = {}) {
   }
 
   const rolloutEnabled = normalized.enabled;
-  if (!rolloutEnabled && !isPrimaryAdmin) {
+  if (!rolloutEnabled && !canTestBeforeRollout) {
     return false;
   }
 
   if (mode === 'update') {
     const installedCode = getSpasiboAndroidVersionCode();
     const needsUpdate = installedCode < normalized.version_code;
-    const testingAsPrimaryAdmin = isPrimaryAdmin && !rolloutEnabled;
-    if (!needsUpdate && !testingAsPrimaryAdmin) {
+    const testingBeforeRollout = canTestBeforeRollout && !rolloutEnabled;
+    if (!needsUpdate && !testingBeforeRollout) {
       return false;
     }
   }
 
-  if (isPrimaryAdmin && !rolloutEnabled) {
+  if (canTestBeforeRollout && !rolloutEnabled) {
     return true;
   }
 
