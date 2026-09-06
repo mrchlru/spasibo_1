@@ -30,6 +30,30 @@ export function isSpasiboAndroidApp() {
   return /SpasiboAndroid\/\d/i.test(navigator.userAgent);
 }
 
+/** versionCode установленного APK (0, если мост недоступен). */
+export function getSpasiboAndroidVersionCode() {
+  if (typeof window === 'undefined') {
+    return 0;
+  }
+  const fromBridge = window.SpasiboAndroid?.getAppVersionCode?.();
+  if (fromBridge != null && fromBridge !== '') {
+    const parsed = Number.parseInt(String(fromBridge), 10);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return 0;
+}
+
+/** versionName установленного APK. */
+export function getSpasiboAndroidVersionName() {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+  const fromBridge = window.SpasiboAndroid?.getAppVersionName?.();
+  return String(fromBridge ?? '').trim();
+}
+
 /** Передаёт сессию в нативную оболочку для регистрации FCM-токена. */
 export function syncAndroidNativeSession(userId, apiBaseUrl) {
   window.SpasiboAndroid?.syncSession(Number(userId), String(apiBaseUrl));

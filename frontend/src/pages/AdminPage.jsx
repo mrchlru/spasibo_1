@@ -1,8 +1,10 @@
 // frontend/src/pages/AdminPage.jsx
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import styles from './AdminPage.module.css';
 import PageLayout from '../components/PageLayout';
+import { checkUserStatusById, getAdminPanelMe } from '../api';
+import { isPrimaryAdminUser } from '../pwa/androidInstallPrompt.js';
 
 // Импортируем все дочерние компоненты
 import BannerManager from './admin/BannerManager';
@@ -14,6 +16,7 @@ import RegistrationManager from './admin/RegistrationManager';
 import PurchasesManager from './admin/PurchasesManager';
 import ApprovalsManager from './admin/ApprovalsManager';
 import AppearanceSettings from './admin/AppearanceSettings';
+import AndroidReleaseSettings from './admin/AndroidReleaseSettings';
 import EmailBroadcast from './admin/EmailBroadcast';
 import FeedPostManager from './admin/FeedPostManager';
 import { addPointsToAll, addTicketsToAll, adminGenerateLeaderboardBanners, adminGenerateTestLeaderboardBanners, resetDailyTransferLimits } from '../api';
@@ -90,15 +93,49 @@ function MassActions() {
 */
 
 // --- ИСПРАВЛЕННЫЙ ГЛАВНЫЙ КОМПОНЕНТ ---
-function AdminPage({ seasonTheme, themeAssets, onAppearanceUpdated }) {
+function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppSettingsUpdated, onUserUpdated }) {
   // Используем одну переменную для навигации. null - это главное меню.
   const [activeSection, setActiveSection] = useState(null);
+  const [adminUser, setAdminUser] = useState(user);
+
+  useEffect(() => {
+    setAdminUser(user);
+  }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (user?.id === -1) {
+          const response = await getAdminPanelMe();
+          if (!cancelled) {
+            setAdminUser(response.data.user);
+            onUserUpdated?.(response.data.user);
+          }
+          return;
+        }
+        if (user?.id && user.id > 0) {
+          const response = await checkUserStatusById(String(user.id));
+          if (!cancelled) {
+            setAdminUser(response.data);
+            onUserUpdated?.(response.data);
+          }
+        }
+      } catch {
+        /* оставляем текущего пользователя */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, onUserUpdated]);
 
 // --- 1. ДОБАВЛЯЕМ ХУКИ И ЛОАДЕР ---
   // (Они у тебя уже импортированы, просто используем их)
   const { showAlert } = useModalAlert();
   const { confirm } = useConfirmation();
   const [loading, setLoading] = useState(false); // Для отслеживания загрузки
+  const isPrimaryAdmin = isPrimaryAdminUser(adminUser);
 
 // Это твоя старая функция, она вызывает баннеры за ПРОШЛЫЙ МЕСЯЦ
   const handleGenerateBanners = async () => {
@@ -172,6 +209,11 @@ function AdminPage({ seasonTheme, themeAssets, onAppearanceUpdated }) {
           <button onClick={() => setActiveSection('banners')} className={styles.gridButton}>Баннеры</button>
           <button onClick={() => setActiveSection('feed-posts')} className={styles.gridButton}>Новости</button>
           <button onClick={() => setActiveSection('appearance')} className={styles.gridButton}>Оформление</button>
+          {isPrimaryAdmin ? (
+            <button onClick={() => setActiveSection('android-release')} className={styles.gridButton}>
+              Android-приложение
+            </button>
+          ) : null}
           <button onClick={() => setActiveSection('credentials')} className={styles.gridButton}>Генерация учетных данных</button>
           <button onClick={() => setActiveSection('email-broadcast')} className={styles.gridButton}>Рассылка email / Telegram</button>
 {/* --- 3. ВОТ ТВОЯ НОВАЯ КНОПКА --- */}
@@ -216,6 +258,11 @@ function AdminPage({ seasonTheme, themeAssets, onAppearanceUpdated }) {
       case 'purchases': return <PurchasesManager />;
       case 'approvals': return <ApprovalsManager />;
       case 'appearance': return <AppearanceSettings seasonTheme={seasonTheme} themeAssets={themeAssets} onAppearanceUpdated={onAppearanceUpdated} />;
+      case 'android-release':
+        if (!isPrimaryAdmin) {
+          return null;
+        }
+        return <AndroidReleaseSettings onAppSettingsUpdated={onAppSettingsUpdated} />;
       case 'credentials': return <CredentialsGenerator />;
       case 'email-broadcast': return <EmailBroadcast />;
       default: return null; // На случай непредвиденного значения

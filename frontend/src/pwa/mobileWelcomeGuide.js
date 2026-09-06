@@ -29,7 +29,7 @@ export function getMobileWelcomePlatform() {
   if (isIosDevice()) {
     return isStandaloneDisplayMode() ? 'ios-standalone' : 'ios-browser';
   }
-  if (isAndroidDevice() && typeof window !== 'undefined' && window.innerWidth < 768) {
+  if (isAndroidMobileBrowser()) {
     return 'android-browser';
   }
   return null;
@@ -53,9 +53,19 @@ export function isMobileWelcomeSeen() {
 export function markMobileWelcomeSeen() {
   try {
     localStorage.setItem(MOBILE_WELCOME_STORAGE_KEY, MOBILE_WELCOME_VERSION);
+    window.dispatchEvent(new CustomEvent('spasibo:mobile-welcome-seen'));
   } catch {
     /* ignore */
   }
+}
+
+/** Android в мобильном браузере (не APK). Ширина с запасом под Huawei / «режим ПК». */
+export function isAndroidMobileBrowser() {
+  if (typeof window === 'undefined' || !isAndroidDevice() || isSpasiboAndroidApp()) {
+    return false;
+  }
+  const width = window.visualViewport?.width ?? window.innerWidth ?? 1024;
+  return width < 900;
 }
 
 /** Синхронная проверка: включены ли уже уведомления. */
