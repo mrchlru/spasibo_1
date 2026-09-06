@@ -13,7 +13,7 @@ router = APIRouter()
 async def create_new_transaction(tr: schemas.TransferRequest, db: AsyncSession = Depends(get_db)):
     try:
         updated_sender = await crud.create_transaction(db=db, tr=tr)
-        return updated_sender
+        return schemas.user_response_for_public_api(updated_sender)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
