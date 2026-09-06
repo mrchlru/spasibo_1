@@ -84,8 +84,15 @@ async def download_and_store_user_avatar(db: AsyncSession, user: models.User) ->
                 try:
                     content = await bot.download_telegram_file(file_path)
                     if content:
-                        await save_avatar_bytes_for_user(db, user, content)
-                        return True
+                        try:
+                            await save_avatar_bytes_for_user(db, user, content)
+                            return True
+                        except Exception as exc:
+                            logger.warning(
+                                "Не удалось сохранить аватар через Bot API user_id=%s: %s",
+                                user.id,
+                                exc,
+                            )
                 except Exception as exc:
                     logger.warning(
                         "Не удалось скачать аватар через Bot API user_id=%s: %s",
@@ -104,7 +111,15 @@ async def download_and_store_user_avatar(db: AsyncSession, user: models.User) ->
     if not content:
         return False
 
-    await save_avatar_bytes_for_user(db, user, content)
+    try:
+        await save_avatar_bytes_for_user(db, user, content)
+    except Exception as exc:
+        logger.warning(
+            "Не удалось сохранить аватар user_id=%s (формат не распознан или ошибка конвертации): %s",
+            user.id,
+            exc,
+        )
+        return False
     return True
 
 

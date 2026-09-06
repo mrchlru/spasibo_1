@@ -3,6 +3,7 @@
 import io
 from typing import Final
 
+import pillow_avif  # noqa: F401 — декодирование AVIF в Pillow
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from image_avif import _normalize_mode
