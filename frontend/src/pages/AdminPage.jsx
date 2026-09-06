@@ -1,8 +1,10 @@
 // frontend/src/pages/AdminPage.jsx
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import styles from './AdminPage.module.css';
 import PageLayout from '../components/PageLayout';
+import { checkUserStatusById, getAdminPanelMe } from '../api';
+import { isPrimaryAdminUser } from '../pwa/androidInstallPrompt.js';
 
 // Импортируем все дочерние компоненты
 import BannerManager from './admin/BannerManager';
@@ -91,16 +93,49 @@ function MassActions() {
 */
 
 // --- ИСПРАВЛЕННЫЙ ГЛАВНЫЙ КОМПОНЕНТ ---
-function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppSettingsUpdated }) {
+function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppSettingsUpdated, onUserUpdated }) {
   // Используем одну переменную для навигации. null - это главное меню.
   const [activeSection, setActiveSection] = useState(null);
+  const [adminUser, setAdminUser] = useState(user);
+
+  useEffect(() => {
+    setAdminUser(user);
+  }, [user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (user?.id === -1) {
+          const response = await getAdminPanelMe();
+          if (!cancelled) {
+            setAdminUser(response.data.user);
+            onUserUpdated?.(response.data.user);
+          }
+          return;
+        }
+        if (user?.id && user.id > 0) {
+          const response = await checkUserStatusById(String(user.id));
+          if (!cancelled) {
+            setAdminUser(response.data);
+            onUserUpdated?.(response.data);
+          }
+        }
+      } catch {
+        /* оставляем текущего пользователя */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, onUserUpdated]);
 
 // --- 1. ДОБАВЛЯЕМ ХУКИ И ЛОАДЕР ---
   // (Они у тебя уже импортированы, просто используем их)
   const { showAlert } = useModalAlert();
   const { confirm } = useConfirmation();
   const [loading, setLoading] = useState(false); // Для отслеживания загрузки
-  const isPrimaryAdmin = Boolean(user?.is_primary_admin);
+  const isPrimaryAdmin = isPrimaryAdminUser(adminUser);
 
 // Это твоя старая функция, она вызывает баннеры за ПРОШЛЫЙ МЕСЯЦ
   const handleGenerateBanners = async () => {

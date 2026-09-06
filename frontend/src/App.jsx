@@ -693,6 +693,7 @@ function App() {
             themeAssets={themeAssets}
             onAppearanceUpdated={handleAppearanceUpdated}
             onAppSettingsUpdated={handleAppSettingsUpdated}
+            onUserUpdated={updateUser}
           />
         );
         case 'home':
