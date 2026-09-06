@@ -5,6 +5,7 @@ import { getAllUsers, transferPoints } from '../api';
 import { formatUserName } from '../utils/nameFormatter';
 import styles from './TransferPage.module.css';
 import PageLayout from '../components/PageLayout';
+import { useModalAlert } from '../contexts/ModalAlertContext';
 
 function UserSearch({ currentUser, onUserSelect }) {
   const [query, setQuery] = useState('');
@@ -150,11 +151,12 @@ function UserSearch({ currentUser, onUserSelect }) {
 
 
 function TransferPage({ user, onBack, onTransferSuccess }) {
+  const { showAlert } = useModalAlert();
   const [receiver, setReceiver] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
   const MIN_MESSAGE_LENGTH = 20;
 
   // Функция для подсчета только букв (русских и английских)
@@ -170,46 +172,51 @@ function TransferPage({ user, onBack, onTransferSuccess }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setSuccess('');
-    
+
+    if (submitLockRef.current) {
+      return;
+    }
+
     if (!receiver || !message) {
       setError('Пожалуйста, выберите получателя и напишите сообщение.');
       return;
     }
-    
+
     const letterCount = countLetters(message);
     if (letterCount < MIN_MESSAGE_LENGTH) {
       setError(`Сообщение должно содержать минимум ${MIN_MESSAGE_LENGTH} букв. Сейчас: ${letterCount} букв.`);
       return;
     }
-    
-    setIsLoading(true);
+
+    submitLockRef.current = true;
+    setIsSubmitting(true);
+
+    const userSnapshot = user;
+    const transferData = {
+      sender_id: user.id,
+      receiver_id: receiver.id,
+      message,
+    };
+    const optimisticUser = {
+      ...user,
+      daily_transfer_count: (user.daily_transfer_count || 0) + 1,
+      ticket_parts: (user.ticket_parts || 0) + 1,
+    };
+
+    onTransferSuccess?.(optimisticUser);
+    setReceiver(null);
+    setMessage('');
 
     try {
-      const transferData = {
-        sender_id: user.id,
-        receiver_id: receiver.id,
-        message: message,
-      };
-      
       const response = await transferPoints(transferData);
-      setSuccess('Спасибка успешно отправлена!');
-      
-      setReceiver(null);
-      setMessage('');
-      
-      // --- ИСПРАВЛЕНИЕ №2: Передаем обновленные данные в App.jsx ---
-      setTimeout(() => {
-      if (onTransferSuccess) {
-        onTransferSuccess(response.data); // Передаем обновленные данные наверх
-      }
-      }, 1000);
-      
+      onTransferSuccess?.(response.data, { silent: true });
     } catch (err) {
-      const errorMessage = err.response?.data?.detail || 'Произошла ошибка.';
-      setError(errorMessage);
+      onTransferSuccess?.(userSnapshot, { silent: true });
+      const errorMessage = err.response?.data?.detail || 'Не удалось отправить спасибку.';
+      showAlert(errorMessage, 'error');
     } finally {
-      setIsLoading(false);
+      submitLockRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -251,15 +258,14 @@ function TransferPage({ user, onBack, onTransferSuccess }) {
             </div>
           )}
         </div>
-        <button 
-          type="submit" 
-          disabled={isLoading || !receiver || countLetters(message) < MIN_MESSAGE_LENGTH} 
+        <button
+          type="submit"
+          disabled={isSubmitting || !receiver || countLetters(message) < MIN_MESSAGE_LENGTH}
           className={styles.submitButton}
         >
-          {isLoading ? 'Отправка...' : 'Отправить спасибку'}
+          {isSubmitting ? 'Отправка...' : 'Отправить спасибку'}
         </button>
         {error && <p className={styles.error}>{error}</p>}
-        {success && <p className={styles.success}>{success}</p>}
       </form>
     </PageLayout>
   );

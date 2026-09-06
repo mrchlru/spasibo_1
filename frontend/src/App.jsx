@@ -487,11 +487,13 @@ function App() {
     clearCache('leaderboard');
   };
 
-  const handleTransferSuccess = (updatedSenderData) => {
+  const handleTransferSuccess = (updatedSenderData, options = {}) => {
     updateUser(updatedSenderData);
     clearCache('feed');
     clearCache('leaderboard');
-    navigate('home');
+    if (!options.silent) {
+      navigate('home');
+    }
   };
   
   const handleProfileSaveSuccess = () => {

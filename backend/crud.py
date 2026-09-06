@@ -5,6 +5,7 @@ import math
 import re
 import logging
 import traceback
+import asyncio
 from types import SimpleNamespace
 
 import httpx
@@ -37,6 +38,61 @@ from redis_cache import redis_cache
 logger = logging.getLogger(__name__)
 
 _TRANSFER_LIMIT_TZ = ZoneInfo("Europe/Moscow")
+
+
+async def _run_transfer_side_effects(
+    *,
+    receiver_telegram_id: int | None,
+    telegram_message: str,
+    receiver_id: int,
+    notification_title: str,
+    notification_message: str,
+    notification_id: int,
+) -> None:
+    """Telegram, push и инвалидация кеша — не блокируют ответ API перевода."""
+    if receiver_telegram_id is not None and receiver_telegram_id >= 0:
+        try:
+            await send_telegram_message(chat_id=receiver_telegram_id, text=telegram_message)
+        except Exception as exc:
+            logger.warning(
+                "Telegram-уведомление о спасибке не отправлено (user %s): %s",
+                receiver_telegram_id,
+                exc,
+            )
+
+    try:
+        from database import AsyncSessionLocal
+        from push_service import send_user_push
+
+        async with AsyncSessionLocal() as db:
+            await send_user_push(
+                db,
+                receiver_id,
+                title=notification_title,
+                body=notification_message,
+                url="/?panel=notifications",
+                tag=f"spasibo-transfer-{notification_id}",
+            )
+            await db.commit()
+    except Exception as exc:
+        logger.warning("Push после спасибки для user_id=%s не отправлен: %s", receiver_id, exc)
+
+    await _invalidate_feed_and_leaderboard("перевод спасибки")
+
+
+def _schedule_transfer_side_effects(**kwargs: object) -> None:
+    """Запускает побочные эффекты перевода в фоне."""
+    task = asyncio.create_task(_run_transfer_side_effects(**kwargs))
+
+    def _log_failure(done_task: asyncio.Task) -> None:
+        if done_task.cancelled():
+            return
+        try:
+            done_task.result()
+        except Exception:
+            logger.exception("Фоновая обработка перевода спасибки завершилась с ошибкой")
+
+    task.add_done_callback(_log_failure)
 
 
 async def _create_notification(
@@ -330,27 +386,33 @@ async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
         message=tr.message
     )
     db.add(db_tr)
-    await db.commit()
-    await db.refresh(sender) # Обновляем данные отправителя из БД
-    
-    try:
-        message_text = (f"🎉 Вам начислена <b>1</b> спасибка!\n"
-                        f"От: <b>{escape_html(sender.first_name or '')} {escape_html(sender.last_name or '')}</b>\n"
-                        f"Сообщение: <i>{escape_html(tr.message or '')}</i>")
-        if receiver.telegram_id and receiver.telegram_id >= 0:
-            await send_telegram_message(chat_id=receiver.telegram_id, text=message_text)
-    except Exception as e:
-        print(f"Could not send notification to user {receiver.telegram_id}. Error: {e}")
-
     sender_name = f"{sender.first_name or ''} {sender.last_name or ''}".strip()
-    await _create_notification(
-        db, receiver.id, "transfer",
-        "Вам начислена спасибка",
-        f"От: {sender_name}. Сообщение: {tr.message or '—'}",
-        click_url="/?panel=notifications",
+    notification_title = "Вам начислена спасибка"
+    notification_message = f"От: {sender_name}. Сообщение: {tr.message or '—'}"
+    notification = models.Notification(
+        user_id=receiver.id,
+        type="transfer",
+        title=notification_title,
+        message=notification_message,
     )
+    db.add(notification)
     await db.commit()
-    await _invalidate_feed_and_leaderboard("перевод спасибки")
+    await db.refresh(sender)
+    await db.refresh(notification)
+
+    telegram_message = (
+        f"🎉 Вам начислена <b>1</b> спасибка!\n"
+        f"От: <b>{escape_html(sender.first_name or '')} {escape_html(sender.last_name or '')}</b>\n"
+        f"Сообщение: <i>{escape_html(tr.message or '')}</i>"
+    )
+    _schedule_transfer_side_effects(
+        receiver_telegram_id=receiver.telegram_id,
+        telegram_message=telegram_message,
+        receiver_id=receiver.id,
+        notification_title=notification_title,
+        notification_message=notification_message,
+        notification_id=notification.id,
+    )
 
     return sender
     
