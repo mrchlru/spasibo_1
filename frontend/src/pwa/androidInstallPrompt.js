@@ -3,7 +3,7 @@
  */
 
 import { getSpasiboAndroidVersionCode, isSpasiboAndroidApp } from './androidNativePush.js';
-import { getMobileWelcomePlatform } from './mobileWelcomeGuide.js';
+import { isAndroidMobileBrowser } from './mobileWelcomeGuide.js';
 
 export const ANDROID_INSTALL_DISMISS_KEY = 'spasibo_android_install_dismissed_code';
 
@@ -28,7 +28,7 @@ export function getAndroidInstallPromptMode() {
   if (isSpasiboAndroidApp()) {
     return 'update';
   }
-  if (getMobileWelcomePlatform() === 'android-browser') {
+  if (isAndroidMobileBrowser()) {
     return 'install';
   }
   return null;
@@ -37,6 +37,20 @@ export function getAndroidInstallPromptMode() {
 /** @deprecated Используйте getAndroidInstallPromptMode(). */
 export function isAndroidInstallPromptPlatform() {
   return getAndroidInstallPromptMode() !== null;
+}
+
+/** Пользователь уже скрыл промпт для этой или более новой версии. */
+export function isAndroidInstallPromptDismissed(release) {
+  const normalized = normalizeAndroidRelease(release);
+  if (normalized.version_code <= 0) {
+    return false;
+  }
+  try {
+    const dismissedCode = Number.parseInt(localStorage.getItem(ANDROID_INSTALL_DISMISS_KEY) || '0', 10);
+    return Number.isFinite(dismissedCode) && dismissedCode >= normalized.version_code;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -75,12 +89,11 @@ export function shouldShowAndroidInstallPrompt(release, options = {}) {
     return true;
   }
 
-  try {
-    const dismissedCode = Number.parseInt(localStorage.getItem(ANDROID_INSTALL_DISMISS_KEY) || '0', 10);
-    return !Number.isFinite(dismissedCode) || dismissedCode < normalized.version_code;
-  } catch {
-    return true;
+  if (rolloutEnabled && normalized.version_code <= 0) {
+    return false;
   }
+
+  return !isAndroidInstallPromptDismissed(normalized);
 }
 
 /**
@@ -128,7 +141,7 @@ export function getAndroidInstallPromptCopy(release, mode) {
 export function dismissAndroidInstallPrompt(release) {
   const normalized = normalizeAndroidRelease(release);
   try {
-    localStorage.setItem(ANDROID_INSTALL_DISMISS_KEY, String(normalized.version_code));
+    localStorage.setItem(ANDROID_INSTALL_DISMISS_KEY, String(Math.max(normalized.version_code, 1)));
   } catch {
     /* ignore */
   }
