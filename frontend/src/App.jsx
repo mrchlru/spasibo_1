@@ -51,6 +51,8 @@ import EmailPromptModal from './components/EmailPromptModal';
 import AndroidNativeSessionBridge from './pwa/AndroidNativeSessionBridge.jsx';
 import MobileWelcomeGuide from './components/MobileWelcomeGuide.jsx';
 import PushEnablePrompt from './components/PushEnablePrompt.jsx';
+import AndroidInstallSheet from './components/AndroidInstallSheet.jsx';
+import { DEFAULT_ANDROID_RELEASE, normalizeAndroidRelease } from './pwa/androidInstallPrompt.js';
 
 import { startSession, pingSession } from './api';
 
@@ -79,6 +81,7 @@ function App() {
   const [showEmailPromptModal, setShowEmailPromptModal] = useState(false);
   const [seasonTheme, setSeasonTheme] = useState('summer');
   const [themeAssets, setThemeAssets] = useState(null);
+  const [androidRelease, setAndroidRelease] = useState({ ...DEFAULT_ANDROID_RELEASE });
   const seasonThemeRef = useRef('summer');
   // Инициализация windowWidth с проверкой доступности window
   const [windowWidth, setWindowWidth] = useState(() => {
@@ -162,6 +165,7 @@ function App() {
           setSeasonTheme(response.data.season_theme);
         }
         setThemeAssets(response?.data?.theme_assets ?? null);
+        setAndroidRelease(normalizeAndroidRelease(response?.data?.android_release));
       } catch (error) {
         console.warn('Не удалось загрузить настройки оформления, используем летнюю тему.', error);
       }
@@ -182,6 +186,13 @@ function App() {
       setThemeAssets(data.theme_assets ?? null);
     }
   }, []);
+
+  const handleAppSettingsUpdated = useCallback((data) => {
+    handleAppearanceUpdated(data);
+    if (data && Object.prototype.hasOwnProperty.call(data, 'android_release')) {
+      setAndroidRelease(normalizeAndroidRelease(data.android_release));
+    }
+  }, [handleAppearanceUpdated]);
 
   useEffect(() => {
     seasonThemeRef.current = seasonTheme;
@@ -675,7 +686,15 @@ function App() {
         case 'history': return <HistoryPage user={user} onBack={() => navigate('profile')} />;
         // --- 2. ГЛАВНОЕ ИЗМЕНЕНИЕ: Передаем новую функцию в TransferPage ---
         case 'transfer': return <TransferPage user={user} onBack={() => navigate('home')} onTransferSuccess={handleTransferSuccess} />;
-        case 'admin': return <AdminPage seasonTheme={seasonTheme} themeAssets={themeAssets} onAppearanceUpdated={handleAppearanceUpdated} />;
+        case 'admin': return (
+          <AdminPage
+            user={user}
+            seasonTheme={seasonTheme}
+            themeAssets={themeAssets}
+            onAppearanceUpdated={handleAppearanceUpdated}
+            onAppSettingsUpdated={handleAppSettingsUpdated}
+          />
+        );
         case 'home':
         default:
           return (
@@ -905,6 +924,14 @@ function App() {
         bootReady={bootReady}
         loading={loading}
         isOnboardingVisible={isOnboardingVisible}
+      />
+      <AndroidInstallSheet
+        user={user}
+        bootReady={bootReady}
+        loading={loading}
+        isOnboardingVisible={isOnboardingVisible}
+        androidRelease={androidRelease}
+        hasBottomNav={Boolean(shouldShowBottomNav)}
       />
       {/* Теперь меню показываются на основе новых, правильных переменных */}
       {shouldShowSideNav && <SideNav user={user} activePage={page} onNavigate={navigate} />}

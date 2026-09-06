@@ -301,6 +301,17 @@ export const uploadAdminMedia = (file) => {
   });
 };
 
+/** Загрузка APK для Android-релиза (админка). */
+export const uploadAdminApk = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post('/admin/media/upload-apk', formData, {
+    headers: {
+      ...getAuthHeaders().headers,
+    },
+  });
+};
+
 /** Призовая картинка автовыдачи: JPEG в папке товара (не AVIF). */
 export const uploadPrizeImage = (file, productName) => {
   const formData = new FormData();

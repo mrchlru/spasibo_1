@@ -119,4 +119,14 @@ class SpasiboWebAppBridge(
             activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(trimmed)))
         }
     }
+
+    @JavascriptInterface
+    fun getAppVersionCode(): Int {
+        return BuildConfig.VERSION_CODE
+    }
+
+    @JavascriptInterface
+    fun getAppVersionName(): String {
+        return BuildConfig.VERSION_NAME
+    }
 }

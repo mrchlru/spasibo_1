@@ -68,6 +68,7 @@ class UserResponse(UserBase):
     browser_auth_enabled: bool = False
     can_publish_feed_posts: bool = False
     registration_date: Optional[datetime] = None
+    is_primary_admin: bool = False
 
     @field_serializer('date_of_birth')
     def serialize_date(self, dob: Optional[date], _info):
@@ -84,8 +85,13 @@ class UserResponse(UserBase):
 
 def user_response_for_public_api(user: object) -> UserResponse:
     """Убирает password_plain из ответов для клиента; у веб-заявки в pending скрывает и login."""
+    from admin_utils import user_is_primary_admin
+
     u = UserResponse.model_validate(user)
-    extra: dict = {"password_plain": None}
+    extra: dict = {
+        "password_plain": None,
+        "is_primary_admin": user_is_primary_admin(user),
+    }
     tg = u.telegram_id
     is_web_pending = (u.status or "") == "pending" and (tg is None or tg < 0)
     if is_web_pending:
@@ -123,6 +129,7 @@ def panel_admin_user_response(email: str) -> UserResponse:
         browser_auth_enabled=False,
         can_publish_feed_posts=True,
         registration_date=None,
+        is_primary_admin=True,
     )
 
 
@@ -402,15 +409,37 @@ class ThemeAssetsPayload(BaseModel):
     winter: Optional[ThemeSeasonAssets] = None
 
 
+class AndroidReleasePayload(BaseModel):
+    """Публичные настройки релиза Android APK."""
+
+    enabled: bool = False
+    version_code: int = Field(default=0, ge=0)
+    version_name: str = Field(default="1.0.0", max_length=32)
+    apk_url: str = Field(default="", max_length=2048)
+    title: str = Field(default="Установите приложение «Спасибо»", max_length=200)
+    description: str = Field(
+        default="Быстрее открывается, приходят push-уведомления и удобнее пользоваться с телефона.",
+        max_length=2000,
+    )
+    release_notes: str = Field(default="", max_length=4000)
+    update_title: str = Field(default="Доступно обновление «Спасибо»", max_length=200)
+    update_description: str = Field(
+        default="Установите новую версию — так приложение будет работать стабильнее.",
+        max_length=2000,
+    )
+
+
 class AppSettingsResponse(OrmBase):
     id: int
     season_theme: Literal['summer', 'winter']
     theme_assets: Optional[ThemeAssetsPayload] = None
+    android_release: Optional[AndroidReleasePayload] = None
 
 
 class AppSettingsUpdate(BaseModel):
     season_theme: Optional[Literal['summer', 'winter']] = None
     theme_assets: Optional[ThemeAssetsPayload] = None
+    android_release: Optional[AndroidReleasePayload] = None
 
 class TotalBalanceStats(BaseModel):
     total_balance: int
@@ -744,6 +773,14 @@ class AdminPrizeImageUploadResponse(BaseModel):
     content_type: str = "image/jpeg"
     folder_slug: str
     object_key: str
+
+
+class AdminApkUploadResponse(BaseModel):
+    """Ответ после загрузки APK в объектное хранилище."""
+
+    url: str
+    content_type: str = "application/vnd.android.package-archive"
+    filename: str
 
 
 class MarketItemReorderRequest(BaseModel):

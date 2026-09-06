@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import schemas
+from admin_utils import user_is_primary_admin
 from config import settings
 from database import get_db
 from dependencies import get_current_admin_user
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MAX_DOCUMENT_BYTES = 15 * 1024 * 1024
+MAX_APK_BYTES = 100 * 1024 * 1024
 
 _ALLOWED_DOCUMENT_EXTENSIONS: dict[str, str] = {
     ".pdf": "application/pdf",
@@ -202,4 +204,70 @@ async def upload_admin_prize_image(
         content_type="image/jpeg",
         folder_slug=slugify_prize_folder(product_name),
         object_key=key,
+    )
+
+
+@router.post("/admin/media/upload-apk", response_model=schemas.AdminApkUploadResponse)
+async def upload_admin_apk(
+    _admin: User = Depends(get_current_admin_user),
+    file: UploadFile = File(...),
+) -> schemas.AdminApkUploadResponse:
+    """Загружает APK для установки на Android (без конвертации)."""
+    if not user_is_primary_admin(_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Загрузка APK доступна только главному администратору",
+        )
+    if not is_object_storage_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Объектное хранилище не настроено",
+        )
+
+    filename = Path(file.filename or "spasibo.apk").name.strip() or "spasibo.apk"
+    extension = Path(filename).suffix.lower()
+    if extension != ".apk":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нужен файл с расширением .apk",
+        )
+
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    allowed_types = {
+        "application/vnd.android.package-archive",
+        "application/octet-stream",
+        "application/x-msdownload",
+        "",
+    }
+    if content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Неподдерживаемый тип файла: {content_type or '(пусто)'}",
+        )
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл пустой")
+    if len(raw) > MAX_APK_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="APK слишком большой (максимум 100 МБ)",
+        )
+
+    key = generate_media_object_key(prefix="android-releases", extension="apk")
+    try:
+        url = await asyncio.to_thread(
+            upload_bytes,
+            key,
+            raw,
+            "application/vnd.android.package-archive",
+        )
+    except RuntimeError as exc:
+        logger.exception("S3 APK upload failed")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    return schemas.AdminApkUploadResponse(
+        url=url,
+        content_type="application/vnd.android.package-archive",
+        filename=filename,
     )
