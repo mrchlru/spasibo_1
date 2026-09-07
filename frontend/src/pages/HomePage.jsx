@@ -12,6 +12,7 @@ import FeedPostModal from '../components/FeedPostModal';
 import SectionSlider from '../components/SectionSlider';
 import LeaderboardContent from '../components/LeaderboardContent';
 import FeedSkeleton from '../components/FeedSkeleton';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { resolveSeasonAssets } from '../themeAssetDefaults';
 import { resolveMediaUrl } from '../utils/resolveMediaUrl';
 
@@ -93,6 +94,11 @@ function HomePage({
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useLiveRefresh(refreshFeed, {
+    enabled: homeSection === 'feed',
+    intervalMs: 60000,
+  });
 
   const mainBanners = banners.filter((b) => b.position === 'main');
 
