@@ -28,6 +28,8 @@ import ru.spasibo.app.push.PushRegistrar
 import ru.spasibo.app.ui.splash.HeartbeatSplashScreen
 import ru.spasibo.app.ui.theme.SpasiboTheme
 import ru.spasibo.app.web.WebAppScreen
+import ru.spasibo.app.web.dispatchDeepLinkToWebView
+import ru.spasibo.app.web.isWebAppReady
 
 class MainActivity : ComponentActivity() {
     private var showBootSplash by mutableStateOf(true)
@@ -50,7 +52,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
-        // Системный splash Android 12+ статичен и перекрывает Compose — убираем сразу.
         splashScreen.setKeepOnScreenCondition { false }
         splashScreen.setOnExitAnimationListener { provider ->
             provider.remove()
@@ -66,7 +67,7 @@ class MainActivity : ComponentActivity() {
             PushRegistrar.registerIfPossible(applicationContext)
         }
 
-        pendingOpenUrl = extractOpenUrl(intent)
+        consumeLaunchDeepLink(intent)
 
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(AndroidGraphicsColor.parseColor("#243B09")),
@@ -116,22 +117,35 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val url = extractOpenUrl(intent)
-        if (url.isNullOrBlank()) {
-            return
-        }
-        Log.i(LOG_TAG, "Deep link: $url")
-        pendingOpenUrl = url
-        openUrlInWebView(url)
+        consumeLaunchDeepLink(intent)
     }
 
     fun attachWebView(view: WebView) {
         webView = view
-        pendingOpenUrl?.let { openUrlInWebView(it) }
+        pendingOpenUrl?.let { handleDeepLink(it) }
     }
 
     fun clearWebViewHistory() {
         webView?.clearHistory()
+    }
+
+    /**
+     * Открывает deep link из push: без перезагрузки, если PWA уже загружено.
+     */
+    fun handleDeepLink(url: String) {
+        val target = url.trim()
+        if (target.isBlank()) {
+            return
+        }
+        Log.i(LOG_TAG, "Deep link: $target")
+        val view = webView
+        if (isWebAppReady(view)) {
+            pendingOpenUrl = null
+            dispatchDeepLinkToWebView(view!!, target)
+            return
+        }
+        pendingOpenUrl = target
+        openUrlInWebView(target)
     }
 
     fun openUrlInWebView(url: String) {
@@ -207,12 +221,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun consumeLaunchDeepLink(intent: Intent?) {
+        if (intent == null) {
+            return
+        }
+        val url = extractOpenUrl(intent)
+        if (url.isNullOrBlank()) {
+            return
+        }
+        handleDeepLink(url)
+    }
+
     private fun extractOpenUrl(intent: Intent?): String? {
         if (intent == null) {
             return null
         }
         return intent.getStringExtra(EXTRA_OPEN_URL)?.takeIf { it.isNotBlank() }
-            ?: intent.data?.toString()?.takeIf { it.isNotBlank() }
+            ?: intent.dataString?.takeIf { it.isNotBlank() }
     }
 
     companion object {

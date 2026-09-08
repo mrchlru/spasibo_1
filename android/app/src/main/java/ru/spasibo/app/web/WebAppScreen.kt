@@ -186,7 +186,7 @@ fun WebAppScreen(
 
     LaunchedEffect(pendingOpenUrl) {
         val target = pendingOpenUrl?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
-        webView?.loadUrl(target)
+        activity.handleDeepLink(target)
         onPendingOpenUrlHandled()
     }
 
@@ -234,7 +234,7 @@ fun WebAppScreen(
                             displayZoomControls = false
                             setSupportZoom(false)
                             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                            cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                            cacheMode = WebSettings.LOAD_DEFAULT
                             mediaPlaybackRequiresUserGesture = false
                             allowFileAccess = true
                             allowContentAccess = true
@@ -248,6 +248,8 @@ fun WebAppScreen(
 
                         CookieManager.getInstance().setAcceptCookie(true)
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+                        WebViewCacheHelper.ensureFreshForAppVersion(ctx, this)
 
                         addJavascriptInterface(
                             SpasiboWebAppBridge(activity),
