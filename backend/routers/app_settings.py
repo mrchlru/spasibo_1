@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app_settings_crud
@@ -12,9 +12,11 @@ router = APIRouter(prefix="/app-settings", tags=["app-settings"])
 
 
 @router.get("/", response_model=schemas.AppSettingsResponse)
-async def get_app_settings_route(db: AsyncSession = Depends(get_db)):
+async def get_app_settings_route(request: Request, db: AsyncSession = Depends(get_db)):
     row = await app_settings_crud.get_app_settings(db)
-    return app_settings_crud.app_settings_to_response(row)
+    response = app_settings_crud.app_settings_to_response(row)
+    response.frontend_build_id = getattr(request.app.state, "frontend_build_id", None)
+    return response
 
 
 @router.put("/", response_model=schemas.AppSettingsResponse)

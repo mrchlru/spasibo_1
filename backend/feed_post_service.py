@@ -307,7 +307,7 @@ async def _broadcast_feed_post_published(db: AsyncSession, post: models.FeedPost
             "feed_post",
             post.title,
             message,
-            click_url="/?panel=home",
+            click_url=f"/?panel=home&feed_post={post.id}",
         )
 
 

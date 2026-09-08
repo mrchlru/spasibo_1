@@ -21,6 +21,8 @@ import {
 import { initializeCache, clearCache, setCachedData, hasWarmBootCache } from './storage';
 import { preloadAppContent, ANDROID_BOOT_TIMEOUT_MS } from './boot/preloadAppContent';
 import { isSpasiboAndroidApp, hideAndroidBootSplash } from './pwa/androidNativePush';
+import { parseAppDeepLink, stripDeepLinkQueryFromLocation } from './utils/appDeepLink';
+import { applyFrontendBuildUpdate } from './pwa/androidWebUpdate';
 
 // Компоненты навигации (загружаются сразу, так как всегда видны)
 import BottomNav from './components/BottomNav';
@@ -82,6 +84,7 @@ function App() {
   const [seasonTheme, setSeasonTheme] = useState('summer');
   const [themeAssets, setThemeAssets] = useState(null);
   const [androidRelease, setAndroidRelease] = useState({ ...DEFAULT_ANDROID_RELEASE });
+  const [pendingFeedPostId, setPendingFeedPostId] = useState(null);
   const seasonThemeRef = useRef('summer');
   // Инициализация windowWidth с проверкой доступности window
   const [windowWidth, setWindowWidth] = useState(() => {
@@ -166,6 +169,7 @@ function App() {
         }
         setThemeAssets(response?.data?.theme_assets ?? null);
         setAndroidRelease(normalizeAndroidRelease(response?.data?.android_release));
+        applyFrontendBuildUpdate(response?.data?.frontend_build_id);
       } catch (error) {
         console.warn('Не удалось загрузить настройки оформления, используем летнюю тему.', error);
       }
@@ -418,6 +422,21 @@ function App() {
     }
     setPage(targetPage);
   };
+
+  const applyDeepLink = useCallback((rawUrl) => {
+    const target = parseAppDeepLink(rawUrl, window.location.origin);
+    if (!target) {
+      return;
+    }
+    if (target.homeSection) {
+      setHomeSection(target.homeSection);
+    }
+    if (target.feedPostId) {
+      setPendingFeedPostId(target.feedPostId);
+    }
+    setPage(target.page);
+    stripDeepLinkQueryFromLocation();
+  }, [isDesktop]);
   
   const updateUser = (newUserData) => setUser(prev => ({ ...prev, ...newUserData }));
 
@@ -545,6 +564,46 @@ function App() {
       cancelled = true;
     };
   }, [loading, user?.id, user?.status, isOnboardingVisible]);
+
+  useEffect(() => {
+    if (!user || user.status !== 'approved' || isOnboardingVisible || !bootReady) {
+      return undefined;
+    }
+    applyDeepLink(window.location.href);
+    return undefined;
+  }, [user?.id, user?.status, isOnboardingVisible, bootReady, applyDeepLink]);
+
+  useEffect(() => {
+    if (!user || user.status !== 'approved') {
+      return undefined;
+    }
+    function onOpenUrl(event) {
+      const rawUrl = event?.detail?.url;
+      if (rawUrl) {
+        applyDeepLink(rawUrl);
+      }
+    }
+    window.addEventListener('spasibo:open-url', onOpenUrl);
+    return () => window.removeEventListener('spasibo:open-url', onOpenUrl);
+  }, [user?.id, user?.status, applyDeepLink]);
+
+  useEffect(() => {
+    if (!isAndroidShell || !user || user.status !== 'approved') {
+      return undefined;
+    }
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      getAppSettings()
+        .then((response) => {
+          applyFrontendBuildUpdate(response?.data?.frontend_build_id);
+        })
+        .catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [user?.id, user?.status]);
 
   const isAndroidBootLoading =
     loading ||
@@ -710,6 +769,8 @@ function App() {
               themeAssets={themeAssets}
               homeSection={homeSection}
               onHomeSectionChange={setHomeSection}
+              highlightFeedPostId={pendingFeedPostId}
+              onHighlightFeedPostHandled={() => setPendingFeedPostId(null)}
             />
           );
       }

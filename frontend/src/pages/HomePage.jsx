@@ -44,6 +44,8 @@ function HomePage({
   themeAssets,
   homeSection = 'feed',
   onHomeSectionChange,
+  highlightFeedPostId = null,
+  onHighlightFeedPostHandled,
 }) {
   const isWinterTheme = seasonTheme === 'winter';
   const seasonKey = isWinterTheme ? 'winter' : 'summer';
@@ -99,6 +101,18 @@ function HomePage({
     enabled: homeSection === 'feed',
     intervalMs: 60000,
   });
+
+  useEffect(() => {
+    if (!highlightFeedPostId || homeSection !== 'feed' || isLoading) {
+      return undefined;
+    }
+    const element = document.getElementById(`feed-post-${highlightFeedPostId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      onHighlightFeedPostHandled?.();
+    }
+    return undefined;
+  }, [highlightFeedPostId, homeSection, isLoading, feedEntries, onHighlightFeedPostHandled]);
 
   const mainBanners = banners.filter((b) => b.position === 'main');
 
@@ -248,6 +262,7 @@ function HomePage({
     return (
       <div
         key={`post-${post.id}`}
+        id={`feed-post-${post.id}`}
         className={`${styles.feedItem} ${styles.feedItemNews} ${post.is_pinned ? styles.feedItemPinned : ''} ${!post.is_published ? styles.feedItemDraft : ''}`}
       >
         <div className={styles.feedPostActions}>

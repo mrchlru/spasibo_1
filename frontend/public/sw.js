@@ -1,6 +1,6 @@
 /* Service Worker «Спасибо»: кэш оболочки + Web Push */
 
-const CACHE_NAME = 'spasibo-shell-v2';
+const CACHE_NAME = 'spasibo-shell-v3';
 const SHELL_URLS = ['/', '/index.html', '/site.webmanifest', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -35,8 +35,21 @@ self.addEventListener('fetch', (event) => {
 
   if (url.pathname === '/index.html' || url.pathname === '/') {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match('/index.html')),
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match('/index.html')),
     );
+    return;
+  }
+
+  if (url.pathname === '/sw.js' || url.pathname.endsWith('/site.webmanifest')) {
+    event.respondWith(fetch(event.request));
     return;
   }
 });
