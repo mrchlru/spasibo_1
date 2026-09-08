@@ -1,8 +1,9 @@
 // frontend/src/pages/MarketplacePage.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { getMarketItems, purchaseItem, purchaseLocalItem, createSharedGiftInvitation } from '../api';
 import { getCachedData, setCachedData } from '../storage';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 import { useConfirmation } from '../contexts/ConfirmationContext';
 import PageLayout from '../components/PageLayout';
@@ -33,30 +34,26 @@ function MarketplacePage({ user, onPurchaseSuccess }) {
     toggleFavorite,
   } = useMarketFavorites({ enabled: Boolean(user) });
 
-  useEffect(() => {
-    let cancelled = false;
-    const fetchItems = async () => {
-      try {
-        const response = await getMarketItems();
-        if (cancelled) return;
-        setItems(response.data);
-        setCachedData('market', response.data);
-      } catch (error) {
-        if (cancelled) return;
-        console.error("Failed to fetch market items", error);
-        if (!hasCachedItems) {
-          showAlert("Не удалось загрузить товары. Попробуйте позже.", 'error');
-        }
-      } finally {
-        if (!cancelled) setIsLoading(false);
+  const refreshItems = useCallback(async ({ showErrorOnFail = false } = {}) => {
+    try {
+      const response = await getMarketItems();
+      setItems(response.data);
+      setCachedData('market', response.data);
+    } catch (error) {
+      console.error('Failed to fetch market items', error);
+      if (showErrorOnFail && !hasCachedItems) {
+        showAlert('Не удалось загрузить товары. Попробуйте позже.', 'error');
       }
-    };
-    fetchItems();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [hasCachedItems, showAlert]);
+
+  useEffect(() => {
+    void refreshItems({ showErrorOnFail: true });
+  }, [refreshItems]);
+
+  useLiveRefresh(refreshItems, { enabled: true, intervalMs: 60000 });
 
   const updateItemStock = (itemId) => {
     setItems((prev) => {
