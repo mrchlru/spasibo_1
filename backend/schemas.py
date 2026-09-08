@@ -434,6 +434,7 @@ class AppSettingsResponse(OrmBase):
     season_theme: Literal['summer', 'winter']
     theme_assets: Optional[ThemeAssetsPayload] = None
     android_release: Optional[AndroidReleasePayload] = None
+    frontend_build_id: Optional[str] = None
 
 
 class AppSettingsUpdate(BaseModel):

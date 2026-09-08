@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -43,6 +44,24 @@ from startup_background import run_background_startup
 logger = logging.getLogger(__name__)
 
 
+def _compute_frontend_build_id() -> str | None:
+    """Хеш index.html — меняется при каждом деплое фронта."""
+    if not settings.SERVE_SPA:
+        return None
+    index = _static_root() / "index.html"
+    if not index.is_file():
+        return None
+    digest = hashlib.sha256(index.read_bytes()).hexdigest()
+    return digest[:16]
+
+
+def _static_root() -> Path:
+    """Каталог со сборкой Vite (index.html и assets/)."""
+    if settings.STATIC_ROOT.strip():
+        return Path(settings.STATIC_ROOT)
+    return Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+
 def _is_protected_api_path(path: str) -> bool:
     """Пути REST API до завершения фоновой инициализации (SPA и статика не сюда)."""
     if path == "/run-monthly-tasks":
@@ -78,6 +97,7 @@ async def lifespan(app: FastAPI):
     """Сразу отдаёт управление ASGI — порт слушается, миграции идут в фоне."""
     app.state.startup_ready = False
     app.state.startup_error = None
+    app.state.frontend_build_id = _compute_frontend_build_id()
 
     async def _runner() -> None:
         try:
@@ -146,7 +166,13 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
         
         path = request.url.path
         
-        if path.startswith('/banners') or path.startswith('/market/items') or path.startswith('/market/statix-bonus'):
+        if path in ("/", "/index.html", "/sw.js", "/site.webmanifest") or path.rstrip("/") == "/sw.js":
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        elif path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path.startswith('/banners') or path.startswith('/market/items') or path.startswith('/market/statix-bonus'):
             response.headers["Cache-Control"] = "public, max-age=60"
         elif path.startswith('/leaderboard'):
             response.headers["Cache-Control"] = "public, max-age=15"
@@ -205,13 +231,6 @@ app.include_router(push.router)
 app.include_router(media_upload.router)
 app.include_router(media_raster.router)
 app.include_router(feed.router)
-
-
-def _static_root() -> Path:
-    """Каталог со сборкой Vite (index.html и assets/)."""
-    if settings.STATIC_ROOT.strip():
-        return Path(settings.STATIC_ROOT)
-    return Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
 def _register_spa_assets() -> None:

@@ -75,7 +75,6 @@ def _send_fcm_sync(token: str, payload: dict[str, Any]) -> tuple[bool, bool]:
 
     message = messaging.Message(
         token=token,
-        notification=messaging.Notification(title=title, body=body),
         data={
             "title": title,
             "body": body,
@@ -84,10 +83,6 @@ def _send_fcm_sync(token: str, payload: dict[str, Any]) -> tuple[bool, bool]:
         },
         android=messaging.AndroidConfig(
             priority="high",
-            notification=messaging.AndroidNotification(
-                click_action="OPEN_SPASIBO_URL",
-                tag=tag,
-            ),
         ),
     )
 
