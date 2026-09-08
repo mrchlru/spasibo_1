@@ -30,6 +30,8 @@ export function useDragReorder(items, setItems, onPersist) {
         }
         const [moved] = next.splice(fromIndex, 1);
         next.splice(toIndex, 0, moved);
+        // Синхронно обновляем ref: dragend может прийти до re-render после последнего dragover.
+        itemsRef.current = next;
         return next;
       });
     },
