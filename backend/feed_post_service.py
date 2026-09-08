@@ -17,6 +17,11 @@ from object_storage import delete_object_key, public_url_to_object_key
 
 logger = logging.getLogger(__name__)
 
+
+async def _invalidate_feed_cache(reason: str) -> None:
+    """Сбрасывает клиентский Redis-кэш ленты у всех пользователей."""
+    await crud._invalidate_feed_and_leaderboard(reason)
+
 _FEED_OBJECT_PREFIXES = ("feed-posts/images/", "feed-posts/documents/")
 
 
@@ -147,6 +152,8 @@ async def soft_delete_feed_post(
     post.pin_order = 0
     post.updated_at = datetime.utcnow()
     await db.commit()
+    if post.is_published:
+        await _invalidate_feed_cache("удаление новости ленты")
 
 
 async def create_publisher_feed_post(
@@ -177,6 +184,7 @@ async def create_publisher_feed_post(
     if loaded and loaded.is_published:
         await _broadcast_feed_post_published(db, loaded)
         await db.commit()
+        await _invalidate_feed_cache("публикация новости ленты")
     return loaded or post
 
 
@@ -210,7 +218,10 @@ async def update_publisher_feed_post(
 
     post.updated_at = datetime.utcnow()
     await db.commit()
-    return await get_feed_post_by_id(db, post.id) or post
+    updated = await get_feed_post_by_id(db, post.id) or post
+    if updated.is_published and not updated.is_deleted:
+        await _invalidate_feed_cache("редактирование новости ленты")
+    return updated
 
 
 async def publish_feed_post(
@@ -237,6 +248,7 @@ async def publish_feed_post(
     if loaded:
         await _broadcast_feed_post_published(db, loaded)
         await db.commit()
+        await _invalidate_feed_cache("публикация новости ленты")
     return loaded or post
 
 
@@ -262,7 +274,10 @@ async def set_publisher_feed_post_pinned(
         post.pin_order = int(datetime.utcnow().timestamp())
     post.updated_at = datetime.utcnow()
     await db.commit()
-    return await get_feed_post_by_id(db, post.id) or post
+    updated = await get_feed_post_by_id(db, post.id) or post
+    if updated.is_published and not updated.is_deleted:
+        await _invalidate_feed_cache("закрепление новости ленты")
+    return updated
 
 
 async def hard_delete_feed_post(db: AsyncSession, post: models.FeedPost) -> None:

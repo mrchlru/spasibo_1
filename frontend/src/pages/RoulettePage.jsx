@@ -1,6 +1,6 @@
 // frontend/src/pages/RoulettePage.jsx
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import PageLayout from '../components/PageLayout';
 import { spinRoulette, assembleTickets, getRouletteHistory } from '../api';
 import styles from './RoulettePage.module.css';
@@ -8,6 +8,7 @@ import { FaInfoCircle, FaTicketAlt } from 'react-icons/fa';
 import UserAvatar from '../components/UserAvatar';
 import { formatToMsk, formatFeedDate } from '../utils/dateFormatter';
 import WinModal from '../components/WinModal';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
 
 const generatePrizeReel = (finalPrize) => {
     const reelLength = 50;
@@ -29,9 +30,23 @@ function RoulettePage({ user, onUpdateUser }) {
     const rouletteTrackRef = useRef(null);
     const prizeItemRef = useRef(null);
 
-    useEffect(() => {
-        getRouletteHistory().then(res => setHistory(res.data));
+    const refreshHistory = useCallback(async () => {
+        try {
+            const response = await getRouletteHistory();
+            setHistory(response.data);
+        } catch (error) {
+            console.error('Failed to fetch roulette history', error);
+        }
     }, []);
+
+    useEffect(() => {
+        void refreshHistory();
+    }, [refreshHistory]);
+
+    useLiveRefresh(refreshHistory, {
+        enabled: !isSpinning,
+        intervalMs: 40000,
+    });
 
     useEffect(() => {
         const updatePrizeItemWidth = () => {
@@ -106,8 +121,7 @@ function RoulettePage({ user, onUpdateUser }) {
                     // Обновляем баланс и билеты в главном компоненте App.jsx
                     onUpdateUser({ balance: new_balance, tickets: new_tickets });
                     
-                    const historyRes = await getRouletteHistory();
-                    setHistory(historyRes.data);
+                    await refreshHistory();
                 }, 5000);
             }, 100);
 
