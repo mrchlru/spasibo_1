@@ -75,7 +75,7 @@ const STATUS_CHECK_INTERVAL = 5000; // Проверяем статус кажд�
 const tg = window.Telegram?.WebApp?.initData ? window.Telegram.WebApp : null;
 const isTelegramWebApp = Boolean(window.Telegram?.WebApp?.initData);
 const isAndroidShell = isSpasiboAndroidApp();
-const androidLoadingFallback = isAndroidShell ? null : <LoadingScreen />;
+const androidLoadingFallback = <LoadingScreen />;
 
 function App() {
   const [user, setUser] = useState(null);

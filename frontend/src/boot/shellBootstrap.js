@@ -1,5 +1,5 @@
 /**
- * Мгновенная отрисовка шапок и кнопок из локального снимка + прогрев Cache API.
+ * Мгновенная отрисовка шапок из localStorage + лёгкий prefetch картинок.
  */
 
 import {
@@ -9,8 +9,6 @@ import {
 import {
   collectContentShellUrls,
   collectThemeShellUrls,
-  getActiveFrontendBuildId,
-  resolveThemeAssetsFromShellCache,
   warmShellAssets,
 } from '../pwa/shellAssetCache.js';
 import { injectThemeAssetStyles } from '../utils/themeAssetsCss.js';
@@ -40,34 +38,25 @@ export function hydrateShellSync() {
   return snapshot;
 }
 
-/**
- * Прогревает только шапки и кнопки (без ленты — иначе сотни запросов блокируют старт).
- */
-export async function warmCachedShellAssets() {
+/** Prefetch шапок и кнопок (синхронный, без await). */
+export function warmCachedShellAssets() {
   const snapshot = getCachedAppSettingsSnapshot();
-  const buildId = getActiveFrontendBuildId();
-  await warmShellAssets(collectThemeShellUrls(snapshot?.theme_assets), buildId);
-
-  if (snapshot?.theme_assets) {
-    const resolved = await resolveThemeAssetsFromShellCache(snapshot.theme_assets, buildId);
-    injectThemeAssetStyles(resolved);
-  }
+  warmShellAssets(collectThemeShellUrls(snapshot?.theme_assets), 12);
 }
 
-/** Прогревает картинки ленты/баннеров в idle, без блокировки UI. */
+/** Prefetch картинок ленты/баннеров в idle. */
 export function scheduleContentShellWarm() {
   if (typeof window === 'undefined') {
     return;
   }
   const run = () => {
-    const buildId = getActiveFrontendBuildId();
     const urls = collectContentShellUrls(getCachedData('banners'), getCachedData('feed'));
-    void warmShellAssets(urls, buildId, { limit: 40 });
+    warmShellAssets(urls, 20);
   };
   if (typeof window.requestIdleCallback === 'function') {
     window.requestIdleCallback(run, { timeout: 8000 });
   } else {
-    window.setTimeout(run, 1500);
+    window.setTimeout(run, 2000);
   }
 }
 
@@ -84,15 +73,13 @@ export function persistAppSettingsFromApi(data) {
 }
 
 /**
- * Прогревает оболочку после свежих настроек с API.
+ * Обновляет тему после ответа API.
  *
  * @param {object | null | undefined} themeAssets
  */
-export async function warmShellAssetsForTheme(themeAssets) {
-  const buildId = getActiveFrontendBuildId();
-  await warmShellAssets(collectThemeShellUrls(themeAssets), buildId);
+export function warmShellAssetsForTheme(themeAssets) {
   if (themeAssets) {
-    const resolved = await resolveThemeAssetsFromShellCache(themeAssets, buildId);
-    injectThemeAssetStyles(resolved);
+    injectThemeAssetStyles(themeAssets);
   }
+  warmShellAssets(collectThemeShellUrls(themeAssets), 12);
 }

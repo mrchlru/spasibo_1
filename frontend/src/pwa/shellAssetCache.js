@@ -1,10 +1,9 @@
 /**
- * Жёсткий кеш оболочки: шапки, кнопка «Отправить спасибки», логотипы, баннеры, картинки в ленте.
- * Не кеширует аватарки пользователей.
+ * Кеш оболочки: шапки, кнопка «Отправить спасибки», логотипы.
+ * Прогрев — через <img> (без CORS), без fetch/Cache API (ломало старт приложения).
  */
 
 import { resolveSeasonAssets } from '../themeAssetDefaults.js';
-import { getApiBaseUrl } from '../api.js';
 import { resolveMediaUrl } from '../utils/resolveMediaUrl.js';
 
 const BUILD_ID_KEY = 'spasibo_frontend_build_id';
@@ -12,7 +11,7 @@ const CACHE_EPOCH_KEY = 'spasibo_cache_epoch_ms';
 /** 30 дней — принудительное фоновое обновление данных. */
 export const SHELL_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
-const blobUrlByRequestUrl = new Map();
+const prefetchedDisplayUrls = new Set();
 
 /** @returns {string} */
 export function getActiveFrontendBuildId() {
@@ -47,11 +46,7 @@ export function isShellCacheEpochExpired() {
   }
 }
 
-function shellCacheName(buildId) {
-  return `spasibo-shell-assets-${buildId || 'bootstrap'}`;
-}
-
-/** URL аватарки / фото пользователя — не кешируем в оболочке. */
+/** URL аватарки / фото пользователя — не прогреваем в оболочке. */
 export function isUserAvatarUrl(rawUrl) {
   const url = String(rawUrl || '').trim();
   if (!url) {
@@ -88,38 +83,6 @@ export function collectThemeShellUrls(themeAssets) {
   return [...urls];
 }
 
-function isSameOriginUrl(url) {
-  if (typeof window === 'undefined') {
-    return true;
-  }
-  try {
-    const parsed = new URL(url, window.location.origin);
-    return parsed.origin === window.location.origin;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * URL для fetch/Cache API: cross-origin всегда через same-origin /media/raster (иначе CORS).
- *
- * @param {string} rawUrl
- */
-function resolveShellCacheFetchUrl(rawUrl) {
-  const displayUrl = resolveMediaUrl(String(rawUrl || '').trim());
-  if (!displayUrl) {
-    return '';
-  }
-  if (isSameOriginUrl(displayUrl)) {
-    return displayUrl;
-  }
-  const absolute = displayUrl.startsWith('/')
-    ? `${window.location.origin}${displayUrl}`
-    : displayUrl;
-  const apiBase = getApiBaseUrl() || window.location.origin;
-  return `${apiBase}/media/raster?src=${encodeURIComponent(absolute)}`;
-}
-
 /**
  * Медиа из ленты/баннеров без аватарок.
  *
@@ -147,149 +110,47 @@ export function collectContentShellUrls(banners, feedEntries) {
   return urls;
 }
 
-async function openShellCache(buildId) {
-  if (typeof caches === 'undefined') {
-    return null;
-  }
-  try {
-    return await caches.open(shellCacheName(buildId));
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Кладёт файл в Cache API и возвращает blob:-URL для мгновенного CSS/img.
- *
- * @param {string} rawUrl
- * @param {string} buildId
- */
-export async function ensureShellAssetCached(rawUrl, buildId = getActiveFrontendBuildId()) {
-  const displayUrl = resolveMediaUrl(String(rawUrl || '').trim());
-  if (!displayUrl || isUserAvatarUrl(displayUrl)) {
-    return '';
-  }
-
-  const cachedBlob = blobUrlByRequestUrl.get(displayUrl);
-  if (cachedBlob) {
-    return cachedBlob;
-  }
-
-  const fetchUrl = resolveShellCacheFetchUrl(rawUrl);
-  if (!fetchUrl) {
-    return displayUrl;
-  }
-
-  const cache = await openShellCache(buildId);
-  if (cache) {
-    const hit = await cache.match(fetchUrl);
-    if (hit) {
-      const blob = await hit.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      blobUrlByRequestUrl.set(displayUrl, objectUrl);
-      return objectUrl;
-    }
-  }
-
-  try {
-    const response = await fetch(fetchUrl, { credentials: 'omit' });
-    if (!response.ok) {
-      return displayUrl;
-    }
-    if (cache) {
-      await cache.put(fetchUrl, response.clone());
-    }
-    const blob = await response.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    blobUrlByRequestUrl.set(displayUrl, objectUrl);
-    return objectUrl;
-  } catch {
-    return displayUrl;
-  }
-}
-
-/**
- * Прогревает кеш оболочки (шапки, кнопки и т.д.).
- *
- * @param {string[]} urls
- * @param {string} [buildId]
- */
-const SHELL_WARM_MAX_URLS = 24;
-const SHELL_WARM_CONCURRENCY = 4;
-
-async function warmShellAssetsBatch(urls, buildId) {
-  for (let index = 0; index < urls.length; index += SHELL_WARM_CONCURRENCY) {
-    const slice = urls.slice(index, index + SHELL_WARM_CONCURRENCY);
-    await Promise.allSettled(slice.map((url) => ensureShellAssetCached(url, buildId)));
-  }
-}
-
-/**
- * Прогревает кеш оболочки (шапки, кнопки и т.д.) небольшими пачками.
- *
- * @param {string[]} urls
- * @param {string} [buildId]
- * @param {{ limit?: number }} [options]
- */
-export async function warmShellAssets(urls, buildId = getActiveFrontendBuildId(), options = {}) {
-  const limit = options.limit ?? SHELL_WARM_MAX_URLS;
-  const unique = [...new Set(urls.filter(Boolean))].slice(0, limit);
-  await warmShellAssetsBatch(unique, buildId);
-}
-
-/**
- * Подменяет URL в theme_assets на blob:-URL из кеша (для CSS background).
- *
- * @param {object | null | undefined} themeAssets
- * @param {string} [buildId]
- * @returns {Promise<object | null>}
- */
-export async function resolveThemeAssetsFromShellCache(themeAssets, buildId = getActiveFrontendBuildId()) {
-  if (!themeAssets || typeof themeAssets !== 'object') {
-    return themeAssets ?? null;
-  }
-
-  const resolved = {};
-  for (const [seasonKey, row] of Object.entries(themeAssets)) {
-    if (!row || typeof row !== 'object') {
-      continue;
-    }
-    resolved[seasonKey] = {};
-    for (const [assetKey, rawUrl] of Object.entries(row)) {
-      if (!rawUrl || isUserAvatarUrl(rawUrl)) {
-        resolved[seasonKey][assetKey] = rawUrl;
-        continue;
-      }
-      resolved[seasonKey][assetKey] = await ensureShellAssetCached(String(rawUrl), buildId);
-    }
-  }
-  return resolved;
-}
-
-/**
- * URL для отображения: blob из Cache API, если уже прогрет, иначе обычный resolveMediaUrl.
+ * URL для отображения в UI (без blob-кеша).
  *
  * @param {string} rawUrl
  */
 export function resolveShellDisplayUrl(rawUrl) {
-  const requestUrl = resolveMediaUrl(String(rawUrl || '').trim());
-  if (!requestUrl) {
-    return '';
-  }
-  return blobUrlByRequestUrl.get(requestUrl) || requestUrl;
+  return resolveMediaUrl(String(rawUrl || '').trim());
 }
 
-/** Сбрасывает кеш оболочки при новой сборке сервера. */
-export async function clearAllShellAssetCaches() {
-  for (const objectUrl of blobUrlByRequestUrl.values()) {
-    try {
-      URL.revokeObjectURL(objectUrl);
-    } catch {
-      /* ignore */
-    }
+function prefetchDisplayUrl(displayUrl) {
+  if (!displayUrl || prefetchedDisplayUrls.has(displayUrl)) {
+    return;
   }
-  blobUrlByRequestUrl.clear();
+  prefetchedDisplayUrls.add(displayUrl);
+  const image = new Image();
+  image.decoding = 'async';
+  image.src = displayUrl;
+}
 
+/**
+ * Прогревает HTTP-кеш браузера для URL оболочки (не блокирует UI).
+ *
+ * @param {string[]} urls
+ * @param {number} [limit=16]
+ */
+export function warmShellAssets(urls, limit = 16) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const unique = [...new Set(urls.filter(Boolean))].slice(0, limit);
+  for (const rawUrl of unique) {
+    if (isUserAvatarUrl(rawUrl)) {
+      continue;
+    }
+    prefetchDisplayUrl(resolveMediaUrl(String(rawUrl).trim()));
+  }
+}
+
+/** Сброс in-memory prefetch (при новой сборке). */
+export async function clearAllShellAssetCaches() {
+  prefetchedDisplayUrls.clear();
   if (typeof caches === 'undefined') {
     return;
   }
