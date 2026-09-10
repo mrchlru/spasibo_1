@@ -61,7 +61,7 @@ export async function preloadAppContent(options = {}) {
   if (skipWaitIfCached && hasWarmBootCache()) {
     const banners = getCachedData('banners') || [];
     const feed = getCachedData('feed') || [];
-    void warmCachedShellAssets();
+    warmCachedShellAssets();
     scheduleContentShellWarm();
     prefetchImageUrls(collectBootMediaUrls(banners, feed), 50);
     if (shouldRefreshDataFromNetwork()) {
@@ -76,7 +76,7 @@ export async function preloadAppContent(options = {}) {
   }
 
   const snapshot = getCachedAppSettingsSnapshot();
-  void warmShellAssetsForTheme(snapshot?.theme_assets);
+  warmShellAssetsForTheme(snapshot?.theme_assets);
 
   const needsNetworkRefresh = !hasWarmBootCache() || shouldRefreshDataFromNetwork();
   let timedOut = false;

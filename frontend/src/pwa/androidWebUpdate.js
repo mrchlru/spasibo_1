@@ -62,17 +62,12 @@ export function applyFrontendBuildUpdate(serverBuildId) {
     return;
   }
 
-  let reloadGuard = '';
   try {
-    reloadGuard = sessionStorage.getItem(RELOAD_GUARD_KEY) || '';
-  } catch {
-    reloadGuard = '';
-  }
-  if (reloadGuard === serverBuildId) {
-    return;
-  }
-
-  try {
+    const reloadGuard = sessionStorage.getItem(RELOAD_GUARD_KEY) || '';
+    if (reloadGuard === serverBuildId) {
+      setActiveFrontendBuildId(serverBuildId);
+      return;
+    }
     sessionStorage.setItem(RELOAD_GUARD_KEY, serverBuildId);
   } catch {
     /* ignore */
