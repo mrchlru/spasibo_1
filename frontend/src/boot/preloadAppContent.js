@@ -86,7 +86,6 @@ export async function preloadAppContent(options = {}) {
 
   const banners = getCachedData('banners') || [];
   const feed = getCachedData('feed') || [];
-  const buildId = getActiveFrontendBuildId();
   scheduleContentShellWarm();
   prefetchImageUrls(collectBootMediaUrls(banners, feed), 50);
 
