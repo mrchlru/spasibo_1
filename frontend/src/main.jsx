@@ -9,11 +9,21 @@ import './styles/iosLiquidGlass.css';
 import { applyPlatformTheme } from './platform/iosGlass.js';
 import { registerServiceWorker } from './pwa/registerServiceWorker.js';
 import { isSpasiboAndroidApp } from './pwa/androidNativePush.js';
-import { hydrateShellSync, warmCachedShellAssets } from './boot/shellBootstrap.js';
+import { hydrateShellSync, scheduleContentShellWarm, warmCachedShellAssets } from './boot/shellBootstrap.js';
 
 applyPlatformTheme();
 hydrateShellSync();
-void warmCachedShellAssets();
+if (typeof window !== 'undefined') {
+  const warmShell = () => {
+    void warmCachedShellAssets();
+    scheduleContentShellWarm();
+  };
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(warmShell, { timeout: 3000 });
+  } else {
+    window.setTimeout(warmShell, 500);
+  }
+}
 
 if (isSpasiboAndroidApp()) {
   window.addEventListener('load', () => {

@@ -5,6 +5,32 @@ import {
   setActiveFrontendBuildId,
 } from './shellAssetCache.js';
 
+const BUILD_ID_KEY = 'spasibo_frontend_build_id';
+const RELOAD_GUARD_KEY = 'spasibo_build_reload_guard';
+
+/** Сбрасывает SW и HTTP-кеш браузера перед перезагрузкой после деплоя. */
+async function purgeBrowserCachesBeforeReload() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (typeof caches !== 'undefined') {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Если на сервере новая сборка фронта — сбрасывает кеш и перезагружает (Android WebView).
  *
@@ -17,7 +43,7 @@ export function applyFrontendBuildUpdate(serverBuildId) {
 
   let stored = '';
   try {
-    stored = localStorage.getItem('spasibo_frontend_build_id') || '';
+    stored = localStorage.getItem(BUILD_ID_KEY) || '';
   } catch {
     stored = '';
   }
@@ -28,7 +54,28 @@ export function applyFrontendBuildUpdate(serverBuildId) {
   }
 
   if (stored === serverBuildId) {
+    try {
+      sessionStorage.removeItem(RELOAD_GUARD_KEY);
+    } catch {
+      /* ignore */
+    }
     return;
+  }
+
+  let reloadGuard = '';
+  try {
+    reloadGuard = sessionStorage.getItem(RELOAD_GUARD_KEY) || '';
+  } catch {
+    reloadGuard = '';
+  }
+  if (reloadGuard === serverBuildId) {
+    return;
+  }
+
+  try {
+    sessionStorage.setItem(RELOAD_GUARD_KEY, serverBuildId);
+  } catch {
+    /* ignore */
   }
 
   setActiveFrontendBuildId(serverBuildId);
@@ -41,5 +88,7 @@ export function applyFrontendBuildUpdate(serverBuildId) {
   void clearCache('banners');
   void clearCache('history');
 
-  window.location.reload();
+  void purgeBrowserCachesBeforeReload().finally(() => {
+    window.location.reload();
+  });
 }

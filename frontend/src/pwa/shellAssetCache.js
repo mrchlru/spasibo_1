@@ -183,11 +183,27 @@ export async function ensureShellAssetCached(rawUrl, buildId = getActiveFrontend
  * @param {string[]} urls
  * @param {string} [buildId]
  */
-export async function warmShellAssets(urls, buildId = getActiveFrontendBuildId()) {
-  const unique = [...new Set(urls.filter(Boolean))];
-  await Promise.allSettled(
-    unique.map((url) => ensureShellAssetCached(url, buildId)),
-  );
+const SHELL_WARM_MAX_URLS = 24;
+const SHELL_WARM_CONCURRENCY = 4;
+
+async function warmShellAssetsBatch(urls, buildId) {
+  for (let index = 0; index < urls.length; index += SHELL_WARM_CONCURRENCY) {
+    const slice = urls.slice(index, index + SHELL_WARM_CONCURRENCY);
+    await Promise.allSettled(slice.map((url) => ensureShellAssetCached(url, buildId)));
+  }
+}
+
+/**
+ * Прогревает кеш оболочки (шапки, кнопки и т.д.) небольшими пачками.
+ *
+ * @param {string[]} urls
+ * @param {string} [buildId]
+ * @param {{ limit?: number }} [options]
+ */
+export async function warmShellAssets(urls, buildId = getActiveFrontendBuildId(), options = {}) {
+  const limit = options.limit ?? SHELL_WARM_MAX_URLS;
+  const unique = [...new Set(urls.filter(Boolean))].slice(0, limit);
+  await warmShellAssetsBatch(unique, buildId);
 }
 
 /**
