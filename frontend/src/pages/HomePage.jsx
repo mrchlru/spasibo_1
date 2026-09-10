@@ -14,7 +14,7 @@ import LeaderboardContent from '../components/LeaderboardContent';
 import FeedSkeleton from '../components/FeedSkeleton';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { resolveSeasonAssets } from '../themeAssetDefaults';
-import { resolveMediaUrl } from '../utils/resolveMediaUrl';
+import { resolveShellDisplayUrl } from '../pwa/shellAssetCache';
 
 function normalizeFeedEntries(data) {
   if (!data || !Array.isArray(data)) return [];
@@ -53,8 +53,8 @@ function HomePage({
     () => resolveSeasonAssets(seasonKey, themeAssets),
     [seasonKey, themeAssets],
   );
-  const sendThanksImage = resolveMediaUrl(mergedAssets.thanks_button);
-  const feedLogoImage = resolveMediaUrl(mergedAssets.thanks_feed_logo);
+  const sendThanksImage = resolveShellDisplayUrl(mergedAssets.thanks_button);
+  const feedLogoImage = resolveShellDisplayUrl(mergedAssets.thanks_feed_logo);
   const initialFeedEntries = normalizeFeedEntries(getCachedData('feed'));
   const initialBanners = getCachedData('banners') || [];
   const hasInitialFeed = initialFeedEntries.length > 0;

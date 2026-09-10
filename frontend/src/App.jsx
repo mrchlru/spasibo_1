@@ -23,6 +23,13 @@ import { preloadAppContent, ANDROID_BOOT_TIMEOUT_MS } from './boot/preloadAppCon
 import { isSpasiboAndroidApp, hideAndroidBootSplash } from './pwa/androidNativePush';
 import { parseAppDeepLink, stripDeepLinkQueryFromLocation } from './utils/appDeepLink';
 import { applyFrontendBuildUpdate } from './pwa/androidWebUpdate';
+import {
+  getCachedAppSettingsSnapshot,
+} from './pwa/appSettingsCache';
+import {
+  persistAppSettingsFromApi,
+  warmShellAssetsForTheme,
+} from './boot/shellBootstrap';
 
 // Компоненты навигации (загружаются сразу, так как всегда видны)
 import BottomNav from './components/BottomNav';
@@ -81,8 +88,12 @@ function App() {
  // 2. Добавляем новое состояние для принудительного показа обучения
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showEmailPromptModal, setShowEmailPromptModal] = useState(false);
-  const [seasonTheme, setSeasonTheme] = useState('summer');
-  const [themeAssets, setThemeAssets] = useState(null);
+  const [seasonTheme, setSeasonTheme] = useState(() => {
+    return getCachedAppSettingsSnapshot()?.season_theme || 'summer';
+  });
+  const [themeAssets, setThemeAssets] = useState(() => {
+    return getCachedAppSettingsSnapshot()?.theme_assets ?? null;
+  });
   const [androidRelease, setAndroidRelease] = useState({ ...DEFAULT_ANDROID_RELEASE });
   const [pendingFeedPostId, setPendingFeedPostId] = useState(null);
   const seasonThemeRef = useRef('summer');
@@ -164,12 +175,14 @@ function App() {
     const fetchAppTheme = async () => {
       try {
         const response = await getAppSettings();
+        persistAppSettingsFromApi(response?.data);
         if (response?.data?.season_theme) {
           setSeasonTheme(response.data.season_theme);
         }
         setThemeAssets(response?.data?.theme_assets ?? null);
         setAndroidRelease(normalizeAndroidRelease(response?.data?.android_release));
         applyFrontendBuildUpdate(response?.data?.frontend_build_id);
+        void warmShellAssetsForTheme(response?.data?.theme_assets ?? null);
       } catch (error) {
         console.warn('Не удалось загрузить настройки оформления, используем летнюю тему.', error);
       }
@@ -188,6 +201,10 @@ function App() {
     }
     if (data && Object.prototype.hasOwnProperty.call(data, 'theme_assets')) {
       setThemeAssets(data.theme_assets ?? null);
+      void warmShellAssetsForTheme(data.theme_assets ?? null);
+    }
+    if (data) {
+      persistAppSettingsFromApi(data);
     }
   }, []);
 
@@ -545,7 +562,7 @@ function App() {
     }
 
     const bootTimeoutMs = isAndroidShell ? ANDROID_BOOT_TIMEOUT_MS : 2500;
-    const canShowHomeImmediately = isAndroidShell && hasWarmBootCache();
+    const canShowHomeImmediately = hasWarmBootCache();
 
     let cancelled = false;
     if (canShowHomeImmediately) {

@@ -1,6 +1,7 @@
 /* Service Worker «Спасибо»: кэш оболочки + Web Push */
 
-const CACHE_NAME = 'spasibo-shell-v3';
+const CACHE_NAME = 'spasibo-shell-v4';
+const MEDIA_CACHE = 'spasibo-media-v4';
 const SHELL_URLS = ['/', '/index.html', '/site.webmanifest', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -12,7 +13,11 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))),
+      Promise.all(
+        keys
+          .filter((key) => key !== CACHE_NAME && key !== MEDIA_CACHE && !key.startsWith('spasibo-shell-assets-'))
+          .map((key) => caches.delete(key)),
+      ),
     ).then(() => self.clients.claim()),
   );
 });
@@ -27,8 +32,50 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  if (url.pathname.startsWith('/telegram/photo-proxy')) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  if (url.pathname.startsWith('/media/raster')) {
+    event.respondWith(
+      caches.open(MEDIA_CACHE).then((cache) =>
+        cache.match(event.request).then((cached) => {
+          if (cached) {
+            return cached;
+          }
+          return fetch(event.request).then((response) => {
+            if (response && response.ok) {
+              cache.put(event.request, response.clone());
+            }
+            return response;
+          });
+        }),
+      ),
+    );
+    return;
+  }
+
   if (url.pathname.startsWith('/assets/')) {
-    // После деплоя хэши чанков меняются — только сеть, без cache.match.
+    // JS/CSS с хэшами — только сеть; картинки из /assets/ кешируем.
+    if (/\.(png|jpe?g|webp|gif|svg|avif)(\?|#|$)/i.test(url.pathname)) {
+      event.respondWith(
+        caches.open(MEDIA_CACHE).then((cache) =>
+          cache.match(event.request).then((cached) => {
+            if (cached) {
+              return cached;
+            }
+            return fetch(event.request).then((response) => {
+              if (response && response.ok) {
+                cache.put(event.request, response.clone());
+              }
+              return response;
+            });
+          }),
+        ),
+      );
+      return;
+    }
     event.respondWith(fetch(event.request));
     return;
   }
