@@ -83,6 +83,29 @@
   <body>
     <div id="root"></div>
     <div id="initial-loader" aria-label="Загрузка"><div class="spinner"></div></div>
+    <script>
+      (function () {
+        var ua = navigator.userAgent || '';
+        var isAndroidApk = /SpasiboAndroid\/\d/i.test(ua);
+        var isApple = /iPhone|iPod|iPad/i.test(ua)
+          || (/Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+        var isIosSafariTab = isApple && !window.navigator.standalone;
+        if (!isAndroidApk && !isIosSafariTab) {
+          return;
+        }
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function (regs) {
+            regs.forEach(function (reg) { reg.unregister(); });
+          }).catch(function () {});
+        }
+        if ('caches' in window) {
+          caches.keys().then(function (keys) {
+            keys.filter(function (key) { return key.indexOf('spasibo-') === 0; })
+              .forEach(function (key) { caches.delete(key); });
+          }).catch(function () {});
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
     <!-- Telegram SDK — только для Mini App; async после React, чтобы не ломать WebView -->
     <script async src="%VITE_API_URL%/telegram/webapp-sdk"></script>

@@ -8,21 +8,16 @@ import './index.css';
 import './styles/iosLiquidGlass.css';
 import { applyPlatformTheme } from './platform/iosGlass.js';
 import { registerServiceWorker } from './pwa/registerServiceWorker.js';
-import { isSpasiboAndroidApp } from './pwa/androidNativePush.js';
+import { hideAndroidBootSplash, isSpasiboAndroidApp } from './pwa/androidNativePush.js';
 import { hydrateShellSync, warmCachedShellAssets } from './boot/shellBootstrap.js';
 
 applyPlatformTheme();
 hydrateShellSync();
 warmCachedShellAssets();
 
+void registerServiceWorker();
 if (isSpasiboAndroidApp()) {
-  window.addEventListener('load', () => {
-    window.setTimeout(() => {
-      void registerServiceWorker();
-    }, 5000);
-  }, { once: true });
-} else {
-  registerServiceWorker();
+  window.setTimeout(() => hideAndroidBootSplash(), 1200);
 }
 
 // 1. Импортируем наши ПРАВИЛЬНЫЕ Provider'ы

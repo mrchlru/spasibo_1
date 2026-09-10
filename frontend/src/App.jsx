@@ -19,10 +19,11 @@ import {
   resolveAvatarUrl,
 } from './api';
 import { initializeCache, clearCache, setCachedData, hasWarmBootCache } from './storage';
-import { preloadAppContent, ANDROID_BOOT_TIMEOUT_MS } from './boot/preloadAppContent';
+import { preloadAppContent } from './boot/preloadAppContent';
 import { isSpasiboAndroidApp, hideAndroidBootSplash } from './pwa/androidNativePush';
 import { parseAppDeepLink, stripDeepLinkQueryFromLocation } from './utils/appDeepLink';
 import { applyFrontendBuildUpdate } from './pwa/androidWebUpdate';
+import { isMobileShellClient } from './pwa/mobileClient';
 import {
   getCachedAppSettingsSnapshot,
 } from './pwa/appSettingsCache';
@@ -561,7 +562,13 @@ function App() {
       return undefined;
     }
 
-    const bootTimeoutMs = isAndroidShell ? ANDROID_BOOT_TIMEOUT_MS : 2500;
+    if (isMobileShellClient()) {
+      setBootReady(true);
+      void preloadAppContent({ timeoutMs: 0, skipWaitIfCached: true });
+      return undefined;
+    }
+
+    const bootTimeoutMs = 2500;
     const canShowHomeImmediately = hasWarmBootCache();
 
     let cancelled = false;
@@ -572,9 +579,7 @@ function App() {
     }
 
     preloadAppContent({ timeoutMs: bootTimeoutMs }).finally(() => {
-      if (!cancelled) {
-        setBootReady(true);
-      }
+      setBootReady(true);
     });
 
     return () => {
@@ -627,10 +632,14 @@ function App() {
     (user?.status === 'approved' && !isOnboardingVisible && !bootReady);
 
   useEffect(() => {
-    if (!isAndroidShell || isAndroidBootLoading) {
-      return;
+    if (!isAndroidShell) {
+      return undefined;
     }
-    hideAndroidBootSplash();
+    if (!isAndroidBootLoading) {
+      hideAndroidBootSplash();
+    }
+    const fallbackTimer = window.setTimeout(() => hideAndroidBootSplash(), 2000);
+    return () => window.clearTimeout(fallbackTimer);
   }, [isAndroidBootLoading]);
   
   const renderPage = () => {
@@ -638,7 +647,12 @@ function App() {
       return androidLoadingFallback;
     }
 
-    if (user?.status === 'approved' && !isOnboardingVisible && !bootReady) {
+    if (
+      !isMobileShellClient()
+      && user?.status === 'approved'
+      && !isOnboardingVisible
+      && !bootReady
+    ) {
       return androidLoadingFallback;
     }
   

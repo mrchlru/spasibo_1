@@ -1,8 +1,13 @@
 import { getApiBaseUrl } from '../api.js';
+import { isAppleMobileDevice } from '../platform/iosGlass.js';
 
 /** Приложение «Спасибо» в Android WebView (см. userAgent SpasiboAndroid). */
 export function isAndroidWebViewShell() {
   return typeof navigator !== 'undefined' && /SpasiboAndroid/i.test(navigator.userAgent);
+}
+
+function shouldRasterizeAvif() {
+  return isAndroidWebViewShell() || isAppleMobileDevice();
 }
 
 function encodeUrlPath(url) {
@@ -29,7 +34,7 @@ export function resolveMediaUrl(url) {
     return '';
   }
 
-  if (isAndroidWebViewShell() && /\.avif(\?|#|$)/i.test(trimmed)) {
+  if (shouldRasterizeAvif() && /\.avif(\?|#|$)/i.test(trimmed)) {
     const absolute = trimmed.startsWith('/')
       ? `${window.location.origin}${trimmed}`
       : trimmed;
