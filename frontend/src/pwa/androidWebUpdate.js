@@ -1,6 +1,9 @@
 import { clearCache } from '../storage.js';
-
-const BUILD_ID_KEY = 'spasibo_frontend_build_id';
+import { clearCachedAppSettingsSnapshot } from './appSettingsCache.js';
+import {
+  clearAllShellAssetCaches,
+  setActiveFrontendBuildId,
+} from './shellAssetCache.js';
 
 /**
  * Если на сервере новая сборка фронта — сбрасывает кеш и перезагружает (Android WebView).
@@ -14,17 +17,13 @@ export function applyFrontendBuildUpdate(serverBuildId) {
 
   let stored = '';
   try {
-    stored = localStorage.getItem(BUILD_ID_KEY) || '';
+    stored = localStorage.getItem('spasibo_frontend_build_id') || '';
   } catch {
     stored = '';
   }
 
   if (!stored) {
-    try {
-      localStorage.setItem(BUILD_ID_KEY, serverBuildId);
-    } catch {
-      /* ignore */
-    }
+    setActiveFrontendBuildId(serverBuildId);
     return;
   }
 
@@ -32,11 +31,9 @@ export function applyFrontendBuildUpdate(serverBuildId) {
     return;
   }
 
-  try {
-    localStorage.setItem(BUILD_ID_KEY, serverBuildId);
-  } catch {
-    /* ignore */
-  }
+  setActiveFrontendBuildId(serverBuildId);
+  void clearAllShellAssetCaches();
+  clearCachedAppSettingsSnapshot();
 
   void clearCache('feed');
   void clearCache('market');
