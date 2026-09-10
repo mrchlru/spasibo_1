@@ -3,7 +3,8 @@
  * Не кеширует аватарки пользователей.
  */
 
-import { THEME_ASSET_DEFAULTS, resolveSeasonAssets } from '../themeAssetDefaults.js';
+import { resolveSeasonAssets } from '../themeAssetDefaults.js';
+import { getApiBaseUrl } from '../api.js';
 import { resolveMediaUrl } from '../utils/resolveMediaUrl.js';
 
 const BUILD_ID_KEY = 'spasibo_frontend_build_id';
@@ -84,14 +85,39 @@ export function collectThemeShellUrls(themeAssets) {
       }
     }
   }
-  for (const season of Object.values(THEME_ASSET_DEFAULTS)) {
-    for (const value of Object.values(season)) {
-      if (value && String(value).trim()) {
-        urls.add(String(value).trim());
-      }
-    }
-  }
   return [...urls];
+}
+
+function isSameOriginUrl(url) {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+  try {
+    const parsed = new URL(url, window.location.origin);
+    return parsed.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * URL для fetch/Cache API: cross-origin всегда через same-origin /media/raster (иначе CORS).
+ *
+ * @param {string} rawUrl
+ */
+function resolveShellCacheFetchUrl(rawUrl) {
+  const displayUrl = resolveMediaUrl(String(rawUrl || '').trim());
+  if (!displayUrl) {
+    return '';
+  }
+  if (isSameOriginUrl(displayUrl)) {
+    return displayUrl;
+  }
+  const absolute = displayUrl.startsWith('/')
+    ? `${window.location.origin}${displayUrl}`
+    : displayUrl;
+  const apiBase = getApiBaseUrl() || window.location.origin;
+  return `${apiBase}/media/raster?src=${encodeURIComponent(absolute)}`;
 }
 
 /**
@@ -139,41 +165,46 @@ async function openShellCache(buildId) {
  * @param {string} buildId
  */
 export async function ensureShellAssetCached(rawUrl, buildId = getActiveFrontendBuildId()) {
-  const requestUrl = resolveMediaUrl(String(rawUrl || '').trim());
-  if (!requestUrl || isUserAvatarUrl(requestUrl)) {
+  const displayUrl = resolveMediaUrl(String(rawUrl || '').trim());
+  if (!displayUrl || isUserAvatarUrl(displayUrl)) {
     return '';
   }
 
-  const cachedBlob = blobUrlByRequestUrl.get(requestUrl);
+  const cachedBlob = blobUrlByRequestUrl.get(displayUrl);
   if (cachedBlob) {
     return cachedBlob;
   }
 
+  const fetchUrl = resolveShellCacheFetchUrl(rawUrl);
+  if (!fetchUrl) {
+    return displayUrl;
+  }
+
   const cache = await openShellCache(buildId);
   if (cache) {
-    const hit = await cache.match(requestUrl);
+    const hit = await cache.match(fetchUrl);
     if (hit) {
       const blob = await hit.blob();
       const objectUrl = URL.createObjectURL(blob);
-      blobUrlByRequestUrl.set(requestUrl, objectUrl);
+      blobUrlByRequestUrl.set(displayUrl, objectUrl);
       return objectUrl;
     }
   }
 
   try {
-    const response = await fetch(requestUrl, { mode: 'cors', credentials: 'omit' });
+    const response = await fetch(fetchUrl, { credentials: 'omit' });
     if (!response.ok) {
-      return requestUrl;
+      return displayUrl;
     }
     if (cache) {
-      await cache.put(requestUrl, response.clone());
+      await cache.put(fetchUrl, response.clone());
     }
     const blob = await response.blob();
     const objectUrl = URL.createObjectURL(blob);
-    blobUrlByRequestUrl.set(requestUrl, objectUrl);
+    blobUrlByRequestUrl.set(displayUrl, objectUrl);
     return objectUrl;
   } catch {
-    return requestUrl;
+    return displayUrl;
   }
 }
 

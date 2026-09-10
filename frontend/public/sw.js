@@ -1,6 +1,6 @@
 /* Service Worker «Спасибо»: кэш оболочки + Web Push */
 
-const CACHE_NAME = 'spasibo-shell-v5';
+const CACHE_NAME = 'spasibo-shell-v6';
 const MEDIA_CACHE = 'spasibo-media-v4';
 const SHELL_URLS = ['/', '/index.html', '/site.webmanifest', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png'];
 
