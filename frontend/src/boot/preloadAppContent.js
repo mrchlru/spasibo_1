@@ -1,6 +1,18 @@
 import { getFeed, getBanners, getMarketItems, getLeaderboard } from '../api';
-import { setCachedData, getCachedData, hasWarmBootCache } from '../storage';
+import {
+  setCachedData,
+  getCachedData,
+  hasWarmBootCache,
+  shouldRefreshDataFromNetwork,
+} from '../storage';
 import { collectBootMediaUrls, prefetchImageUrls } from '../utils/prefetchMedia';
+import { warmCachedShellAssets, warmShellAssetsForTheme } from './shellBootstrap';
+import { getCachedAppSettingsSnapshot } from '../pwa/appSettingsCache';
+import {
+  warmShellAssets,
+  collectContentShellUrls,
+  getActiveFrontendBuildId,
+} from '../pwa/shellAssetCache';
 
 const DEFAULT_BOOT_TIMEOUT_MS = 2500;
 const ANDROID_BOOT_TIMEOUT_MS = 600;
@@ -54,9 +66,12 @@ export async function preloadAppContent(options = {}) {
   if (skipWaitIfCached && hasWarmBootCache()) {
     const banners = getCachedData('banners') || [];
     const feed = getCachedData('feed') || [];
+    void warmCachedShellAssets();
     prefetchImageUrls(collectBootMediaUrls(banners, feed), 50);
-    void refreshCriticalContentInBackground();
-    void prefetchSecondaryContent();
+    if (shouldRefreshDataFromNetwork()) {
+      void refreshCriticalContentInBackground();
+      void prefetchSecondaryContent();
+    }
     return {
       ready: true,
       timedOut: false,
@@ -64,14 +79,24 @@ export async function preloadAppContent(options = {}) {
     };
   }
 
-  const critical = refreshCriticalContentInBackground();
-  const timedOut = await raceWithTimeout(critical, timeoutMs);
+  const snapshot = getCachedAppSettingsSnapshot();
+  void warmShellAssetsForTheme(snapshot?.theme_assets);
+
+  const needsNetworkRefresh = !hasWarmBootCache() || shouldRefreshDataFromNetwork();
+  let timedOut = false;
+  if (needsNetworkRefresh) {
+    timedOut = await raceWithTimeout(refreshCriticalContentInBackground(), timeoutMs);
+  }
 
   const banners = getCachedData('banners') || [];
   const feed = getCachedData('feed') || [];
+  const buildId = getActiveFrontendBuildId();
+  void warmShellAssets(collectContentShellUrls(banners, feed), buildId);
   prefetchImageUrls(collectBootMediaUrls(banners, feed), 50);
 
-  void prefetchSecondaryContent();
+  if (needsNetworkRefresh) {
+    void prefetchSecondaryContent();
+  }
 
   return {
     ready: true,

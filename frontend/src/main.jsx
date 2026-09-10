@@ -9,8 +9,11 @@ import './styles/iosLiquidGlass.css';
 import { applyPlatformTheme } from './platform/iosGlass.js';
 import { registerServiceWorker } from './pwa/registerServiceWorker.js';
 import { isSpasiboAndroidApp } from './pwa/androidNativePush.js';
+import { hydrateShellSync, warmCachedShellAssets } from './boot/shellBootstrap.js';
 
 applyPlatformTheme();
+hydrateShellSync();
+void warmCachedShellAssets();
 
 if (isSpasiboAndroidApp()) {
   window.addEventListener('load', () => {

@@ -13,6 +13,10 @@ import {
   setCache as setCacheAPI,
   deleteCache as deleteCacheAPI,
 } from './api';
+import {
+  getActiveFrontendBuildId,
+  isShellCacheEpochExpired,
+} from './pwa/shellAssetCache.js';
 
 const getTelegramId = () => {
   return window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
@@ -20,11 +24,28 @@ const getTelegramId = () => {
 
 // localStorage всегда есть и работает синхронно — это лучший быстрый кеш
 // для первого рендера в браузере.
+function unwrapCachedPayload(raw) {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  if (typeof raw !== 'object' || !Object.prototype.hasOwnProperty.call(raw, 'data')) {
+    return raw;
+  }
+  const activeBuildId = getActiveFrontendBuildId();
+  if (activeBuildId !== 'bootstrap' && raw.buildId && raw.buildId !== activeBuildId) {
+    return null;
+  }
+  return raw.data;
+}
+
 const fallbackStorage = {
   getItem: (key) => {
     try {
       const value = localStorage.getItem(`cache_${key}`);
-      return value ? JSON.parse(value) : null;
+      if (!value) {
+        return null;
+      }
+      return unwrapCachedPayload(JSON.parse(value));
     } catch (error) {
       console.error('Ошибка чтения из localStorage:', error);
       return null;
@@ -32,7 +53,14 @@ const fallbackStorage = {
   },
   setItem: (key, value) => {
     try {
-      localStorage.setItem(`cache_${key}`, JSON.stringify(value));
+      localStorage.setItem(
+        `cache_${key}`,
+        JSON.stringify({
+          buildId: getActiveFrontendBuildId(),
+          cachedAt: Date.now(),
+          data: value,
+        }),
+      );
     } catch (error) {
       console.error('Ошибка записи в localStorage:', error);
     }
@@ -161,6 +189,11 @@ export const getCachedData = (key) => {
 export function hasWarmBootCache() {
   const feed = getCachedData('feed');
   return Array.isArray(feed) && feed.length > 0;
+}
+
+/** Нужно ли подтягивать данные с сервера (раз в месяц или после смены сборки). */
+export function shouldRefreshDataFromNetwork() {
+  return isShellCacheEpochExpired();
 }
 
 /**

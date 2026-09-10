@@ -1,4 +1,5 @@
 import { resolveMediaUrl } from './resolveMediaUrl.js';
+import { isUserAvatarUrl } from '../pwa/shellAssetCache.js';
 
 /** @typedef {string} ImageUrl */
 
@@ -33,7 +34,7 @@ export function prefetchImageUrls(urls, limit = 80) {
 }
 
 /**
- * Собирает URL баннеров и аватаров из ленты для prefetch.
+ * Собирает URL баннеров и вложений ленты для prefetch (без аватарок пользователей).
  *
  * @param {Array<object>} banners
  * @param {Array<object>} feedEntries
@@ -43,26 +44,14 @@ export function collectBootMediaUrls(banners, feedEntries) {
   const urls = [];
 
   for (const banner of banners || []) {
-    if (banner?.image_url) {
+    if (banner?.image_url && !isUserAvatarUrl(banner.image_url)) {
       urls.push(banner.image_url);
     }
   }
 
   for (const entry of feedEntries || []) {
-    if (entry?.kind === 'post' && entry.post?.author?.telegram_photo_url) {
-      urls.push(entry.post.author.telegram_photo_url);
-    }
-    if (entry?.kind === 'transaction') {
-      const tx = entry.transaction;
-      if (tx?.sender?.telegram_photo_url) {
-        urls.push(tx.sender.telegram_photo_url);
-      }
-      if (tx?.receiver?.telegram_photo_url) {
-        urls.push(tx.receiver.telegram_photo_url);
-      }
-    }
     for (const attachment of entry?.post?.attachments || []) {
-      if (attachment?.kind === 'image' && attachment.url) {
+      if (attachment?.kind === 'image' && attachment.url && !isUserAvatarUrl(attachment.url)) {
         urls.push(attachment.url);
       }
     }

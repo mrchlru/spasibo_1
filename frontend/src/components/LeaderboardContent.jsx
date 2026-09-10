@@ -4,6 +4,7 @@ import styles from '../pages/LeaderboardPage.module.css';
 import FeedSkeleton from './FeedSkeleton';
 import { FaCrown, FaCalendarDay, FaCalendarAlt, FaGift, FaInfinity } from 'react-icons/fa';
 import { resolveSeasonAssets } from '../themeAssetDefaults';
+import { resolveShellDisplayUrl } from '../pwa/shellAssetCache';
 
 const ALL_TABS = [
   { id: 'all_time_received', label: 'За всё время', icon: <FaInfinity />, params: { period: 'all_time', type: 'received' } },
@@ -84,7 +85,9 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
   const others = leaderboard.slice(3);
 
   const seasonKey = seasonTheme === 'winter' ? 'winter' : 'summer';
-  const thanksLogoUrl = resolveSeasonAssets(seasonKey, themeAssets).leaderboard_thanks_logo;
+  const thanksLogoUrl = resolveShellDisplayUrl(
+    resolveSeasonAssets(seasonKey, themeAssets).leaderboard_thanks_logo,
+  );
 
   return (
     <div className={embedded ? styles.embeddedRoot : styles.page}>
