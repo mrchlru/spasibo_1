@@ -41,20 +41,33 @@ export function hydrateShellSync() {
 }
 
 /**
- * Прогревает шапки, кнопку «Отправить спасибки» и контентные картинки (без аватарок).
+ * Прогревает только шапки и кнопки (без ленты — иначе сотни запросов блокируют старт).
  */
 export async function warmCachedShellAssets() {
   const snapshot = getCachedAppSettingsSnapshot();
   const buildId = getActiveFrontendBuildId();
-  const urls = collectThemeShellUrls(snapshot?.theme_assets);
-  urls.push(
-    ...collectContentShellUrls(getCachedData('banners'), getCachedData('feed')),
-  );
-  await warmShellAssets(urls, buildId);
+  await warmShellAssets(collectThemeShellUrls(snapshot?.theme_assets), buildId);
 
   if (snapshot?.theme_assets) {
     const resolved = await resolveThemeAssetsFromShellCache(snapshot.theme_assets, buildId);
     injectThemeAssetStyles(resolved);
+  }
+}
+
+/** Прогревает картинки ленты/баннеров в idle, без блокировки UI. */
+export function scheduleContentShellWarm() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const run = () => {
+    const buildId = getActiveFrontendBuildId();
+    const urls = collectContentShellUrls(getCachedData('banners'), getCachedData('feed'));
+    void warmShellAssets(urls, buildId, { limit: 40 });
+  };
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(run, { timeout: 8000 });
+  } else {
+    window.setTimeout(run, 1500);
   }
 }
 

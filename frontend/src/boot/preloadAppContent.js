@@ -6,13 +6,8 @@ import {
   shouldRefreshDataFromNetwork,
 } from '../storage';
 import { collectBootMediaUrls, prefetchImageUrls } from '../utils/prefetchMedia';
-import { warmCachedShellAssets, warmShellAssetsForTheme } from './shellBootstrap';
+import { scheduleContentShellWarm, warmCachedShellAssets, warmShellAssetsForTheme } from './shellBootstrap';
 import { getCachedAppSettingsSnapshot } from '../pwa/appSettingsCache';
-import {
-  warmShellAssets,
-  collectContentShellUrls,
-  getActiveFrontendBuildId,
-} from '../pwa/shellAssetCache';
 
 const DEFAULT_BOOT_TIMEOUT_MS = 2500;
 const ANDROID_BOOT_TIMEOUT_MS = 600;
@@ -67,6 +62,7 @@ export async function preloadAppContent(options = {}) {
     const banners = getCachedData('banners') || [];
     const feed = getCachedData('feed') || [];
     void warmCachedShellAssets();
+    scheduleContentShellWarm();
     prefetchImageUrls(collectBootMediaUrls(banners, feed), 50);
     if (shouldRefreshDataFromNetwork()) {
       void refreshCriticalContentInBackground();
@@ -91,7 +87,7 @@ export async function preloadAppContent(options = {}) {
   const banners = getCachedData('banners') || [];
   const feed = getCachedData('feed') || [];
   const buildId = getActiveFrontendBuildId();
-  void warmShellAssets(collectContentShellUrls(banners, feed), buildId);
+  scheduleContentShellWarm();
   prefetchImageUrls(collectBootMediaUrls(banners, feed), 50);
 
   if (needsNetworkRefresh) {
