@@ -15,6 +15,7 @@ import FeedSkeleton from '../components/FeedSkeleton';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { resolveSeasonAssets } from '../themeAssetDefaults';
 import { resolveShellDisplayUrl } from '../pwa/shellAssetCache';
+import { resolveMediaUrl } from '../utils/resolveMediaUrl';
 
 function normalizeFeedEntries(data) {
   if (!data || !Array.isArray(data)) return [];
