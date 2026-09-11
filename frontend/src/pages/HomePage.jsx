@@ -60,7 +60,7 @@ function HomePage({
   const hasInitialFeed = initialFeedEntries.length > 0;
   const [feedEntries, setFeedEntries] = useState(initialFeedEntries);
   const [banners, setBanners] = useState(initialBanners);
-  const [isLoading, setIsLoading] = useState(!hasInitialFeed);
+  const [isFeedLoading, setIsFeedLoading] = useState(!hasInitialFeed);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [nextOffset, setNextOffset] = useState(FEED_PAGE_SIZE);
@@ -90,7 +90,7 @@ function HomePage({
   }, [applyFeedPage]);
 
   const loadMoreFeed = useCallback(async () => {
-    if (isLoading || isLoadingMore || !hasMore) {
+    if (isFeedLoading || isLoadingMore || !hasMore) {
       return;
     }
     setIsLoadingMore(true);
@@ -106,11 +106,11 @@ function HomePage({
     } finally {
       setIsLoadingMore(false);
     }
-  }, [hasMore, isLoading, isLoadingMore, nextOffset]);
+  }, [hasMore, isFeedLoading, isLoadingMore, nextOffset]);
 
   const loadMoreRef = useInfiniteScroll({
     hasMore,
-    isLoading: isLoading || isLoadingMore,
+    isLoading: isFeedLoading || isLoadingMore,
     onLoadMore: loadMoreFeed,
   });
 
@@ -120,24 +120,34 @@ function HomePage({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchData = async () => {
-      const promises = [refreshFeed()];
-
-      promises.push(
-        getBanners()
-          .then((response) => {
-            setBanners(response.data);
-            setCachedData('banners', response.data);
-            syncBannersCache(response.data);
-          })
-          .catch((error) => console.error('Failed to fetch banners', error)),
-      );
-
-      await Promise.all(promises);
-      setIsLoading(false);
+      if (!hasInitialFeed) {
+        setIsFeedLoading(true);
+      }
+      try {
+        await Promise.all([
+          refreshFeed(),
+          getBanners()
+            .then((response) => {
+              if (cancelled) return;
+              setBanners(response.data);
+              setCachedData('banners', response.data);
+              syncBannersCache(response.data);
+            })
+            .catch((error) => console.error('Failed to fetch banners', error)),
+        ]);
+      } finally {
+        if (!cancelled) {
+          setIsFeedLoading(false);
+        }
+      }
     };
 
-    fetchData();
+    void fetchData();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -147,7 +157,7 @@ function HomePage({
   });
 
   useEffect(() => {
-    if (!highlightFeedPostId || homeSection !== 'feed' || isLoading) {
+    if (!highlightFeedPostId || homeSection !== 'feed' || isFeedLoading) {
       return undefined;
     }
     const element = document.getElementById(`feed-post-${highlightFeedPostId}`);
@@ -156,7 +166,7 @@ function HomePage({
       onHighlightFeedPostHandled?.();
     }
     return undefined;
-  }, [highlightFeedPostId, homeSection, isLoading, feedEntries, onHighlightFeedPostHandled]);
+  }, [highlightFeedPostId, homeSection, isFeedLoading, feedEntries, onHighlightFeedPostHandled]);
 
   const mainBanners = banners.filter((b) => b.position === 'main');
 
@@ -456,6 +466,9 @@ function HomePage({
             alt="Отправить спасибки"
             className={styles.thankYouButton}
             onClick={() => onNavigate('transfer')}
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
           />
         </div>
 
@@ -479,7 +492,14 @@ function HomePage({
                   onClick={() => (banner.banner_type === 'image' || !banner.banner_type) && handleBannerClick(banner.link_url)}
                 >
                   {(banner.banner_type === 'image' || !banner.banner_type) ? (
-                    <img src={resolveMediaUrl(banner.image_url)} alt="Banner" className={styles.bannerImage} />
+                    <img
+                      src={resolveMediaUrl(banner.image_url)}
+                      alt="Banner"
+                      className={styles.bannerImage}
+                      loading={index === 0 ? 'eager' : 'lazy'}
+                      fetchPriority={index === 0 ? 'high' : 'auto'}
+                      decoding="async"
+                    />
                   ) : (
                     <LeaderboardBanner banner={banner} onNavigate={onNavigate} />
                   )}
@@ -536,7 +556,7 @@ function HomePage({
         <div className={styles.feedSection}>
           <h3 className={styles.feedTitle}>Последняя активность</h3>
           <div className={styles.feedGrid}>
-            {isLoading && !hasFeedContent ? (
+            {isFeedLoading && !hasFeedContent ? (
               <FeedSkeleton count={4} />
             ) : hasFeedContent ? (
               <>

@@ -17,11 +17,12 @@ function PageLayout({ title, children }) {
         {/* Этот контейнер будет использовать flexbox для точного выравнивания */}
         <div className={styles.headerContent}>
           {/* 1. Логотип "C" */}
-          <img 
+          <img
             src={headerLogoUrl}
-            alt="Лого" 
+            alt="Лого"
             className={styles.headerLogo}
             loading="eager"
+            fetchPriority="high"
             decoding="async"
           />
           {/* 2. Волнистая линия */}
@@ -30,6 +31,7 @@ function PageLayout({ title, children }) {
             alt="Разделитель"
             className={styles.headerLine}
             loading="eager"
+            fetchPriority="high"
             decoding="async"
           />
           {/* 3. Название раздела */}

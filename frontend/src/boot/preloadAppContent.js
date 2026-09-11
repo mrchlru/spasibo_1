@@ -6,7 +6,12 @@ import {
   shouldRefreshDataFromNetwork,
 } from '../storage';
 import { collectBootMediaUrls, prefetchImageUrls } from '../utils/prefetchMedia';
-import { scheduleContentShellWarm, warmCachedShellAssets, warmShellAssetsForTheme } from './shellBootstrap';
+import {
+  scheduleContentShellWarm,
+  warmCachedShellAssets,
+  warmCriticalShellAssets,
+  warmShellAssetsForTheme,
+} from './shellBootstrap';
 import { getCachedAppSettingsSnapshot } from '../pwa/appSettingsCache';
 import { syncBannersCache } from '../pwa/bannerAssetCache';
 
@@ -65,9 +70,9 @@ export async function preloadAppContent(options = {}) {
   if (skipWaitIfCached && hasWarmBootCache()) {
     const banners = getCachedData('banners') || [];
     const feed = getCachedData('feed') || [];
-    warmCachedShellAssets();
+    warmCriticalShellAssets(getCachedAppSettingsSnapshot());
     scheduleContentShellWarm();
-    prefetchImageUrls(collectBootMediaUrls(banners, feed), 50);
+    prefetchImageUrls(collectBootMediaUrls(banners, feed), 24);
     if (shouldRefreshDataFromNetwork()) {
       void refreshCriticalContentInBackground();
       void prefetchSecondaryContent();
@@ -80,18 +85,21 @@ export async function preloadAppContent(options = {}) {
   }
 
   const snapshot = getCachedAppSettingsSnapshot();
+  warmCriticalShellAssets(snapshot);
   warmShellAssetsForTheme(snapshot?.theme_assets);
 
   const needsNetworkRefresh = !hasWarmBootCache() || shouldRefreshDataFromNetwork();
   let timedOut = false;
-  if (needsNetworkRefresh) {
+  if (needsNetworkRefresh && timeoutMs > 0) {
     timedOut = await raceWithTimeout(refreshCriticalContentInBackground(), timeoutMs);
+  } else if (needsNetworkRefresh) {
+    void refreshCriticalContentInBackground();
   }
 
   const banners = getCachedData('banners') || [];
   const feed = getCachedData('feed') || [];
   scheduleContentShellWarm();
-  prefetchImageUrls(collectBootMediaUrls(banners, feed), 50);
+  prefetchImageUrls(collectBootMediaUrls(banners, feed), 24);
 
   if (needsNetworkRefresh) {
     void prefetchSecondaryContent();

@@ -6,12 +6,22 @@
 import { resolveSeasonAssets } from '../themeAssetDefaults.js';
 import { resolveMediaUrl } from '../utils/resolveMediaUrl.js';
 
+/** Критичные для первого экрана (шапка, кнопка, переключатель). */
+export const CRITICAL_SHELL_KEYS = [
+  'header_image_mobile',
+  'header_image_desktop',
+  'thanks_button',
+  'section_slider_knob',
+  'thanks_feed_logo',
+];
+
 const BUILD_ID_KEY = 'spasibo_frontend_build_id';
 const CACHE_EPOCH_KEY = 'spasibo_cache_epoch_ms';
 /** 30 дней — принудительное фоновое обновление данных. */
 export const SHELL_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 const prefetchedDisplayUrls = new Set();
+const preloadedLinkUrls = new Set();
 
 /** @returns {string} */
 export function getActiveFrontendBuildId() {
@@ -81,6 +91,46 @@ export function collectThemeShellUrls(themeAssets) {
     }
   }
   return [...urls];
+}
+
+/**
+ * URL оболочки только для активной темы (без прогрева лето+зима сразу).
+ *
+ * @param {string} seasonTheme
+ * @param {object | null | undefined} themeAssets
+ * @returns {string[]}
+ */
+export function collectActiveThemeCriticalUrls(seasonTheme, themeAssets) {
+  const seasonKey = seasonTheme === 'winter' ? 'winter' : 'summer';
+  const merged = resolveSeasonAssets(seasonKey, themeAssets);
+  return CRITICAL_SHELL_KEYS
+    .map((key) => merged[key])
+    .filter((value) => value && String(value).trim() && !isUserAvatarUrl(value))
+    .map((value) => String(value).trim());
+}
+
+/**
+ * `<link rel="preload">` для критичных картинок до первого кадра React.
+ *
+ * @param {string[]} rawUrls
+ */
+export function injectCriticalShellPreloads(rawUrls) {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  const head = document.head;
+  for (const rawUrl of rawUrls.slice(0, 6)) {
+    const href = resolveMediaUrl(String(rawUrl).trim());
+    if (!href || preloadedLinkUrls.has(href)) {
+      continue;
+    }
+    preloadedLinkUrls.add(href);
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'image';
+    link.href = href;
+    head.appendChild(link);
+  }
 }
 
 /**

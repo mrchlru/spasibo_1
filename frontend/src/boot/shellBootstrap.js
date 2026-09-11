@@ -7,8 +7,10 @@ import {
   setCachedAppSettingsSnapshot,
 } from '../pwa/appSettingsCache.js';
 import {
+  collectActiveThemeCriticalUrls,
   collectContentShellUrls,
   collectThemeShellUrls,
+  injectCriticalShellPreloads,
   warmShellAssets,
 } from '../pwa/shellAssetCache.js';
 import { injectThemeAssetStyles } from '../utils/themeAssetsCss.js';
@@ -36,14 +38,26 @@ export function hydrateShellSync() {
     injectThemeAssetStyles(snapshot.theme_assets);
   }
 
+  warmCriticalShellAssets(snapshot);
   return snapshot;
+}
+
+/**
+ * Прогрев только критичных картинок активной темы + баннеров из кеша.
+ *
+ * @param {import('../pwa/appSettingsCache.js').AppSettingsSnapshot | null | undefined} snapshot
+ */
+export function warmCriticalShellAssets(snapshot) {
+  const snap = snapshot ?? getCachedAppSettingsSnapshot();
+  const criticalUrls = collectActiveThemeCriticalUrls(snap?.season_theme, snap?.theme_assets);
+  injectCriticalShellPreloads(criticalUrls);
+  warmShellAssets(criticalUrls, criticalUrls.length || 6);
+  warmCachedBannerAssets(getCachedData('banners') || []);
 }
 
 /** Prefetch шапок, кнопок и баннеров (синхронный, без await). */
 export function warmCachedShellAssets() {
-  const snapshot = getCachedAppSettingsSnapshot();
-  warmShellAssets(collectThemeShellUrls(snapshot?.theme_assets), 12);
-  warmCachedBannerAssets(getCachedData('banners') || []);
+  warmCriticalShellAssets(getCachedAppSettingsSnapshot());
 }
 
 /** Prefetch картинок ленты/баннеров в idle. */
@@ -56,9 +70,9 @@ export function scheduleContentShellWarm() {
     warmShellAssets(urls, 20);
   };
   if (typeof window.requestIdleCallback === 'function') {
-    window.requestIdleCallback(run, { timeout: 8000 });
+    window.requestIdleCallback(run, { timeout: 1500 });
   } else {
-    window.setTimeout(run, 2000);
+    window.setTimeout(run, 400);
   }
 }
 
