@@ -183,7 +183,11 @@ export const requestProfileUpdate = (updateData) =>
 export const updateMe = (updateData) =>
   apiClient.put('/users/me', updateData, getAuthHeaders());
 
-export const getFeed = () => apiClient.get('/feed', getAuthHeaders());
+export const getFeed = ({ offset = 0, limit = 20 } = {}) =>
+  apiClient.get('/feed', {
+    ...getAuthHeaders(),
+    params: { offset, limit },
+  });
 
 export const createFeedPost = (payload) =>
   apiClient.post('/feed-posts', payload, getAuthHeaders());
@@ -222,8 +226,11 @@ export const uploadFeedPostDocument = (file) => {
   });
 };
 
-export const getLeaderboard = ({ period, type }) =>
-  apiClient.get(`/leaderboard/?period=${period}&type=${type}`, getAuthHeaders());
+export const getLeaderboard = ({ period, type, offset = 0, limit = 20 }) =>
+  apiClient.get('/leaderboard/', {
+    ...getAuthHeaders(),
+    params: { period, type, offset, limit },
+  });
 
 export const getMyRank = ({ period, type }) =>
   apiClient.get(`/leaderboard/my-rank?period=${period}&type=${type}`, getAuthHeaders());
@@ -359,7 +366,11 @@ export const assembleTickets = () =>
 export const spinRoulette = () =>
   apiClient.post('/roulette/spin', {}, getAuthHeaders());
 
-export const getRouletteHistory = () => apiClient.get('/roulette/history');
+export const getRouletteHistory = ({ offset = 0, limit = 20 } = {}) =>
+  apiClient.get('/roulette/history', {
+    ...getAuthHeaders(),
+    params: { offset, limit },
+  });
 
 export const addTicketsToAll = (data) =>
   apiClient.post('/admin/add-tickets', data, getAuthHeaders());

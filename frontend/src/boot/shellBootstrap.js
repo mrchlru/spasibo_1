@@ -13,6 +13,7 @@ import {
 } from '../pwa/shellAssetCache.js';
 import { injectThemeAssetStyles } from '../utils/themeAssetsCss.js';
 import { getCachedData } from '../storage.js';
+import { warmCachedBannerAssets } from '../pwa/bannerAssetCache.js';
 
 /**
  * Синхронно применяет тему из localStorage до первого кадра React.
@@ -38,10 +39,11 @@ export function hydrateShellSync() {
   return snapshot;
 }
 
-/** Prefetch шапок и кнопок (синхронный, без await). */
+/** Prefetch шапок, кнопок и баннеров (синхронный, без await). */
 export function warmCachedShellAssets() {
   const snapshot = getCachedAppSettingsSnapshot();
   warmShellAssets(collectThemeShellUrls(snapshot?.theme_assets), 12);
+  warmCachedBannerAssets(getCachedData('banners') || []);
 }
 
 /** Prefetch картинок ленты/баннеров в idle. */

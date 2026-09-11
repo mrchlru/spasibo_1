@@ -90,8 +90,11 @@ export function collectThemeShellUrls(themeAssets) {
  * @param {Array<object>} feedEntries
  * @returns {string[]}
  */
-export function collectContentShellUrls(banners, feedEntries) {
+export function collectContentShellUrls(banners, feedRaw) {
   const urls = [];
+  const feedEntries = Array.isArray(feedRaw?.items)
+    ? feedRaw.items
+    : (Array.isArray(feedRaw) ? feedRaw : []);
 
   for (const banner of banners || []) {
     if (banner?.image_url && !isUserAvatarUrl(banner.image_url)) {
@@ -99,7 +102,7 @@ export function collectContentShellUrls(banners, feedEntries) {
     }
   }
 
-  for (const entry of feedEntries || []) {
+  for (const entry of feedEntries) {
     for (const attachment of entry?.post?.attachments || []) {
       if (attachment?.kind === 'image' && attachment.url && !isUserAvatarUrl(attachment.url)) {
         urls.push(attachment.url);

@@ -86,12 +86,16 @@ class UserResponse(UserBase):
 def user_response_for_public_api(user: object) -> UserResponse:
     """Убирает password_plain из ответов для клиента; у веб-заявки в pending скрывает и login."""
     from admin_utils import user_is_primary_admin
+    from avatar_service import resolve_public_avatar_url
 
     u = UserResponse.model_validate(user)
+    avatar_url = resolve_public_avatar_url(user)
     extra: dict = {
         "password_plain": None,
         "is_primary_admin": user_is_primary_admin(user),
     }
+    if avatar_url:
+        extra["telegram_photo_url"] = avatar_url
     tg = u.telegram_id
     is_web_pending = (u.status or "") == "pending" and (tg is None or tg < 0)
     if is_web_pending:
@@ -398,6 +402,9 @@ class ThemeSeasonAssets(BaseModel):
     header_image_mobile: Optional[str] = None
     header_image_desktop: Optional[str] = None
     section_header_image: Optional[str] = None
+    page_header_logo: Optional[str] = None
+    page_header_divider: Optional[str] = None
+    section_slider_knob: Optional[str] = None
     sidenav_logo: Optional[str] = None
     thanks_button: Optional[str] = None
     thanks_feed_logo: Optional[str] = None
@@ -906,6 +913,29 @@ class UnifiedFeedEntry(BaseModel):
     post: Optional[FeedPostResponse] = None
     transaction: Optional[FeedItem] = None
     birthday: Optional["BirthdayFeedItem"] = None
+
+
+class UnifiedFeedPageResponse(BaseModel):
+    """Страница ленты с признаком наличия следующей порции."""
+
+    items: list[UnifiedFeedEntry]
+    offset: int
+    limit: int
+    has_more: bool
+
+
+class LeaderboardPageResponse(BaseModel):
+    items: list["LeaderboardItem"]
+    offset: int
+    limit: int
+    has_more: bool
+
+
+class RouletteHistoryPageResponse(BaseModel):
+    items: list["RouletteWinResponse"]
+    offset: int
+    limit: int
+    has_more: bool
 
 
 class BirthdayFeedItem(BaseModel):

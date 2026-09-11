@@ -2,8 +2,14 @@
 
 import React from 'react';
 import styles from './PageLayout.module.css';
+import { useResolvedSeasonAssets } from '../contexts/ThemeAssetsContext';
+import { resolveShellDisplayUrl } from '../pwa/shellAssetCache';
 
 function PageLayout({ title, children }) {
+  const assets = useResolvedSeasonAssets();
+  const headerLogoUrl = resolveShellDisplayUrl(assets.page_header_logo);
+  const headerDividerUrl = resolveShellDisplayUrl(assets.page_header_divider);
+
   return (
     <div className={styles.pageContainer}>
       
@@ -12,15 +18,19 @@ function PageLayout({ title, children }) {
         <div className={styles.headerContent}>
           {/* 1. Логотип "C" */}
           <img 
-            src="https://i.postimg.cc/YqcmJB37/6.webp" 
+            src={headerLogoUrl}
             alt="Лого" 
-            className={styles.headerLogo} 
+            className={styles.headerLogo}
+            loading="eager"
+            decoding="async"
           />
           {/* 2. Волнистая линия */}
           <img
-            src="https://i.postimg.cc/bvMHvzWv/Line-18.webp"
+            src={headerDividerUrl}
             alt="Разделитель"
             className={styles.headerLine}
+            loading="eager"
+            decoding="async"
           />
           {/* 3. Название раздела */}
           <h1 className={styles.headerTitle}>{title}</h1>

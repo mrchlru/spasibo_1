@@ -188,6 +188,9 @@ export const getCachedData = (key) => {
  */
 export function hasWarmBootCache() {
   const feed = getCachedData('feed');
+  if (feed && typeof feed === 'object' && Array.isArray(feed.items)) {
+    return feed.items.length > 0;
+  }
   return Array.isArray(feed) && feed.length > 0;
 }
 

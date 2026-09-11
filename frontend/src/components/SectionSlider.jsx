@@ -1,9 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import styles from './SectionSlider.module.css';
-
-import { resolveMediaUrl } from '../utils/resolveMediaUrl';
-
-const MUG_KNOB_ASSET = resolveMediaUrl('/assets/slider/mug-knob.avif');
+import { useResolvedSeasonAssets } from '../contexts/ThemeAssetsContext';
+import { resolveShellDisplayUrl } from '../pwa/shellAssetCache';
 
 const SECTIONS = [
   { id: 'feed', label: 'Лента' },
@@ -16,6 +14,8 @@ const SECTIONS = [
  * @param {{ activeSection: 'feed' | 'rating', onChange: (section: 'feed' | 'rating') => void }} props
  */
 function SectionSlider({ activeSection, onChange }) {
+  const assets = useResolvedSeasonAssets();
+  const knobUrl = resolveShellDisplayUrl(assets.section_slider_knob);
   const isRating = activeSection === 'rating';
   const [knobRotation, setKnobRotation] = useState(0);
   const [sweepDirection, setSweepDirection] = useState('right');
@@ -74,7 +74,7 @@ function SectionSlider({ activeSection, onChange }) {
           >
             <span className={styles.knobAura} aria-hidden="true" />
             <span className={styles.knobWrap} style={{ transform: `rotate(${knobRotation}deg)` }}>
-              <img src={MUG_KNOB_ASSET} alt="" className={styles.knobImg} draggable={false} />
+              <img src={knobUrl} alt="" className={styles.knobImg} draggable={false} loading="eager" decoding="async" />
             </span>
           </button>
         </div>

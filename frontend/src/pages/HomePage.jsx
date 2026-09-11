@@ -13,19 +13,18 @@ import SectionSlider from '../components/SectionSlider';
 import LeaderboardContent from '../components/LeaderboardContent';
 import FeedSkeleton from '../components/FeedSkeleton';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { resolveSeasonAssets } from '../themeAssetDefaults';
 import { resolveShellDisplayUrl } from '../pwa/shellAssetCache';
 import { resolveMediaUrl } from '../utils/resolveMediaUrl';
-
-function normalizeFeedEntries(data) {
-  if (!data || !Array.isArray(data)) return [];
-  if (data.length > 0 && data[0].kind) return data;
-  return data.map((transaction) => ({
-    kind: 'transaction',
-    timestamp: transaction.timestamp,
-    transaction,
-  }));
-}
+import {
+  FEED_PAGE_SIZE,
+  unwrapFeedPage,
+  unwrapFeedItems,
+  normalizeFeedEntries,
+  mergeFeedEntries,
+} from '../utils/feedPage';
+import { syncBannersCache, warmCachedBannerAssets } from '../pwa/bannerAssetCache';
 
 function canManageFeedPosts(user) {
   return Boolean(user?.is_admin || user?.can_publish_feed_posts);
@@ -56,39 +55,83 @@ function HomePage({
   );
   const sendThanksImage = resolveShellDisplayUrl(mergedAssets.thanks_button);
   const feedLogoImage = resolveShellDisplayUrl(mergedAssets.thanks_feed_logo);
-  const initialFeedEntries = normalizeFeedEntries(getCachedData('feed'));
+  const initialFeedEntries = normalizeFeedEntries(unwrapFeedItems(getCachedData('feed')));
   const initialBanners = getCachedData('banners') || [];
   const hasInitialFeed = initialFeedEntries.length > 0;
   const [feedEntries, setFeedEntries] = useState(initialFeedEntries);
   const [banners, setBanners] = useState(initialBanners);
   const [isLoading, setIsLoading] = useState(!hasInitialFeed);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState(FEED_PAGE_SIZE);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [feedModalOpen, setFeedModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
   const autoSlideTimerRef = useRef(null);
 
+  const applyFeedPage = useCallback((rawData, append = false) => {
+    const page = unwrapFeedPage(rawData);
+    const normalized = normalizeFeedEntries(page.items);
+    setFeedEntries((prev) => (append ? mergeFeedEntries(prev, normalized) : normalized));
+    setHasMore(page.hasMore);
+    if (!append) {
+      setNextOffset(FEED_PAGE_SIZE);
+    }
+  }, []);
+
   const refreshFeed = useCallback(async () => {
     try {
-      const response = await getFeed();
-      const normalized = normalizeFeedEntries(response.data);
-      setFeedEntries(normalized);
+      const response = await getFeed({ offset: 0, limit: FEED_PAGE_SIZE });
+      applyFeedPage(response.data, false);
       setCachedData('feed', response.data);
     } catch (error) {
       console.error('Failed to fetch feed', error);
     }
+  }, [applyFeedPage]);
+
+  const loadMoreFeed = useCallback(async () => {
+    if (isLoading || isLoadingMore || !hasMore) {
+      return;
+    }
+    setIsLoadingMore(true);
+    try {
+      const response = await getFeed({ offset: nextOffset, limit: FEED_PAGE_SIZE });
+      const page = unwrapFeedPage(response.data);
+      const normalized = normalizeFeedEntries(page.items);
+      setFeedEntries((prev) => mergeFeedEntries(prev, normalized));
+      setHasMore(page.hasMore);
+      setNextOffset((prev) => prev + FEED_PAGE_SIZE);
+    } catch (error) {
+      console.error('Failed to load more feed', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [hasMore, isLoading, isLoadingMore, nextOffset]);
+
+  const loadMoreRef = useInfiniteScroll({
+    hasMore,
+    isLoading: isLoading || isLoadingMore,
+    onLoadMore: loadMoreFeed,
+  });
+
+  useEffect(() => {
+    warmCachedBannerAssets(initialBanners);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const fetchData = async () => {
       const promises = [refreshFeed()];
 
-      if (!banners || banners.length === 0) {
-        promises.push(
-          getBanners()
-            .then((response) => setBanners(response.data))
-            .catch((error) => console.error('Failed to fetch banners', error)),
-        );
-      }
+      promises.push(
+        getBanners()
+          .then((response) => {
+            setBanners(response.data);
+            setCachedData('banners', response.data);
+            syncBannersCache(response.data);
+          })
+          .catch((error) => console.error('Failed to fetch banners', error)),
+      );
 
       await Promise.all(promises);
       setIsLoading(false);
@@ -511,6 +554,8 @@ function HomePage({
                     })}
                   </React.Fragment>
                 ))}
+                {hasMore && <div ref={loadMoreRef} className={styles.loadMoreSentinel} aria-hidden="true" />}
+                {isLoadingMore && <p className={styles.loadMoreHint}>Загрузка…</p>}
               </>
             ) : (
               <p>Лента активности пуста.</p>

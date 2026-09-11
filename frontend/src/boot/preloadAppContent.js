@@ -8,6 +8,7 @@ import {
 import { collectBootMediaUrls, prefetchImageUrls } from '../utils/prefetchMedia';
 import { scheduleContentShellWarm, warmCachedShellAssets, warmShellAssetsForTheme } from './shellBootstrap';
 import { getCachedAppSettingsSnapshot } from '../pwa/appSettingsCache';
+import { syncBannersCache } from '../pwa/bannerAssetCache';
 
 const DEFAULT_BOOT_TIMEOUT_MS = 2500;
 const ANDROID_BOOT_TIMEOUT_MS = 600;
@@ -21,7 +22,10 @@ async function refreshCriticalContentInBackground() {
       .then((response) => setCachedData('feed', response.data))
       .catch(() => null),
     getBanners()
-      .then((response) => setCachedData('banners', response.data))
+      .then((response) => {
+        setCachedData('banners', response.data);
+        syncBannersCache(response.data);
+      })
       .catch(() => null),
   ]);
 }
