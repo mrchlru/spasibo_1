@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import crud
 import models
 import schemas
 from database import get_db
@@ -70,6 +71,7 @@ async def register_android_push(
         row.device_name = body.device_name
         row.is_active = True
 
+    crud._apply_client_profile_to_user(user, 'android', 'android-app')
     await db.commit()
 
 

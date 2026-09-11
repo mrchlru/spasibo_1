@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import styles from './StatisticsDashboard.module.css';
-import { FaChartBar, FaHourglassHalf, FaStar, FaChartLine, FaUsersSlash, FaCoins, FaSignInAlt, FaChartPie, FaFileExcel, FaClock, FaHeart } from 'react-icons/fa';
+import { FaChartBar, FaHourglassHalf, FaStar, FaChartLine, FaUsersSlash, FaCoins, FaChartPie, FaFileExcel, FaClock, FaHeart, FaMobileAlt, FaPaperPlane } from 'react-icons/fa';
 import DateRangePicker from '../../components/DateRangePicker';
 import { exportConsolidatedReport } from '../../api';
 
@@ -17,6 +17,8 @@ import EconomyBalancePage from './stats/EconomyBalancePage';
 import LoginActivityPage from './stats/LoginActivityPage';
 import ActiveUserRatioPage from './stats/ActiveUserRatioPage';
 import AverageSessionDurationPage from './stats/AverageSessionDurationPage';
+import ClientPlatformStatsPage from './stats/ClientPlatformStatsPage';
+import ActiveSendersPage from './stats/ActiveSendersPage';
 import { formatDateForApiFromDate } from '../../utils/dateFormatter';
 
 const StatisticsDashboard = () => {
@@ -53,6 +55,8 @@ const StatisticsDashboard = () => {
         { id: 'duration', label: 'Время сессии', icon: <FaClock />, dateDependent: true },
         { id: 'hourly', label: 'Спасибо', icon: <FaHourglassHalf />, dateDependent: true },
         // { id: 'logins', label: 'Заходы', icon: <FaSignInAlt />, dateDependent: true },
+        { id: 'platforms', label: 'Платформы', icon: <FaMobileAlt />, dateDependent: false },
+        { id: 'active_senders', label: 'Отправители', icon: <FaPaperPlane />, dateDependent: false },
         { id: 'ratio', label: 'Акт/Неакт', icon: <FaChartPie />, dateDependent: false },
         { id: 'engagement', label: 'Лидеры', icon: <FaStar />, dateDependent: false },
         { id: 'popular', label: 'Товары', icon: <FaChartLine />, dateDependent: false },
@@ -71,6 +75,8 @@ const StatisticsDashboard = () => {
             case 'duration': return <AverageSessionDurationPage {...dateProps} />; // <-- Новый
             case 'hourly': return <HourlyActivityPage {...dateProps} />;
             // case 'logins': return <LoginActivityPage {...dateProps} />;
+            case 'platforms': return <ClientPlatformStatsPage />;
+            case 'active_senders': return <ActiveSendersPage />;
             case 'ratio': return <ActiveUserRatioPage />;
             case 'engagement': return <UserEngagementPage />;
             case 'popular': return <PopularItemsPage />;

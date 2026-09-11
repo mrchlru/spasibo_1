@@ -47,7 +47,7 @@ const GeneralStats = ({ startDate, endDate }) => {
             <div className={styles.statsGrid}>
                 {/* --- ИЗМЕНЕНИЕ: Теперь мы напрямую обращаемся к полям, и StatCard сам обработает undefined --- */}
                 <StatCard title="Всего пользователей" value={stats?.new_users_count} />
-                <StatCard title="Активные пользователи" value={stats?.active_users_count} />
+                <StatCard title="Отправляли спасибки" value={stats?.active_users_count} />
                 <StatCard title="Всего транзакций" value={stats?.transactions_count} />
                 <StatCard title="Оборот" value={`${stats?.total_turnover ?? 0} спасибок`} />
                 <StatCard title="Покупок в магазине" value={stats?.store_purchases_count} />

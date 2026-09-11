@@ -463,9 +463,35 @@ export const getFavoriteItemsStats = () => {
   return apiClient.get('/admin/statistics/favorite_items', getAuthHeaders());
 };
 
-export const getInactiveUsers = () => {
-  return apiClient.get('/admin/statistics/inactive_users', getAuthHeaders());
+export const getInactiveUsers = (periodDays = 30) => {
+  return apiClient.get('/admin/statistics/inactive_users', {
+    ...getAuthHeaders(),
+    params: { period_days: periodDays },
+  });
 };
+
+export const getClientStatistics = () =>
+  apiClient.get('/admin/statistics/client_stats', getAuthHeaders());
+
+export const getActiveSendersStats = (periodDays = 30) =>
+  apiClient.get('/admin/statistics/active_senders', {
+    ...getAuthHeaders(),
+    params: { period_days: periodDays },
+  });
+
+export const exportActiveSenders = (periodDays = 30) =>
+  apiClient.get('/admin/statistics/active_senders/export', {
+    ...getAuthHeaders(),
+    params: { period_days: periodDays },
+    responseType: 'blob',
+  });
+
+export const exportInactiveUsers = (periodDays = 30) =>
+  apiClient.get('/admin/statistics/inactive_users/export', {
+    ...getAuthHeaders(),
+    params: { period_days: periodDays },
+    responseType: 'blob',
+  });
 
 export const getTotalBalance = () => {
   return apiClient.get('/admin/statistics/total_balance', getAuthHeaders());
@@ -479,9 +505,11 @@ export const getLoginActivityStats = (startDate, endDate) => {
     return apiClient.get(`/admin/statistics/login_activity?${params.toString()}`, getAuthHeaders());
 };
 
-export const getActiveUserRatio = () => {
-    return apiClient.get('/admin/statistics/active_user_ratio', getAuthHeaders());
-};
+export const getActiveUserRatio = (periodDays = 30) =>
+  apiClient.get('/admin/statistics/active_user_ratio', {
+    ...getAuthHeaders(),
+    params: { period_days: periodDays },
+  });
 
 // --- НОВЫЙ БЛОК ДЛЯ ЭКСПОРТА ---
 
@@ -515,8 +543,8 @@ export const exportAllUsers = () => {
 
 // --- НОВЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С СЕССИЯМИ ---
 
-export const startSession = () =>
-  apiClient.post('/sessions/start', {}, getAuthHeaders());
+export const startSession = (clientProfile = {}) =>
+  apiClient.post('/sessions/start', clientProfile, getAuthHeaders());
 
 export const pingSession = (sessionId) =>
   apiClient.put(`/sessions/ping/${sessionId}`, {}, getAuthHeaders());
