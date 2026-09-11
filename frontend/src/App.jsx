@@ -30,6 +30,8 @@ import {
   persistAppSettingsFromApi,
   warmShellAssetsForTheme,
 } from './boot/shellBootstrap';
+import { syncBannersCache } from './pwa/bannerAssetCache';
+import { ThemeAssetsProvider } from './contexts/ThemeAssetsContext';
 
 // Компоненты навигации (загружаются сразу, так как всегда видны)
 import BottomNav from './components/BottomNav';
@@ -380,6 +382,7 @@ function App() {
         }
         if (bannersResponse?.data) {
           cachePromises.push(setCachedData('banners', bannersResponse.data));
+          syncBannersCache(bannersResponse.data);
         }
         if (cachePromises.length > 0) {
           await Promise.all(cachePromises);
@@ -992,6 +995,7 @@ function App() {
   const isLoginOrRegistrationPage = !isTelegramWebApp && !user;
   
   return (
+    <ThemeAssetsProvider seasonTheme={seasonTheme} themeAssets={themeAssets}>
     <div className="app-container">
       <AndroidNativeSessionBridge user={user} />
       <MobileWelcomeGuide
@@ -1054,6 +1058,7 @@ function App() {
         />
       )}
     </div>
+    </ThemeAssetsProvider>
   );
   // --- КОНЕЦ ИЗМЕНЕНИЙ ---
 }

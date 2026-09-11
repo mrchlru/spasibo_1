@@ -1,5 +1,6 @@
 import { resolveMediaUrl } from './resolveMediaUrl.js';
 import { isUserAvatarUrl } from '../pwa/shellAssetCache.js';
+import { unwrapFeedItems } from './feedPage.js';
 
 /** @typedef {string} ImageUrl */
 
@@ -40,8 +41,9 @@ export function prefetchImageUrls(urls, limit = 80) {
  * @param {Array<object>} feedEntries
  * @returns {ImageUrl[]}
  */
-export function collectBootMediaUrls(banners, feedEntries) {
+export function collectBootMediaUrls(banners, feedRaw) {
   const urls = [];
+  const feedEntries = unwrapFeedItems(feedRaw);
 
   for (const banner of banners || []) {
     if (banner?.image_url && !isUserAvatarUrl(banner.image_url)) {
@@ -49,7 +51,7 @@ export function collectBootMediaUrls(banners, feedEntries) {
     }
   }
 
-  for (const entry of feedEntries || []) {
+  for (const entry of feedEntries) {
     for (const attachment of entry?.post?.attachments || []) {
       if (attachment?.kind === 'image' && attachment.url && !isUserAvatarUrl(attachment.url)) {
         urls.push(attachment.url);

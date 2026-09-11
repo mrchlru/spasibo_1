@@ -475,7 +475,14 @@ async def get_user_transactions(db: AsyncSession, user_id: int, days: int = 7):
     return result.scalars().all()
 
 # Лидерборд
-async def get_leaderboard_data(db: AsyncSession, period: str, leaderboard_type: str):
+async def get_leaderboard_data(
+    db: AsyncSession,
+    period: str,
+    leaderboard_type: str,
+    *,
+    offset: int = 0,
+    limit: int = 100,
+):
     """
     Универсальная функция для получения данных рейтинга.
     :param period: 'current_month', 'last_month', 'all_time'
@@ -508,7 +515,8 @@ async def get_leaderboard_data(db: AsyncSession, period: str, leaderboard_type: 
         .where(models.User.status != 'deleted')  # Исключаем анонимизированных пользователей
         .group_by(models.User.id)
         .order_by(func.sum(models.Transaction.amount).desc())
-        .limit(100) # Ограничим вывод до 100 лидеров
+        .offset(max(offset, 0))
+        .limit(min(max(limit, 1), 100) + 1)
     )
     
     if start_date and end_date:
@@ -1749,12 +1757,25 @@ async def spin_roulette(db: AsyncSession, user_id: int):
     await db.refresh(user)
     return {"prize_won": prize, "new_balance": user.balance, "new_tickets": user.tickets}
 
-async def get_roulette_history(db: AsyncSession, limit: int = 20):
-    """Получает историю последних выигрышей."""
+async def get_roulette_history(
+    db: AsyncSession,
+    *,
+    offset: int = 0,
+    limit: int = 20,
+) -> tuple[list[models.RouletteWin], bool]:
+    """Получает страницу истории выигрышей."""
+    safe_limit = min(max(limit, 1), 50)
+    safe_offset = max(offset, 0)
     result = await db.execute(
-        select(models.RouletteWin).order_by(models.RouletteWin.timestamp.desc()).limit(limit)
+        select(models.RouletteWin)
+        .options(selectinload(models.RouletteWin.user))
+        .order_by(models.RouletteWin.timestamp.desc())
+        .offset(safe_offset)
+        .limit(safe_limit + 1)
     )
-    return result.scalars().all()
+    rows = list(result.scalars().all())
+    has_more = len(rows) > safe_limit
+    return rows[:safe_limit], has_more
 
 # --- НОВЫЕ ФУНКЦИИ ДЛЯ ПЛАНИРОВЩИКА (CRON) ---
 
@@ -3382,6 +3403,21 @@ async def ping_user_session(db: AsyncSession, session_id: int) -> Optional[model
     
     return session
 
+def _leaderboard_banner_user_payload(rank_index: int, item: dict) -> dict:
+    """Формирует JSON пользователя для баннера рейтинга с корректным avatar URL."""
+    from avatar_service import resolve_public_avatar_url
+
+    user = item["user"]
+    return {
+        "rank": rank_index + 1,
+        "id": user.id,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "telegram_photo_url": resolve_public_avatar_url(user) or user.telegram_photo_url,
+        "total_received": item["total_received"],
+    }
+
+
 async def generate_monthly_leaderboard_banners(db: AsyncSession):
     """
     Создает баннеры для Топ-3 прошлого месяца (получатели и отправители).
@@ -3403,15 +3439,8 @@ async def generate_monthly_leaderboard_banners(db: AsyncSession):
             leaderboard_type='received'
         )
         
-        # 3. Форматируем данные (берем только топ-3)
         top_3_receivers = [
-            {
-                "rank": i + 1,
-                "first_name": item["user"].first_name,
-                "last_name": item["user"].last_name,
-                "telegram_photo_url": item["user"].telegram_photo_url,
-                "total_received": item["total_received"]
-            }
+            _leaderboard_banner_user_payload(i, item)
             for i, item in enumerate(top_receivers_data[:3])
         ]
 
@@ -3439,13 +3468,7 @@ async def generate_monthly_leaderboard_banners(db: AsyncSession):
         )
         
         top_3_senders = [
-            {
-                "rank": i + 1,
-                "first_name": item["user"].first_name,
-                "last_name": item["user"].last_name,
-                "telegram_photo_url": item["user"].telegram_photo_url,
-                "total_received": item["total_received"] # В схеме это total_received, даже для 'sent'
-            }
+            _leaderboard_banner_user_payload(i, item)
             for i, item in enumerate(top_senders_data[:3])
         ]
 
@@ -3730,13 +3753,7 @@ async def generate_current_month_test_banners(db: AsyncSession):
         )
         
         top_3_receivers = [
-            {
-                "rank": i + 1,
-                "first_name": item["user"].first_name,
-                "last_name": item["user"].last_name,
-                "telegram_photo_url": item["user"].telegram_photo_url,
-                "total_received": item["total_received"]
-            }
+            _leaderboard_banner_user_payload(i, item)
             for i, item in enumerate(top_receivers_data[:3])
         ]
 
@@ -3765,13 +3782,7 @@ async def generate_current_month_test_banners(db: AsyncSession):
         )
         
         top_3_senders = [
-            {
-                "rank": i + 1,
-                "first_name": item["user"].first_name,
-                "last_name": item["user"].last_name,
-                "telegram_photo_url": item["user"].telegram_photo_url,
-                "total_received": item["total_received"] 
-            }
+            _leaderboard_banner_user_payload(i, item)
             for i, item in enumerate(top_senders_data[:3])
         ]
 
@@ -3780,7 +3791,7 @@ async def generate_current_month_test_banners(db: AsyncSession):
                 banner_type='leaderboard_senders',
                 position='main',
                 is_active=True,
-                link_url='/leaderboard', 
+                link_url='/leaderboard',
                 data={"users": top_3_senders}
             )
             db.add(senders_banner)

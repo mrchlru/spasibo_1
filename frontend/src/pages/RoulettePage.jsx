@@ -9,6 +9,9 @@ import UserAvatar from '../components/UserAvatar';
 import { formatToMsk, formatFeedDate } from '../utils/dateFormatter';
 import WinModal from '../components/WinModal';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
+
+const ROULETTE_PAGE_SIZE = 20;
 
 const generatePrizeReel = (finalPrize) => {
     const reelLength = 50;
@@ -22,6 +25,9 @@ const generatePrizeReel = (finalPrize) => {
 
 function RoulettePage({ user, onUpdateUser }) {
     const [history, setHistory] = useState([]);
+    const [hasMore, setHasMore] = useState(false);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
+    const [nextOffset, setNextOffset] = useState(ROULETTE_PAGE_SIZE);
     const [isSpinning, setIsSpinning] = useState(false);
     const [infoVisible, setInfoVisible] = useState(false);
     const [prizeReel, setPrizeReel] = useState(() => generatePrizeReel(1));
@@ -32,12 +38,51 @@ function RoulettePage({ user, onUpdateUser }) {
 
     const refreshHistory = useCallback(async () => {
         try {
-            const response = await getRouletteHistory();
-            setHistory(response.data);
+            const response = await getRouletteHistory({ offset: 0, limit: ROULETTE_PAGE_SIZE });
+            const page = response.data;
+            const items = Array.isArray(page?.items) ? page.items : (Array.isArray(page) ? page : []);
+            setHistory(items);
+            setHasMore(Boolean(page?.has_more));
+            setNextOffset(ROULETTE_PAGE_SIZE);
         } catch (error) {
             console.error('Failed to fetch roulette history', error);
         }
     }, []);
+
+    const loadMoreHistory = useCallback(async () => {
+        if (isLoadingMore || !hasMore) {
+            return;
+        }
+        setIsLoadingMore(true);
+        try {
+            const response = await getRouletteHistory({ offset: nextOffset, limit: ROULETTE_PAGE_SIZE });
+            const page = response.data;
+            const items = Array.isArray(page?.items) ? page.items : [];
+            setHistory((prev) => {
+                const seen = new Set(prev.map((row) => row.id));
+                const merged = [...prev];
+                for (const row of items) {
+                    if (!seen.has(row.id)) {
+                        seen.add(row.id);
+                        merged.push(row);
+                    }
+                }
+                return merged;
+            });
+            setHasMore(Boolean(page?.has_more));
+            setNextOffset((prev) => prev + ROULETTE_PAGE_SIZE);
+        } catch (error) {
+            console.error('Failed to load more roulette history', error);
+        } finally {
+            setIsLoadingMore(false);
+        }
+    }, [hasMore, isLoadingMore, nextOffset]);
+
+    const loadMoreRef = useInfiniteScroll({
+        hasMore,
+        isLoading: isLoadingMore,
+        onLoadMore: loadMoreHistory,
+    });
 
     useEffect(() => {
         void refreshHistory();
@@ -222,6 +267,8 @@ function RoulettePage({ user, onUpdateUser }) {
                     ) : (
                         <p>В рулетке еще никто не выигрывал.</p>
                     )}
+                    {hasMore && <div ref={loadMoreRef} className={styles.loadMoreSentinel} aria-hidden="true" />}
+                    {isLoadingMore && <p className={styles.loadMoreHint}>Загрузка…</p>}
                 </div>
             </div>
         </PageLayout>

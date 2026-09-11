@@ -18,28 +18,36 @@ from routers.media_upload import store_uploaded_document_file, store_uploaded_im
 router = APIRouter()
 
 
-@router.get("/feed", response_model=List[schemas.UnifiedFeedEntry])
+@router.get("/feed", response_model=schemas.UnifiedFeedPageResponse)
 async def get_unified_feed_route(
     days: int = 90,
-    limit: int = feed_service.FEED_TRANSACTION_LIMIT,
+    offset: int = 0,
+    limit: int = feed_service.FEED_PAGE_DEFAULT,
     current_user: Optional[User] = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Объединённая лента: закреплённые новости и активность."""
-    safe_limit = min(max(limit, 1), feed_service.FEED_TRANSACTION_LIMIT)
-    entries = await feed_service.get_unified_feed(
+    """Объединённая лента: закреплённые новости и активность порциями."""
+    safe_offset = max(offset, 0)
+    entries, has_more = await feed_service.get_unified_feed_page(
         db,
         user=current_user,
         days=days,
-        limit=safe_limit,
+        offset=safe_offset,
+        limit=limit,
     )
-    await feed_post_cleanup_service.cleanup_feed_posts_outside_visible_feed(
-        db,
-        viewer=current_user,
-        days=days,
-        limit=safe_limit,
+    if safe_offset == 0:
+        await feed_post_cleanup_service.cleanup_feed_posts_outside_visible_feed(
+            db,
+            viewer=current_user,
+            days=days,
+            limit=feed_service.FEED_TRANSACTION_LIMIT,
+        )
+    return schemas.UnifiedFeedPageResponse(
+        items=entries,
+        offset=safe_offset,
+        limit=min(max(limit, 1), feed_service.FEED_PAGE_MAX),
+        has_more=has_more,
     )
-    return entries
 
 
 @router.post("/feed-posts", response_model=schemas.FeedPostResponse, status_code=status.HTTP_201_CREATED)

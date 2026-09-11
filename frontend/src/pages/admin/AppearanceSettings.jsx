@@ -8,7 +8,10 @@ import { THEME_ASSET_DEFAULTS } from '../../themeAssetDefaults';
 const ASSET_FIELDS = [
   { key: 'header_image_mobile', label: 'Шапка главной (мобильная)' },
   { key: 'header_image_desktop', label: 'Шапка главной (ПК)' },
-  { key: 'section_header_image', label: 'Полоса в заголовке страниц (разделы)' },
+  { key: 'section_header_image', label: 'Фон шапки разделов (Рулетка, Магазин и т.д.)' },
+  { key: 'page_header_logo', label: 'Логотип «С» в шапке разделов' },
+  { key: 'page_header_divider', label: 'Волнистая линия в шапке разделов' },
+  { key: 'section_slider_knob', label: 'Ручка переключателя «Лента / Рейтинг»' },
   { key: 'sidenav_logo', label: 'Логотип в боковом меню' },
   { key: 'thanks_button', label: 'Кнопка «Отправить спасибки»' },
   { key: 'thanks_feed_logo', label: 'Логотип «спасибо» в ленте' },

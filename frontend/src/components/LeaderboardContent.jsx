@@ -5,6 +5,9 @@ import FeedSkeleton from './FeedSkeleton';
 import { FaCrown, FaCalendarDay, FaCalendarAlt, FaGift, FaInfinity } from 'react-icons/fa';
 import { resolveSeasonAssets } from '../themeAssetDefaults';
 import { resolveShellDisplayUrl } from '../pwa/shellAssetCache';
+import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
+
+const LEADERBOARD_PAGE_SIZE = 20;
 
 const ALL_TABS = [
   { id: 'all_time_received', label: 'За всё время', icon: <FaInfinity />, params: { period: 'all_time', type: 'received' } },
@@ -24,6 +27,9 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
   const [leaderboard, setLeaderboard] = useState([]);
   const [myRank, setMyRank] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState(LEADERBOARD_PAGE_SIZE);
 
   useEffect(() => {
     if (user.is_admin) return;
@@ -61,11 +67,15 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
       }
 
       const [leaderboardRes, myRankRes] = await Promise.all([
-        getLeaderboard(tabConfig.params),
+        getLeaderboard({ ...tabConfig.params, offset: 0, limit: LEADERBOARD_PAGE_SIZE }),
         getMyRank(tabConfig.params),
       ]);
 
-      setLeaderboard(leaderboardRes.data);
+      const page = leaderboardRes.data;
+      const items = Array.isArray(page?.items) ? page.items : page;
+      setLeaderboard(items);
+      setHasMore(Boolean(page?.has_more));
+      setNextOffset(LEADERBOARD_PAGE_SIZE);
       setMyRank(myRankRes.data);
     } catch (error) {
       console.error('Failed to fetch leaderboard data', error);
@@ -73,6 +83,49 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
       setIsLoading(false);
     }
   }, [activeTabId]);
+
+  const loadMore = useCallback(async () => {
+    if (isLoading || isLoadingMore || !hasMore) {
+      return;
+    }
+    const tabConfig = ALL_TABS.find((tab) => tab.id === activeTabId);
+    if (!tabConfig) {
+      return;
+    }
+    setIsLoadingMore(true);
+    try {
+      const response = await getLeaderboard({
+        ...tabConfig.params,
+        offset: nextOffset,
+        limit: LEADERBOARD_PAGE_SIZE,
+      });
+      const page = response.data;
+      const items = Array.isArray(page?.items) ? page.items : [];
+      setLeaderboard((prev) => {
+        const seen = new Set(prev.map((row) => row.user.id));
+        const merged = [...prev];
+        for (const row of items) {
+          if (!seen.has(row.user.id)) {
+            seen.add(row.user.id);
+            merged.push(row);
+          }
+        }
+        return merged;
+      });
+      setHasMore(Boolean(page?.has_more));
+      setNextOffset((prev) => prev + LEADERBOARD_PAGE_SIZE);
+    } catch (error) {
+      console.error('Failed to load more leaderboard', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [activeTabId, hasMore, isLoading, isLoadingMore, nextOffset]);
+
+  const loadMoreRef = useInfiniteScroll({
+    hasMore,
+    isLoading: isLoading || isLoadingMore,
+    onLoadMore: loadMore,
+  });
 
   useEffect(() => {
     const currentTab = ALL_TABS.find((tab) => tab.id === activeTabId);
@@ -125,7 +178,8 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
                 <div className={`${styles.podiumItem} ${styles.place2}`}>
                   <FaCrown className={styles.podiumIcon} color="#C0C0C0" />
                   <img
-                    src={resolveAvatarUrl(top3[1].user.telegram_photo_url) || 'placeholder.png'}
+                    key={`lb-avatar-${top3[1].user.id}`}
+                    src={resolveAvatarUrl(top3[1].user.telegram_photo_url, top3[1].user.id) || 'placeholder.png'}
                     alt={top3[1].user.first_name}
                     className={styles.podiumAvatar}
                     loading="lazy"
@@ -138,7 +192,8 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
                 <div className={`${styles.podiumItem} ${styles.place1}`}>
                   <FaCrown className={styles.podiumIcon} color="#FFD700" />
                   <img
-                    src={resolveAvatarUrl(top3[0].user.telegram_photo_url) || 'placeholder.png'}
+                    key={`lb-avatar-${top3[0].user.id}`}
+                    src={resolveAvatarUrl(top3[0].user.telegram_photo_url, top3[0].user.id) || 'placeholder.png'}
                     alt={top3[0].user.first_name}
                     className={styles.podiumAvatar}
                     loading="lazy"
@@ -151,7 +206,8 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
                 <div className={`${styles.podiumItem} ${styles.place3}`}>
                   <FaCrown className={styles.podiumIcon} color="#CD7F32" />
                   <img
-                    src={resolveAvatarUrl(top3[2].user.telegram_photo_url) || 'placeholder.png'}
+                    key={`lb-avatar-${top3[2].user.id}`}
+                    src={resolveAvatarUrl(top3[2].user.telegram_photo_url, top3[2].user.id) || 'placeholder.png'}
                     alt={top3[2].user.first_name}
                     className={styles.podiumAvatar}
                     loading="lazy"
@@ -169,7 +225,8 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
                 <li key={item.user.id} className={styles.listItem}>
                   <span className={styles.rank}>{index + 4}</span>
                   <img
-                    src={resolveAvatarUrl(item.user.telegram_photo_url) || 'placeholder.png'}
+                    key={`lb-avatar-${item.user.id}`}
+                    src={resolveAvatarUrl(item.user.telegram_photo_url, item.user.id) || 'placeholder.png'}
                     alt={item.user.first_name}
                     className={styles.listItemAvatar}
                     loading="lazy"
@@ -190,6 +247,8 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
           {visibleTabs.length === 0 && !user.is_admin && (
             <p>Рейтинги пока пусты. Скоро здесь появится активность!</p>
           )}
+          {hasMore && <div ref={loadMoreRef} className={styles.loadMoreSentinel} aria-hidden="true" />}
+          {isLoadingMore && <p className={styles.loadMoreHint}>Загрузка…</p>}
         </>
       )}
     </div>

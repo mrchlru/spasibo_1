@@ -854,6 +854,18 @@ button:active {
   margin-left: auto;
 }
 
+.loadMoreSentinel {
+  height: 1px;
+  width: 100%;
+}
+
+.loadMoreHint {
+  text-align: center;
+  color: #6e7a85;
+  font-size: 14px;
+  padding: 8px 0 16px;
+}
+
 @media (min-width: 1025px) {
   .publishFab {
     right: 28px;

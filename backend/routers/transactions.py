@@ -32,13 +32,38 @@ async def get_feed(
     """
     return await crud.get_feed(db, days=days, limit=limit)
 
-@router.get("/leaderboard/", response_model=list[schemas.LeaderboardItem])
+@router.get("/leaderboard/", response_model=schemas.LeaderboardPageResponse)
 async def get_leaderboard(
     period: Literal['current_month', 'last_month', 'all_time'] = 'current_month',
     type: Literal['received', 'sent'] = 'received',
-    db: AsyncSession = Depends(get_db)
+    offset: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
 ):
-    return await crud.get_leaderboard_data(db, period=period, leaderboard_type=type)
+    safe_limit = min(max(limit, 1), 50)
+    safe_offset = max(offset, 0)
+    raw_items = await crud.get_leaderboard_data(
+        db,
+        period=period,
+        leaderboard_type=type,
+        offset=safe_offset,
+        limit=safe_limit,
+    )
+    has_more = len(raw_items) > safe_limit
+    page_items = raw_items[:safe_limit]
+    items = [
+        schemas.LeaderboardItem(
+            user=schemas.user_response_for_public_api(item["user"]),
+            total_received=item["total_received"],
+        )
+        for item in page_items
+    ]
+    return schemas.LeaderboardPageResponse(
+        items=items,
+        offset=safe_offset,
+        limit=safe_limit,
+        has_more=has_more,
+    )
 
 
 @router.get("/leaderboard/my-rank", response_model=schemas.MyRankResponse)
