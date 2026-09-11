@@ -458,6 +458,16 @@ class LoginActivityStats(BaseModel):
 class ActiveUserRatioStats(BaseModel):
     active_users: int
     inactive_users: int
+    period_days: int
+    total_users: int
+
+
+class SessionStartRequest(BaseModel):
+    """Метаданные клиента при старте сессии."""
+
+    client_platform: Optional[Literal['desktop', 'ios', 'android']] = None
+    client_shell: Optional[str] = Field(None, max_length=32)
+
 
 class SessionBase(OrmBase):
     user_id: int
@@ -466,6 +476,49 @@ class SessionResponse(SessionBase):
     id: int
     session_start: datetime
     last_seen: datetime
+    client_platform: Optional[str] = None
+    client_shell: Optional[str] = None
+
+
+class ClientPlatformStats(BaseModel):
+    desktop: int
+    ios: int
+    android: int
+    unknown: int
+
+
+class ClientInstallStats(BaseModel):
+    ios_pwa: int
+    android_app: int
+
+
+class ClientShellStats(BaseModel):
+    browser: int
+    ios_pwa: int
+    android_app: int
+    android_browser: int
+    ios_browser: int
+    telegram: int
+    other: int
+
+
+class ClientStatisticsResponse(BaseModel):
+    total_users: int
+    by_platform: ClientPlatformStats
+    by_shell: ClientShellStats
+    installs: ClientInstallStats
+
+
+class ActiveSenderRow(BaseModel):
+    user: UserResponse
+    sent_count: int
+    last_sent_at: Optional[datetime] = None
+
+
+class ActiveSendersStats(BaseModel):
+    period_days: int
+    total_active: int
+    senders: List[ActiveSenderRow]
 
 class AverageSessionDurationStats(BaseModel):
     average_duration_minutes: float

@@ -65,12 +65,11 @@ import PushEnablePrompt from './components/PushEnablePrompt.jsx';
 import AndroidInstallSheet from './components/AndroidInstallSheet.jsx';
 import { DEFAULT_ANDROID_RELEASE, normalizeAndroidRelease } from './pwa/androidInstallPrompt.js';
 
-import { startSession, pingSession } from './api';
+import { useSessionTracking } from './hooks/useSessionTracking';
 
 // Стили
 import './App.css';
 
-const PING_INTERVAL = 60000; // Пингуем каждую минуту (60 000 миллисекунд)
 const STATUS_CHECK_INTERVAL = 5000; // Проверяем статус каждые 5 секунд (5000 миллисекунд)
 
 // Без initData это заглушка SDK (браузер / Android WebView), не настоящий Telegram.
@@ -804,125 +803,10 @@ function App() {
   const showSideNav = isDesktop && isUserApproved && !isOnboardingVisible;
   const showBottomNav = !isDesktop && isUserApproved && !isOnboardingVisible;
   
-  // Сессия в Mini App: только после user.id (иначе POST /sessions/start без заголовков).
-  useEffect(() => {
-    if (!isTelegramWebApp || !user?.id) {
-      return;
-    }
-
-    let sessionId = null;
-    let intervalId = null;
-    let isActive = true;
-
-    // Функция для запуска пинга сессии
-    const startPinging = () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-      
-      intervalId = setInterval(async () => {
-        if (sessionId && isActive && document.visibilityState === 'visible') {
-          try {
-            await pingSession(sessionId);
-            console.log(`Пинг для сессии ${sessionId} успешен.`);
-          } catch (pingError) {
-            console.error('Ошибка пинга сессии:', pingError);
-            // Если сессия не найдена на сервере, пересоздаем её
-            if (pingError.response && pingError.response.status === 404) {
-              try {
-                const newResponse = await startSession();
-                sessionId = newResponse.data.id;
-                console.log('Сессия пересоздана, новый ID:', sessionId);
-              } catch (restartError) {
-                console.error('Не удалось пересоздать сессию:', restartError);
-                if (intervalId) {
-                  clearInterval(intervalId);
-                  intervalId = null;
-                }
-              }
-            }
-          }
-        }
-      }, PING_INTERVAL);
-    };
-
-    // Обработчик возврата из фонового режима
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('Приложение вернулось в активное состояние');
-        isActive = true;
-        // Переподключаемся, если нужно
-        if (tg) {
-          tg.expand();
-          tg.ready();
-        }
-        // Перезапускаем пинг, если он был остановлен
-        if (!intervalId && sessionId) {
-          startPinging();
-        }
-      } else {
-        console.log('Приложение перешло в фоновый режим');
-        isActive = false;
-      }
-    };
-
-    // Обработчик закрытия приложения через Telegram WebApp API
-    const handleClose = () => {
-      console.log('Приложение закрывается через Telegram WebApp');
-      isActive = false;
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-    };
-
-    // Обработчик события beforeunload (когда пользователь закрывает вкладку/приложение)
-    const handleBeforeUnload = () => {
-      console.log('Приложение закрывается (beforeunload)');
-      isActive = false;
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
-      }
-    };
-
-    // Добавляем обработчики событий
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    // Обработчик закрытия через Telegram WebApp API
-    if (tg && tg.onEvent) {
-      tg.onEvent('close', handleClose);
-    }
-
-    // Инициализация сессии
-    const sessionManager = async () => {
-      try {
-        // 1. При запуске приложения создаем новую сессию
-        const response = await startSession();
-        sessionId = response.data.id;
-        console.log('Сессия успешно запущена, ID:', sessionId);
-
-        // 2. Запускаем интервал для пинга сессии
-        startPinging();
-
-      } catch (startError) {
-        console.error('Не удалось запустить сессию:', startError);
-      }
-    };
-
-    sessionManager();
-
-    return () => {
-      isActive = false;
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      if (intervalId) {
-        clearInterval(intervalId);
-        console.log('Отслеживание сессии остановлено.');
-      }
-    };
-  }, [user?.id, isTelegramWebApp]);
+  useSessionTracking({
+    userId: user?.status === 'approved' ? user.id : undefined,
+    enabled: Boolean(user?.id && user.status === 'approved'),
+  });
 
   // --- АВТОМАТИЧЕСКАЯ ПРОВЕРКА СТАТУСА ДЛЯ ПОЛЬЗОВАТЕЛЕЙ СО СТАТУСОМ PENDING ---
   const statusCheckIntervalRef = useRef(null);

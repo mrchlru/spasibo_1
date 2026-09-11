@@ -48,6 +48,10 @@ class User(Base):
 
     has_seen_onboarding: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
     has_interacted_with_bot: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
+    last_client_platform: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    last_client_shell: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    has_ios_pwa: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
+    has_android_app: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
     sent_transactions = relationship(
         "Transaction",
         back_populates="sender",
@@ -80,6 +84,8 @@ class UserSession(Base):
 
     session_start: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
+    client_platform: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    client_shell: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
     user = relationship("User", back_populates="sessions")
     

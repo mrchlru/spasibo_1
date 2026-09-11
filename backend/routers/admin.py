@@ -648,9 +648,37 @@ async def get_login_activity(start_date: Optional[date] = Query(None), end_date:
     return {"hourly_stats": stats}
 
 @router.get("/statistics/active_user_ratio", response_model=schemas.ActiveUserRatioStats)
-async def get_active_user_ratio_route(db: AsyncSession = Depends(get_db)):
-    ratio_data = await crud.get_active_user_ratio(db)
+async def get_active_user_ratio_route(
+    period_days: int = Query(30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+):
+    ratio_data = await crud.get_active_user_ratio(db, period_days=period_days)
     return ratio_data
+
+
+@router.get("/statistics/client_stats", response_model=schemas.ClientStatisticsResponse)
+async def get_client_statistics_route(db: AsyncSession = Depends(get_db)):
+    return await crud.get_client_statistics(db)
+
+
+@router.get("/statistics/active_senders", response_model=schemas.ActiveSendersStats)
+async def get_active_senders_route(
+    period_days: int = Query(30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await crud.get_active_senders_stats(db, period_days=period_days)
+    return {
+        "period_days": data["period_days"],
+        "total_active": data["total_active"],
+        "senders": [
+            {
+                "user": schemas.user_response_for_public_api(row["user"]),
+                "sent_count": row["sent_count"],
+                "last_sent_at": row["last_sent_at"],
+            }
+            for row in data["senders"]
+        ],
+    }
 
 @router.get("/statistics/user_engagement", response_model=schemas.UserEngagementStats)
 async def get_user_engagement(db: AsyncSession = Depends(get_db)):
@@ -692,8 +720,11 @@ async def get_favorite_items_statistics(
     }
 
 @router.get("/statistics/inactive_users", response_model=schemas.InactiveUsersStats)
-async def get_inactive_users_list(db: AsyncSession = Depends(get_db)):
-    inactive_users = await crud.get_inactive_users(db)
+async def get_inactive_users_list(
+    period_days: int = Query(30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+):
+    inactive_users = await crud.get_inactive_users(db, period_days=period_days)
     return {"users": inactive_users}
 
 @router.get("/statistics/total_balance", response_model=schemas.TotalBalanceStats)
@@ -709,6 +740,80 @@ async def get_average_session_duration_route(
 ):
     stats = await crud.get_average_session_duration(db, start_date=start_date, end_date=end_date)
     return stats
+
+@router.get("/statistics/active_senders/export")
+async def export_active_senders(
+    period_days: int = Query(30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await crud.get_active_senders_stats(db, period_days=period_days)
+    moscow_tz = ZoneInfo("Europe/Moscow")
+    rows = [
+        {
+            "#": index,
+            "ID": row["user"].id,
+            "Имя": row["user"].first_name,
+            "Фамилия": row["user"].last_name,
+            "Отдел": row["user"].department,
+            "Должность": row["user"].position,
+            "Отправлено спасибок": row["sent_count"],
+            "Последняя отправка": _format_dt_moscow(row["last_sent_at"], moscow_tz),
+            "Платформа": row["user"].last_client_platform or "",
+            "Клиент": row["user"].last_client_shell or "",
+        }
+        for index, row in enumerate(data["senders"], 1)
+    ]
+    output = io.BytesIO()
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = f"Активные {period_days}д"
+    _write_dict_rows_on_sheet(ws, rows)
+    workbook.save(output)
+    output.seek(0)
+    filename = f"active_senders_{period_days}d.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/statistics/inactive_users/export")
+async def export_inactive_users(
+    period_days: int = Query(30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+):
+    inactive_users = await crud.get_inactive_users(db, period_days=period_days)
+    moscow_tz = ZoneInfo("Europe/Moscow")
+    rows = [
+        {
+            "#": index,
+            "ID": user.id,
+            "Имя": user.first_name,
+            "Фамилия": user.last_name,
+            "Отдел": user.department,
+            "Должность": user.position,
+            "Платформа": user.last_client_platform or "",
+            "Клиент": user.last_client_shell or "",
+            "Дата регистрации": _format_dt_moscow(user.registration_date, moscow_tz),
+            "Последний вход": _format_dt_moscow(user.last_login_date, moscow_tz),
+        }
+        for index, user in enumerate(inactive_users, 1)
+    ]
+    output = io.BytesIO()
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = f"Неактивные {period_days}д"
+    _write_dict_rows_on_sheet(ws, rows)
+    workbook.save(output)
+    output.seek(0)
+    filename = f"inactive_senders_{period_days}d.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
 
 @router.get("/statistics/user_engagement/export")
 async def export_user_engagement(db: AsyncSession = Depends(get_db)):
@@ -763,7 +868,7 @@ async def export_consolidated_report(
 
     general_stats_translation = {
         "new_users_count": "Всего пользователей",
-        "active_users_count": "Активные пользователи",
+        "active_users_count": "Отправляли спасибки",
         "transactions_count": "Всего транзакций",
         "store_purchases_count": "Покупок в магазине",
         "total_turnover": "Оборот 'спасибок'",

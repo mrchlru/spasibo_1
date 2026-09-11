@@ -15,10 +15,17 @@ router = APIRouter(
 
 @router.post("/start", response_model=schemas.SessionResponse)
 async def start_session(
+    payload: schemas.SessionStartRequest | None = None,
     current_user: models.User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    new_session = await crud.start_user_session(db=db, user_id=current_user.id)
+    body = payload or schemas.SessionStartRequest()
+    new_session = await crud.start_user_session(
+        db=db,
+        user_id=current_user.id,
+        client_platform=body.client_platform,
+        client_shell=body.client_shell,
+    )
     return new_session
 
 @router.put("/ping/{session_id}", response_model=schemas.SessionResponse)

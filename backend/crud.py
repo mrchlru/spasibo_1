@@ -3153,16 +3153,8 @@ async def get_general_statistics(db: AsyncSession, start_date: Optional[date] = 
         models.User.status != 'deleted'
     ).distinct()
 
-    active_receivers_q = select(models.Transaction.receiver_id).join(
-        models.User, models.User.id == models.Transaction.receiver_id
-    ).where(
-        models.Transaction.timestamp.between(start_date, end_date_inclusive),
-        models.User.status != 'deleted'
-    ).distinct()
-
     active_senders_ids = (await db.execute(active_senders_q)).scalars().all()
-    active_receivers_ids = (await db.execute(active_receivers_q)).scalars().all()
-    active_users_count = len(set(active_senders_ids).union(set(active_receivers_ids)))
+    active_users_count = len(set(active_senders_ids))
 
     query_transactions = select(func.count(models.Transaction.id)).filter(models.Transaction.timestamp.between(start_date, end_date_inclusive))
     transactions_count = (await db.execute(query_transactions)).scalar_one()
@@ -3293,16 +3285,29 @@ async def get_popular_items_stats(db: AsyncSession, start_date: Optional[date] =
     # Возвращаем результат как есть, FastAPI/Pydantic сами преобразуют его
     return (await db.execute(query)).all()
 
-async def get_inactive_users(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
+async def get_inactive_users(
+    db: AsyncSession,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    period_days: Optional[int] = None,
+):
+    if period_days is not None:
+        period_days = max(1, min(int(period_days), 365))
+        end_date = datetime.utcnow().date()
+        start_date = end_date - timedelta(days=period_days)
     start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
 
-    active_senders_q = select(models.Transaction.sender_id).filter(models.Transaction.timestamp.between(start_date, end_date_inclusive)).distinct()
-    active_recipients_q = select(models.Transaction.receiver_id).filter(models.Transaction.timestamp.between(start_date, end_date_inclusive)).distinct()
-    
+    active_senders_q = (
+        select(models.Transaction.sender_id)
+        .join(models.User, models.User.id == models.Transaction.sender_id)
+        .filter(
+            models.Transaction.timestamp.between(start_date, end_date_inclusive),
+            models.User.status != 'deleted',
+        )
+        .distinct()
+    )
     active_senders = (await db.execute(active_senders_q)).scalars().all()
-    active_recipients = (await db.execute(active_recipients_q)).scalars().all()
-    
-    active_user_ids = set(active_senders).union(set(active_recipients))
+    active_user_ids = set(active_senders)
     
     # Исправлено: обрабатываем случай пустого списка активных пользователей
     if not active_user_ids:
@@ -3322,25 +3327,33 @@ async def get_total_balance(db: AsyncSession):
     )).scalar_one_or_none()
     return total or 0
 
-async def get_active_user_ratio(db: AsyncSession):
+async def get_active_user_ratio(db: AsyncSession, period_days: int = 30):
+    """Активные = отправляли хотя бы 1 «спасибо» за period_days."""
+    period_days = max(1, min(int(period_days or 30), 365))
+    since = datetime.utcnow() - timedelta(days=period_days)
+
     total_users = (await db.execute(
         select(func.count(models.User.id)).where(models.User.status != 'deleted')
     )).scalar_one()
 
-    active_senders_q = select(models.Transaction.sender_id).join(
-        models.User, models.User.id == models.Transaction.sender_id
-    ).where(models.User.status != 'deleted').distinct()
-    
-    active_recipients_q = select(models.Transaction.receiver_id).join(
-        models.User, models.User.id == models.Transaction.receiver_id
-    ).where(models.User.status != 'deleted').distinct()
-
+    active_senders_q = (
+        select(models.Transaction.sender_id)
+        .join(models.User, models.User.id == models.Transaction.sender_id)
+        .where(
+            models.Transaction.timestamp >= since,
+            models.User.status != 'deleted',
+        )
+        .distinct()
+    )
     active_senders = (await db.execute(active_senders_q)).scalars().all()
-    active_recipients = (await db.execute(active_recipients_q)).scalars().all()
-    
-    active_user_ids_count = len(set(active_senders).union(set(active_recipients)))
-    inactive_users_count = total_users - active_user_ids_count
-    return {"active_users": active_user_ids_count, "inactive_users": inactive_users_count}
+    active_user_ids_count = len(set(active_senders))
+    inactive_users_count = max(total_users - active_user_ids_count, 0)
+    return {
+        "active_users": active_user_ids_count,
+        "inactive_users": inactive_users_count,
+        "period_days": period_days,
+        "total_users": total_users,
+    }
 
 async def get_average_session_duration(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
     start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
@@ -3383,13 +3396,151 @@ async def mark_user_interacted_with_bot(db: AsyncSession, user_id: int):
 
 # --- НАЧАЛО БЛОКА: Возвращаем функции для работы с сессиями ---
 
-async def start_user_session(db: AsyncSession, user_id: int) -> models.UserSession:
+def _apply_client_profile_to_user(
+    user: models.User,
+    client_platform: Optional[str],
+    client_shell: Optional[str],
+) -> None:
+    """Обновляет снимок платформы пользователя."""
+    if client_platform:
+        user.last_client_platform = client_platform
+    if client_shell:
+        user.last_client_shell = client_shell
+        if client_shell == 'ios-pwa':
+            user.has_ios_pwa = True
+        if client_shell == 'android-app':
+            user.has_android_app = True
+
+
+async def start_user_session(
+    db: AsyncSession,
+    user_id: int,
+    client_platform: Optional[str] = None,
+    client_shell: Optional[str] = None,
+) -> models.UserSession:
     """Создает новую запись о сессии для пользователя."""
-    new_session = models.UserSession(user_id=user_id)
+    new_session = models.UserSession(
+        user_id=user_id,
+        client_platform=client_platform,
+        client_shell=client_shell,
+    )
     db.add(new_session)
+
+    user = await db.get(models.User, user_id)
+    if user:
+        _apply_client_profile_to_user(user, client_platform, client_shell)
+
     await db.commit()
     await db.refresh(new_session)
     return new_session
+
+
+async def get_client_statistics(db: AsyncSession) -> dict:
+    """Статистика платформ и установок по снимку users."""
+    base_filter = models.User.status != 'deleted'
+
+    total_users = (await db.execute(
+        select(func.count(models.User.id)).where(base_filter)
+    )).scalar_one()
+
+    async def _count_platform(platform: str) -> int:
+        return (await db.execute(
+            select(func.count(models.User.id)).where(base_filter, models.User.last_client_platform == platform)
+        )).scalar_one()
+
+    desktop = await _count_platform('desktop')
+    ios = await _count_platform('ios')
+    android = await _count_platform('android')
+    known = desktop + ios + android
+
+    ios_pwa = (await db.execute(
+        select(func.count(models.User.id)).where(base_filter, models.User.has_ios_pwa.is_(True))
+    )).scalar_one()
+
+    android_app = (await db.execute(
+        select(func.count(models.User.id)).where(base_filter, models.User.has_android_app.is_(True))
+    )).scalar_one()
+
+    fcm_android_users = (await db.execute(
+        select(func.count(func.distinct(models.AndroidFcmToken.user_id)))
+        .join(models.User, models.User.id == models.AndroidFcmToken.user_id)
+        .where(base_filter, models.AndroidFcmToken.is_active.is_(True))
+    )).scalar_one()
+    android_app = max(android_app, fcm_android_users or 0)
+
+    shell_keys = {
+        'browser': 'browser',
+        'ios-pwa': 'ios_pwa',
+        'android-app': 'android_app',
+        'android-browser': 'android_browser',
+        'ios-browser': 'ios_browser',
+        'telegram': 'telegram',
+    }
+    shell_counts = {key: 0 for key in shell_keys.values()}
+    shell_counts['other'] = 0
+
+    shell_rows = (await db.execute(
+        select(models.User.last_client_shell, func.count(models.User.id))
+        .where(base_filter, models.User.last_client_shell.isnot(None))
+        .group_by(models.User.last_client_shell)
+    )).all()
+
+    for shell_value, count in shell_rows:
+        mapped = shell_keys.get(shell_value)
+        if mapped:
+            shell_counts[mapped] += count
+        else:
+            shell_counts['other'] += count
+
+    return {
+        "total_users": total_users,
+        "by_platform": {
+            "desktop": desktop,
+            "ios": ios,
+            "android": android,
+            "unknown": max(total_users - known, 0),
+        },
+        "by_shell": shell_counts,
+        "installs": {
+            "ios_pwa": ios_pwa,
+            "android_app": android_app,
+        },
+    }
+
+
+async def get_active_senders_stats(db: AsyncSession, period_days: int = 30) -> dict:
+    """Пользователи, отправившие хотя бы 1 «спасибо» за period_days."""
+    period_days = max(1, min(int(period_days or 30), 365))
+    since = datetime.utcnow() - timedelta(days=period_days)
+
+    query = (
+        select(
+            models.User,
+            func.count(models.Transaction.id).label('sent_count'),
+            func.max(models.Transaction.timestamp).label('last_sent_at'),
+        )
+        .join(models.Transaction, models.User.id == models.Transaction.sender_id)
+        .where(
+            models.Transaction.timestamp >= since,
+            models.User.status != 'deleted',
+        )
+        .group_by(models.User.id)
+        .order_by(func.count(models.Transaction.id).desc(), models.User.last_name, models.User.first_name)
+    )
+    rows = (await db.execute(query)).all()
+    senders = [
+        {
+            "user": row[0],
+            "sent_count": row.sent_count,
+            "last_sent_at": row.last_sent_at,
+        }
+        for row in rows
+    ]
+    return {
+        "period_days": period_days,
+        "total_active": len(senders),
+        "senders": senders,
+    }
 
 async def ping_user_session(db: AsyncSession, session_id: int) -> Optional[models.UserSession]:
     """Обновляет время 'last_seen' для существующей сессии."""
