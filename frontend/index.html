@@ -43,12 +43,29 @@
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500&display=swap">
     </noscript>
 
-    <!-- Preload критических изображений для ускорения загрузки -->
-    <link rel="preload" as="image" href="https://i.postimg.cc/YqcmJB37/6.webp">
-    <link rel="preload" as="image" href="https://i.postimg.cc/bvMHvzWv/Line-18.webp">
-    <link rel="preload" as="image" href="https://i.postimg.cc/6psSrhnR/sapka-ost-razdelov-sinaa.webp">
-    <link rel="preload" as="image" href="https://i.postimg.cc/RVsHnPHk/LOGO-SP-SIN.webp">
-    <link rel="preconnect" href="https://i.postimg.cc" crossorigin>
+    <link rel="preload" as="image" href="/assets/slider/mug-knob.avif">
+    <link rel="preconnect" href="https://s3.twcstorage.ru" crossorigin>
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('spasibo_app_settings_snapshot');
+          if (!raw) return;
+          var snap = JSON.parse(raw);
+          if (!snap || !snap.theme_assets) return;
+          var season = snap.season_theme === 'winter' ? 'winter' : 'summer';
+          var assets = snap.theme_assets[season] || {};
+          ['header_image_mobile', 'thanks_button', 'section_slider_knob'].forEach(function (key) {
+            var url = assets[key];
+            if (!url || url.indexOf('http') !== 0) return;
+            var link = document.createElement('link');
+            link.rel = 'preload';
+            link.as = 'image';
+            link.href = url;
+            document.head.appendChild(link);
+          });
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
 
     <style>
       /* Минимальный inline-лоадер, чтобы пользователь видел индикатор пока

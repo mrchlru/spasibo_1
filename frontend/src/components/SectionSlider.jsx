@@ -74,7 +74,15 @@ function SectionSlider({ activeSection, onChange }) {
           >
             <span className={styles.knobAura} aria-hidden="true" />
             <span className={styles.knobWrap} style={{ transform: `rotate(${knobRotation}deg)` }}>
-              <img src={knobUrl} alt="" className={styles.knobImg} draggable={false} loading="eager" decoding="async" />
+              <img
+                src={knobUrl}
+                alt=""
+                className={styles.knobImg}
+                draggable={false}
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
+              />
             </span>
           </button>
         </div>

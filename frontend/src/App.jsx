@@ -18,8 +18,8 @@ import {
   getTelegramPhotoProxyUrl,
   resolveAvatarUrl,
 } from './api';
-import { initializeCache, clearCache, setCachedData, hasWarmBootCache } from './storage';
-import { preloadAppContent, ANDROID_BOOT_TIMEOUT_MS } from './boot/preloadAppContent';
+import { initializeCache, clearCache, setCachedData } from './storage';
+import { preloadAppContent } from './boot/preloadAppContent';
 import { isSpasiboAndroidApp, hideAndroidBootSplash } from './pwa/androidNativePush';
 import { parseAppDeepLink, stripDeepLinkQueryFromLocation } from './utils/appDeepLink';
 import { applyFrontendBuildUpdate } from './pwa/androidWebUpdate';
@@ -81,7 +81,7 @@ const androidLoadingFallback = <LoadingScreen />;
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [bootReady, setBootReady] = useState(false);
+  const [bootReady, setBootReady] = useState(true);
   const [page, setPage] = useState('home');
   const [homeSection, setHomeSection] = useState('feed');
   const [telegramPhotoUrl, setTelegramPhotoUrl] = useState(null);
@@ -563,25 +563,9 @@ function App() {
       return undefined;
     }
 
-    const bootTimeoutMs = isAndroidShell ? ANDROID_BOOT_TIMEOUT_MS : 2500;
-    const canShowHomeImmediately = hasWarmBootCache();
-
-    let cancelled = false;
-    if (canShowHomeImmediately) {
-      setBootReady(true);
-    } else {
-      setBootReady(false);
-    }
-
-    preloadAppContent({ timeoutMs: bootTimeoutMs }).finally(() => {
-      if (!cancelled) {
-        setBootReady(true);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
+    setBootReady(true);
+    void preloadAppContent({ timeoutMs: 0, skipWaitIfCached: true });
+    return undefined;
   }, [loading, user?.id, user?.status, isOnboardingVisible]);
 
   useEffect(() => {
