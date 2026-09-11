@@ -125,7 +125,7 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
                 <div className={`${styles.podiumItem} ${styles.place2}`}>
                   <FaCrown className={styles.podiumIcon} color="#C0C0C0" />
                   <img
-                    src={resolveAvatarUrl(top3[1].user.telegram_photo_url) || 'placeholder.png'}
+                    src={resolveAvatarUrl(top3[1].user.telegram_photo_url, top3[1].user.id) || 'placeholder.png'}
                     alt={top3[1].user.first_name}
                     className={styles.podiumAvatar}
                     loading="lazy"
@@ -138,7 +138,7 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
                 <div className={`${styles.podiumItem} ${styles.place1}`}>
                   <FaCrown className={styles.podiumIcon} color="#FFD700" />
                   <img
-                    src={resolveAvatarUrl(top3[0].user.telegram_photo_url) || 'placeholder.png'}
+                    src={resolveAvatarUrl(top3[0].user.telegram_photo_url, top3[0].user.id) || 'placeholder.png'}
                     alt={top3[0].user.first_name}
                     className={styles.podiumAvatar}
                     loading="lazy"
@@ -151,7 +151,7 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
                 <div className={`${styles.podiumItem} ${styles.place3}`}>
                   <FaCrown className={styles.podiumIcon} color="#CD7F32" />
                   <img
-                    src={resolveAvatarUrl(top3[2].user.telegram_photo_url) || 'placeholder.png'}
+                    src={resolveAvatarUrl(top3[2].user.telegram_photo_url, top3[2].user.id) || 'placeholder.png'}
                     alt={top3[2].user.first_name}
                     className={styles.podiumAvatar}
                     loading="lazy"
@@ -169,7 +169,7 @@ function LeaderboardContent({ user, seasonTheme, themeAssets, embedded = false }
                 <li key={item.user.id} className={styles.listItem}>
                   <span className={styles.rank}>{index + 4}</span>
                   <img
-                    src={resolveAvatarUrl(item.user.telegram_photo_url) || 'placeholder.png'}
+                    src={resolveAvatarUrl(item.user.telegram_photo_url, item.user.id) || 'placeholder.png'}
                     alt={item.user.first_name}
                     className={styles.listItemAvatar}
                     loading="lazy"

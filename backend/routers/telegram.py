@@ -4,9 +4,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import avatar_service
 import crud
 from bot import (
     answer_callback_query,
@@ -17,7 +18,7 @@ from bot import (
     send_telegram_message,
     safe_admin_notify,
 )
-from database import AsyncSessionLocal, settings
+from database import AsyncSessionLocal, get_db, settings
 
 logger = logging.getLogger(__name__)
 
@@ -71,14 +72,45 @@ async def telegram_test() -> dict[str, str]:
     }
 
 
+async def _local_avatar_response(user_id: int, db: AsyncSession) -> Response | None:
+    """Отдаёт локально сохранённый аватар, если он есть."""
+    user = await crud.get_user(db, user_id)
+    if user is None:
+        return None
+
+    blob = avatar_service.read_avatar_bytes(user)
+    if blob:
+        content, content_type = blob
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    stored = await avatar_service.read_avatar_from_storage(user)
+    if stored:
+        content, content_type = stored
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    return None
+
+
 @router.get("/telegram/photo-proxy")
-async def telegram_photo_proxy(url: str = Query(..., min_length=1)) -> Response:
-    """Проксирует Telegram WebApp photo_url через backend/Railway relay.
+async def telegram_photo_proxy(
+    url: str = Query(..., min_length=1),
+    user_id: int | None = Query(default=None, ge=1),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Проксирует Telegram WebApp photo_url через backend и внешний relay.
 
     Во фронте Telegram часто отдаёт ``https://t.me/i/userpic/...``. Если клиент
     или серверный маршрут не может стабильно достучаться до Telegram, relay
     скачивает изображение с внешнего хоста, а приложение отдаёт его как обычный
-    backend-ресурс.
+    backend-ресурс. При сбое и переданном ``user_id`` пробует локальный
+    ``/users/{id}/avatar``.
     """
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
@@ -88,10 +120,19 @@ async def telegram_photo_proxy(url: str = Query(..., min_length=1)) -> Response:
     try:
         content, content_type = await fetch_telegram_photo_url(url)
     except Exception as exc:
-        logger.error("telegram photo proxy failed: %s", exc, exc_info=True)
+        logger.warning("telegram photo proxy failed url=%s user_id=%s: %s", url, user_id, exc)
+        if user_id is not None:
+            fallback = await _local_avatar_response(user_id, db)
+            if fallback is not None:
+                logger.info("telegram photo proxy fallback to local avatar user_id=%s", user_id)
+                return fallback
         raise HTTPException(status_code=502, detail="Telegram photo proxy failed") from exc
 
     if not content:
+        if user_id is not None:
+            fallback = await _local_avatar_response(user_id, db)
+            if fallback is not None:
+                return fallback
         raise HTTPException(status_code=502, detail="Telegram photo is empty")
 
     return Response(

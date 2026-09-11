@@ -84,6 +84,25 @@ def _split_sql_commands(sql_text: str) -> list[str]:
     return commands
 
 
+def _log_telegram_relay_status() -> None:
+    """Пишет в лог, настроен ли исходящий Telegram relay."""
+    relay_url = (settings.TELEGRAM_RELAY_URL or "").strip().rstrip("/")
+    relay_secret = (settings.TELEGRAM_RELAY_SECRET or "").strip()
+    if relay_url and relay_secret:
+        logger.info("Telegram relay: включён (%s)", relay_url)
+        return
+    if relay_url and not relay_secret:
+        logger.warning(
+            "TELEGRAM_RELAY_URL задан без TELEGRAM_RELAY_SECRET — "
+            "исходящие запросы идут напрямую в api.telegram.org",
+        )
+        return
+    logger.warning(
+        "Telegram relay не настроен (TELEGRAM_RELAY_URL/SECRET пусты) — "
+        "исходящие запросы идут напрямую в api.telegram.org; на Timeweb возможны таймауты",
+    )
+
+
 async def run_background_startup() -> None:
     """Создание таблиц, SQL-миграции, подключение Redis."""
     async with engine.connect() as conn:
@@ -193,6 +212,8 @@ async def run_background_startup() -> None:
                 async with conn.begin():
                     await conn.execute(text(f"SELECT pg_advisory_unlock({MIGRATION_LOCK_KEY})"))
                 logger.info("🔓 Блокировка освобождена")
+
+    _log_telegram_relay_status()
 
     if not settings.REDIS_ENABLED:
         logger.info("Redis отключён (REDIS_ENABLED=false), подключение не выполняется.")

@@ -22,26 +22,30 @@ export function getApiBaseUrl() {
   return '';
 }
 
-export const getTelegramPhotoProxyUrl = (photoUrl) => {
+export const getTelegramPhotoProxyUrl = (photoUrl, userId) => {
   if (!photoUrl) return '';
   if (photoUrl.includes('/telegram/photo-proxy?')) return photoUrl;
   if (photoUrl.startsWith('/users/')) {
-    return resolveAvatarUrl(photoUrl);
+    return resolveAvatarUrl(photoUrl, userId);
   }
 
   const base = API_BASE_URL.replace(/\/$/, '');
-  return `${base}/telegram/photo-proxy?url=${encodeURIComponent(photoUrl)}`;
+  let path = `${base}/telegram/photo-proxy?url=${encodeURIComponent(photoUrl)}`;
+  if (userId != null && userId !== '') {
+    path += `&user_id=${encodeURIComponent(String(userId))}`;
+  }
+  return path;
 };
 
 /** URL аватара: локальный /users/{id}/avatar или прокси Telegram. */
-export const resolveAvatarUrl = (photoUrl) => {
+export const resolveAvatarUrl = (photoUrl, userId) => {
   if (!photoUrl) return '';
   if (photoUrl.startsWith('/users/')) {
     const base = API_BASE_URL.replace(/\/$/, '');
     return `${base}${photoUrl}`;
   }
   if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
-    return getTelegramPhotoProxyUrl(photoUrl);
+    return getTelegramPhotoProxyUrl(photoUrl, userId);
   }
   return photoUrl;
 };

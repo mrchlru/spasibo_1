@@ -1,6 +1,8 @@
+import asyncio
+import logging
+
 import httpx
 from database import settings
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -12,10 +14,70 @@ ANSWER_CALLBACK_URL = f"{TELEGRAM_API_URL}answerCallbackQuery"
 GET_FILE_URL = f"{TELEGRAM_API_URL}getFile"
 
 
+def _format_exception_for_log(exc: Exception) -> str:
+    """Возвращает информативный текст исключения."""
+    text = str(exc).strip()
+    if text:
+        return f"{type(exc).__name__}: {text}"
+    return f"{type(exc).__name__}: {exc!r}"
+
+
 def _telegram_relay_url() -> str | None:
-    """Возвращает базовый URL Railway relay, если он настроен."""
+    """Возвращает базовый URL внешнего relay, если заданы URL и секрет."""
     raw = (getattr(settings, "TELEGRAM_RELAY_URL", "") or "").strip()
-    return raw.rstrip("/") if raw else None
+    secret = (getattr(settings, "TELEGRAM_RELAY_SECRET", "") or "").strip()
+    if not raw or not secret:
+        return None
+    return raw.rstrip("/")
+
+
+def _is_retryable_telegram_transport_error(exc: Exception) -> bool:
+    """True для сетевых/таймаут ошибок, где имеет смысл retry."""
+    if isinstance(exc, (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError)):
+        return True
+    text = _format_exception_for_log(exc).lower()
+    return any(
+        marker in text
+        for marker in (
+            "connecttimeout",
+            "readtimeout",
+            "connecterror",
+            "timeout",
+            "connection reset",
+            "connection refused",
+            "network",
+            "502",
+            "503",
+            "504",
+        )
+    )
+
+
+async def _retry_telegram_transport(
+    operation,
+    *,
+    attempts: int | None = None,
+    base_delay_sec: float | None = None,
+):
+    """Повторяет async-операцию при транспортных сбоях Telegram/relay."""
+    max_attempts = max(1, attempts or settings.TELEGRAM_HTTP_MAX_ATTEMPTS)
+    base_delay = max(0.1, base_delay_sec or settings.TELEGRAM_HTTP_RETRY_BASE_SEC)
+    last_error: Exception | None = None
+
+    for attempt in range(max_attempts):
+        try:
+            return await operation()
+        except httpx.HTTPStatusError:
+            raise
+        except Exception as exc:
+            last_error = exc
+            if not _is_retryable_telegram_transport_error(exc) or attempt >= max_attempts - 1:
+                raise
+            await asyncio.sleep(base_delay * (2 ** attempt))
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Telegram transport retry failed")
 
 
 def _telegram_relay_headers() -> dict[str, str]:
@@ -48,12 +110,11 @@ async def _post_telegram_json(
     payload: dict,
     timeout: httpx.Timeout,
 ) -> dict:
-    """POST в Telegram API напрямую или через Railway relay.
+    """POST в Telegram API напрямую или через внешний relay (sslip.io / VPS).
 
-    Relay используется только если задан ``TELEGRAM_RELAY_URL``. Для обратной
-    совместимости с уже созданным relay endpoint ``sendMessage`` маппится на
-    ``/send-message``. Для callback-кнопок нужен endpoint
-    ``/answer-callback-query`` на relay.
+    Relay используется только если заданы ``TELEGRAM_RELAY_URL`` и
+    ``TELEGRAM_RELAY_SECRET``. ``sendMessage`` маппится на ``/send-message``,
+    ``getUserProfilePhotos`` — на ``/get-user-profile-photos``.
     """
     relay_url = _telegram_relay_url()
     relay_paths = {
@@ -69,10 +130,13 @@ async def _post_telegram_json(
         url = f"{relay_url}/{relay_path}"
         headers = _telegram_relay_headers()
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(url, json=payload, headers=headers)
-    response.raise_for_status()
-    return response.json()
+    async def _call() -> dict:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+    return await _retry_telegram_transport(_call)
 
 
 async def _fetch_telegram_binary(
@@ -83,34 +147,25 @@ async def _fetch_telegram_binary(
     timeout: httpx.Timeout,
 ) -> tuple[bytes, str]:
     relay_url = _telegram_relay_url()
-    headers: dict[str, str] = {}
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        if relay_url:
-            headers = _telegram_relay_headers()
-            response = await client.post(
-                f"{relay_url}/{relay_path}",
-                json=relay_payload,
-                headers=headers,
-            )
-        else:
-            response = await client.get(direct_url)
 
-    response.raise_for_status()
-    content_type = response.headers.get("content-type") or "application/octet-stream"
-    return response.content, content_type
+    async def _call() -> tuple[bytes, str]:
+        headers: dict[str, str] = {}
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            if relay_url:
+                headers = _telegram_relay_headers()
+                response = await client.post(
+                    f"{relay_url}/{relay_path}",
+                    json=relay_payload,
+                    headers=headers,
+                )
+            else:
+                response = await client.get(direct_url)
+        response.raise_for_status()
+        content_type = response.headers.get("content-type") or "application/octet-stream"
+        return response.content, content_type
 
+    return await _retry_telegram_transport(_call)
 
-def _format_exception_for_log(exc: Exception) -> str:
-    """Возвращает информативный текст исключения.
-
-    У некоторых исключений httpx/aiohttp ``str(exc)`` бывает пустым. В логах это
-    выглядело как ``error: ''`` и ломало fallback-логику. Тип + repr почти всегда
-    дают полезную диагностическую строку без токенов/секретов.
-    """
-    text = str(exc).strip()
-    if text:
-        return f"{type(exc).__name__}: {text}"
-    return f"{type(exc).__name__}: {exc!r}"
 
 def escape_markdown(text) -> str:
     """

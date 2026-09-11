@@ -739,9 +739,9 @@ function App() {
     
     if (user.status === 'approved') {
       const effectiveTelegramPhotoUrl =
-        resolveAvatarUrl(user?.telegram_photo_url) ||
+        resolveAvatarUrl(user?.telegram_photo_url, user?.id) ||
         telegramPhotoUrl ||
-        getTelegramPhotoProxyUrl(user?.telegram_photo_url);
+        getTelegramPhotoProxyUrl(user?.telegram_photo_url, user?.id);
       switch (page) {
         case 'leaderboard':
           if (!isDesktop) {

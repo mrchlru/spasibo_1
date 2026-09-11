@@ -75,6 +75,21 @@
 
 **Redis не обязателен:** в переменных задайте **`REDIS_ENABLED=false`**, чтобы не пытаться подключаться к `localhost:6379` в контейнере (иначе в логах будут ошибки Redis, кеш недоступен).
 
+### Telegram relay (исходящие запросы в api.telegram.org)
+
+С Timeweb App Platform прямые запросы к Telegram часто падают с `ConnectTimeout`. Исходящий трафик идёт через **VPS relay** (`telegram-relay` за nginx):
+
+```env
+TELEGRAM_RELAY_URL=https://72-56-22-29.sslip.io
+TELEGRAM_RELAY_SECRET=<relay_secret tenant spasibo из RELAY_TENANTS на VPS>
+TELEGRAM_HTTP_MAX_ATTEMPTS=3
+TELEGRAM_HTTP_RETRY_BASE_SEC=0.6
+```
+
+Проверка relay: `GET https://72-56-22-29.sslip.io/health` — в списке `tenants` должен быть **`spasibo`**. Если его нет, добавьте tenant в `RELAY_TENANTS` на VPS и перезапустите контейнер relay.
+
+После деплоя бэкенда в логах startup должна быть строка `Telegram relay: включён (https://72-56-22-29.sslip.io)`.
+
 **Лог SQL:** по умолчанию **`SQLALCHEMY_ECHO=false`**. Для отладки в панели можно временно выставить **`SQLALCHEMY_ECHO=true`**.
 
 ### Формат логов (время, цвета)

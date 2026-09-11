@@ -1,16 +1,14 @@
 """WebP-fallback для клиентов без AVIF (Android WebView)."""
 
-import asyncio
 import logging
 from urllib.parse import unquote, urlparse
 
-import httpx
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import Response
 
 import pillow_avif  # noqa: F401 — декодирование AVIF в Pillow
 from config import settings
-from image_webp import encode_image_bytes_to_webp
+from media_raster_service import rasterize_url_to_webp
 from object_storage import public_url_to_object_key
 
 logger = logging.getLogger(__name__)
@@ -55,21 +53,6 @@ def _is_allowed_media_url(url: str) -> bool:
     return False
 
 
-async def _fetch_bytes(url: str) -> bytes:
-    """Скачивает изображение по публичному URL."""
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        response = await client.get(url)
-    if response.status_code >= 400:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Не удалось загрузить изображение ({response.status_code})",
-        )
-    body = response.content
-    if not body:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Пустой ответ CDN")
-    return body
-
-
 def _normalize_src_param(src: str) -> str:
     """Снимает лишнее percent-encoding (CSS encodeURI поверх query string)."""
     normalized = (src or "").strip()
@@ -91,13 +74,7 @@ async def media_raster_fallback(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="URL не разрешён")
 
     try:
-        raw = await _fetch_bytes(normalized_src)
-        webp_bytes = await asyncio.to_thread(
-            encode_image_bytes_to_webp,
-            raw,
-            max_side=settings.IMAGE_MAX_SIDE_PX,
-            quality=min(settings.IMAGE_AVIF_QUALITY + 5, 90),
-        )
+        webp_bytes = await rasterize_url_to_webp(normalized_src)
     except HTTPException:
         raise
     except ValueError as exc:

@@ -302,7 +302,7 @@ function HomePage({
         <div className={styles.feedNewsHeader}>
           {author ? (
             <img
-              src={resolveAvatarUrl(author.telegram_photo_url) || 'placeholder.png'}
+              src={resolveAvatarUrl(author.telegram_photo_url, author.id) || 'placeholder.png'}
               alt=""
               className={styles.feedNewsAvatar}
               loading="lazy"
@@ -361,7 +361,7 @@ function HomePage({
         </div>
         {birthday.telegram_photo_url && (
           <img
-            src={resolveAvatarUrl(birthday.telegram_photo_url) || 'placeholder.png'}
+            src={resolveAvatarUrl(birthday.telegram_photo_url, birthday.user_id) || 'placeholder.png'}
             alt=""
             className={styles.feedBirthdayAvatar}
             loading="lazy"

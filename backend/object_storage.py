@@ -126,6 +126,34 @@ def _s3_client() -> Any:
     )
 
 
+def download_object_bytes(key: str) -> bytes:
+    """Скачивает объект из бакета через S3 API (без публичного HTTP).
+
+    Raises:
+        RuntimeError: Ошибка API или пустой объект.
+    """
+    normalized = (key or "").strip().lstrip("/")
+    if not normalized:
+        raise RuntimeError("Пустой ключ S3")
+    if not is_object_storage_configured():
+        raise RuntimeError("S3 не настроен")
+
+    client = _s3_client()
+    bucket = settings.S3_BUCKET.strip()
+    try:
+        response = client.get_object(Bucket=bucket, Key=normalized)
+        body = response.get("Body")
+        if body is None:
+            raise RuntimeError("Пустой ответ S3")
+        data = body.read()
+    except ClientError as exc:
+        raise RuntimeError(f"Ошибка чтения S3 {normalized}: {exc}") from exc
+
+    if not data:
+        raise RuntimeError(f"Пустой объект S3: {normalized}")
+    return data
+
+
 def list_object_keys(prefix: str) -> list[str]:
     """Возвращает ключи объектов с заданным префиксом."""
     client = _s3_client()

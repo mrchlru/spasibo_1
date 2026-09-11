@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # Нужен, когда сервер приложения не может стабильно ходить в api.telegram.org.
     TELEGRAM_RELAY_URL: str = ""
     TELEGRAM_RELAY_SECRET: str = ""
+    TELEGRAM_HTTP_MAX_ATTEMPTS: int = 3
+    TELEGRAM_HTTP_RETRY_BASE_SEC: float = 0.6
+
+    MEDIA_RASTER_MAX_CONCURRENT: int = 4
+    MEDIA_RASTER_CACHE_MAX_ENTRIES: int = 800
+    MEDIA_RASTER_CACHE_TTL_SECONDS: int = 86400
 
     # Настройки интеграции со Statix Bonus
     STATIX_BONUS_API_URL: str = "https://cabinet.statix-pro.ru/webhooks/custom/muggle_rest.php"
