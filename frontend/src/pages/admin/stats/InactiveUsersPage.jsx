@@ -71,7 +71,7 @@ function InactiveUsersPage() {
     <div>
       <h2>Неактивные пользователи</h2>
       <p style={{ color: '#6E7A85', marginTop: '-10px', marginBottom: '16px' }}>
-        Не отправляли «спасибо» за выбранный период.
+        Только одобренные пользователи. Не отправляли «спасибо» за выбранный период.
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', alignItems: 'center' }}>
