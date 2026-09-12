@@ -1757,18 +1757,22 @@ async def spin_roulette(db: AsyncSession, user_id: int):
     await db.refresh(user)
     return {"prize_won": prize, "new_balance": user.balance, "new_tickets": user.tickets}
 
+ROULETTE_PUBLIC_FEED_MIN_AMOUNT = 5
+
+
 async def get_roulette_history(
     db: AsyncSession,
     *,
     offset: int = 0,
     limit: int = 20,
 ) -> tuple[list[models.RouletteWin], bool]:
-    """Получает страницу истории выигрышей."""
+    """Получает страницу истории выигрышей для публичной ленты (только > 5 спасибок)."""
     safe_limit = min(max(limit, 1), 50)
     safe_offset = max(offset, 0)
     result = await db.execute(
         select(models.RouletteWin)
         .options(selectinload(models.RouletteWin.user))
+        .where(models.RouletteWin.amount > ROULETTE_PUBLIC_FEED_MIN_AMOUNT)
         .order_by(models.RouletteWin.timestamp.desc())
         .offset(safe_offset)
         .limit(safe_limit + 1)
@@ -3136,12 +3140,23 @@ def _prepare_dates(start_date: Optional[date], end_date: Optional[date]):
     
     return start_date, end_date_inclusive
 
+
+def _statistics_user_status_filter():
+    """
+    Пользователи, учитываемые в статистике: только одобренные.
+
+    Совпадает с вкладкой «Активные» в управлении пользователями.
+    Исключает pending, rejected, deleted и заблокированных.
+    """
+    return models.User.status == 'approved'
+
+
 async def get_general_statistics(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
     start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
         
     # Исправлено: считаем новых пользователей в периоде, а не всех пользователей
     query_new_users = select(func.count(models.User.id)).where(
-        models.User.status != 'deleted',
+        _statistics_user_status_filter(),
         models.User.registration_date.between(start_date, end_date_inclusive)
     )
     new_users_count = (await db.execute(query_new_users)).scalar_one()
@@ -3150,7 +3165,7 @@ async def get_general_statistics(db: AsyncSession, start_date: Optional[date] = 
         models.User, models.User.id == models.Transaction.sender_id
     ).where(
         models.Transaction.timestamp.between(start_date, end_date_inclusive),
-        models.User.status != 'deleted'
+        _statistics_user_status_filter(),
     ).distinct()
 
     active_senders_ids = (await db.execute(active_senders_q)).scalars().all()
@@ -3194,7 +3209,7 @@ async def get_hourly_activity_stats(db: AsyncSession, start_date: Optional[date]
         .join(models.User, models.User.id == models.Transaction.sender_id)
         .filter(
             models.Transaction.timestamp.between(start_date, end_date_inclusive),
-            models.User.status != 'deleted'
+            _statistics_user_status_filter(),
         )
         .group_by(extract('hour', moscow_time))
     )
@@ -3218,7 +3233,7 @@ async def get_login_activity_stats(db: AsyncSession, start_date: Optional[date] 
         .filter(
             models.User.last_login_date.isnot(None),  # Исключаем пользователей без логина
             models.User.last_login_date.between(start_date, end_date_inclusive),
-            models.User.status != 'deleted'
+            _statistics_user_status_filter(),
         )
         .group_by(extract('hour', moscow_time))
     )
@@ -3239,7 +3254,7 @@ async def get_user_engagement_stats(db: AsyncSession, start_date: Optional[date]
         .join(models.Transaction, models.User.id == models.Transaction.sender_id)
         .filter(
             models.Transaction.timestamp.between(start_date, end_date_inclusive),
-            models.User.status != 'deleted'
+            _statistics_user_status_filter(),
         )
         .group_by(models.User.id)
         .order_by(func.count(models.Transaction.id).desc()).limit(limit)
@@ -3251,7 +3266,7 @@ async def get_user_engagement_stats(db: AsyncSession, start_date: Optional[date]
         .join(models.Transaction, models.User.id == models.Transaction.receiver_id)
         .filter(
             models.Transaction.timestamp.between(start_date, end_date_inclusive),
-            models.User.status != 'deleted'
+            _statistics_user_status_filter(),
         )
         .group_by(models.User.id)
         .order_by(func.count(models.Transaction.id).desc()).limit(limit)
@@ -3302,28 +3317,24 @@ async def get_inactive_users(
         .join(models.User, models.User.id == models.Transaction.sender_id)
         .filter(
             models.Transaction.timestamp.between(start_date, end_date_inclusive),
-            models.User.status != 'deleted',
+            _statistics_user_status_filter(),
         )
         .distinct()
     )
     active_senders = (await db.execute(active_senders_q)).scalars().all()
     active_user_ids = set(active_senders)
-    
-    # Исправлено: обрабатываем случай пустого списка активных пользователей
+
+    inactive_filter = select(models.User).filter(_statistics_user_status_filter())
     if not active_user_ids:
-        # Если нет активных пользователей, возвращаем всех неактивных
-        return (await db.execute(select(models.User).filter(
-            models.User.status != 'deleted'
-        ))).scalars().all()
-    
-    return (await db.execute(select(models.User).filter(
-        models.User.id.notin_(active_user_ids),
-        models.User.status != 'deleted'
-    ))).scalars().all()
+        return (await db.execute(inactive_filter)).scalars().all()
+
+    return (await db.execute(
+        inactive_filter.filter(models.User.id.notin_(active_user_ids))
+    )).scalars().all()
     
 async def get_total_balance(db: AsyncSession):
     total = (await db.execute(
-        select(func.sum(models.User.balance)).where(models.User.status != 'deleted')
+        select(func.sum(models.User.balance)).where(_statistics_user_status_filter())
     )).scalar_one_or_none()
     return total or 0
 
@@ -3333,7 +3344,7 @@ async def get_active_user_ratio(db: AsyncSession, period_days: int = 30):
     since = datetime.utcnow() - timedelta(days=period_days)
 
     total_users = (await db.execute(
-        select(func.count(models.User.id)).where(models.User.status != 'deleted')
+        select(func.count(models.User.id)).where(_statistics_user_status_filter())
     )).scalar_one()
 
     active_senders_q = (
@@ -3341,7 +3352,7 @@ async def get_active_user_ratio(db: AsyncSession, period_days: int = 30):
         .join(models.User, models.User.id == models.Transaction.sender_id)
         .where(
             models.Transaction.timestamp >= since,
-            models.User.status != 'deleted',
+            _statistics_user_status_filter(),
         )
         .distinct()
     )
@@ -3365,7 +3376,7 @@ async def get_average_session_duration(db: AsyncSession, start_date: Optional[da
         .join(models.User, models.User.id == models.UserSession.user_id)
         .filter(
             models.UserSession.session_start.between(start_date, end_date_inclusive),
-            models.User.status != 'deleted'
+            _statistics_user_status_filter(),
         )
     )
     
@@ -3437,7 +3448,7 @@ async def start_user_session(
 
 async def get_client_statistics(db: AsyncSession) -> dict:
     """Статистика платформ и установок по снимку users."""
-    base_filter = models.User.status != 'deleted'
+    base_filter = _statistics_user_status_filter()
 
     total_users = (await db.execute(
         select(func.count(models.User.id)).where(base_filter)
@@ -3522,7 +3533,7 @@ async def get_active_senders_stats(db: AsyncSession, period_days: int = 30) -> d
         .join(models.Transaction, models.User.id == models.Transaction.sender_id)
         .where(
             models.Transaction.timestamp >= since,
-            models.User.status != 'deleted',
+            _statistics_user_status_filter(),
         )
         .group_by(models.User.id)
         .order_by(func.count(models.Transaction.id).desc(), models.User.last_name, models.User.first_name)

@@ -12,6 +12,8 @@ import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 
 const ROULETTE_PAGE_SIZE = 20;
+/** В ленте победителей показываем только выигрыши строго больше этого значения. */
+const ROULETTE_FEED_MIN_AMOUNT = 5;
 
 const generatePrizeReel = (finalPrize) => {
     const reelLength = 50;
@@ -113,8 +115,9 @@ function RoulettePage({ user, onUpdateUser }) {
     }, [prizeReel]);
 
     const groupedHistory = useMemo(() => {
-        if (!history || history.length === 0) return {};
-        return history.reduce((acc, item) => {
+        const visibleHistory = history.filter((item) => item.amount > ROULETTE_FEED_MIN_AMOUNT);
+        if (visibleHistory.length === 0) return {};
+        return visibleHistory.reduce((acc, item) => {
             const dateKey = formatToMsk(item.timestamp, { year: undefined, month: undefined, day: undefined, hour: undefined, minute: undefined });
             if (!acc[dateKey]) {
                 acc[dateKey] = [];

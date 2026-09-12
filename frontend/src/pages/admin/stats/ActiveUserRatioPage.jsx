@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { getActiveUserRatio } from '../../../api';
+import { FaFileExcel } from 'react-icons/fa';
+import { exportInactiveUsers, getActiveUserRatio } from '../../../api';
 import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import dashboardStyles from '../StatisticsDashboard.module.css';
@@ -12,11 +13,22 @@ const PERIOD_OPTIONS = [
   { days: 90, label: '3 месяца' },
 ];
 
+function downloadBlob(response, filename) {
+  const url = window.URL.createObjectURL(new Blob([response.data]));
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  link.parentNode.removeChild(link);
+}
+
 function ActiveUserRatioPage() {
   const [periodDays, setPeriodDays] = useState(30);
   const [chartData, setChartData] = useState(null);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchData = useCallback(async () => {
@@ -47,6 +59,19 @@ function ActiveUserRatioPage() {
     void fetchData();
   }, [fetchData]);
 
+  const handleExportInactive = async () => {
+    setExporting(true);
+    try {
+      const response = await exportInactiveUsers(periodDays);
+      downloadBlob(response, `inactive_senders_${periodDays}d.xlsx`);
+    } catch (err) {
+      console.error(err);
+      alert('Не удалось выгрузить Excel.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const options = {
     responsive: true,
     maintainAspectRatio: false,
@@ -68,10 +93,11 @@ function ActiveUserRatioPage() {
     <div>
       <h2>Соотношение активных и неактивных</h2>
       <p style={{ color: '#6E7A85', marginTop: '-10px' }}>
+        Учитываются только одобренные пользователи (как вкладка «Активные» в управлении).
         Активный = отправил хотя бы одно «спасибо» за выбранный период.
       </p>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', alignItems: 'center' }}>
         {PERIOD_OPTIONS.map((option) => (
           <button
             key={option.days}
@@ -82,6 +108,16 @@ function ActiveUserRatioPage() {
             {option.label}
           </button>
         ))}
+        <button
+          type="button"
+          className={dashboardStyles.consolidatedExportButton}
+          onClick={handleExportInactive}
+          disabled={exporting || loading}
+          style={{ marginLeft: 'auto' }}
+        >
+          <FaFileExcel />
+          {exporting ? 'Выгрузка…' : 'Excel неактивных'}
+        </button>
       </div>
 
       {summary && (
