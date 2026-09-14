@@ -3,6 +3,10 @@
  */
 
 import { getSpasiboAndroidVersionCode, isSpasiboAndroidApp } from './androidNativePush.js';
+import {
+  isAppInstallPromoSnoozed,
+  snoozeAppInstallPromo,
+} from './appInstallPromo.js';
 import { isAndroidMobileBrowser } from './mobileWelcomeGuide.js';
 
 export const ANDROID_INSTALL_DISMISS_KEY = 'spasibo_android_install_dismissed_code';
@@ -39,8 +43,17 @@ export function isAndroidInstallPromptPlatform() {
   return getAndroidInstallPromptMode() !== null;
 }
 
-/** Пользователь уже скрыл промпт для этой или более новой версии. */
+/**
+ * Пользователь скрыл промпт: установка — snooze 3 дня; обновление — до новой version_code.
+ *
+ * @param {object | null | undefined} release
+ */
 export function isAndroidInstallPromptDismissed(release) {
+  const mode = getAndroidInstallPromptMode();
+  if (mode === 'install') {
+    return isAppInstallPromoSnoozed();
+  }
+
   const normalized = normalizeAndroidRelease(release);
   if (normalized.version_code <= 0) {
     return false;
@@ -138,8 +151,18 @@ export function getAndroidInstallPromptCopy(release, mode) {
   };
 }
 
-/** Запоминает, что пользователь скрыл промпт для этой версии. */
+/**
+ * Скрывает промпт: установка — на 3 дня; обновление — до следующего version_code.
+ *
+ * @param {object | null | undefined} release
+ */
 export function dismissAndroidInstallPrompt(release) {
+  const mode = getAndroidInstallPromptMode();
+  if (mode === 'install') {
+    snoozeAppInstallPromo();
+    return;
+  }
+
   const normalized = normalizeAndroidRelease(release);
   try {
     localStorage.setItem(ANDROID_INSTALL_DISMISS_KEY, String(Math.max(normalized.version_code, 1)));

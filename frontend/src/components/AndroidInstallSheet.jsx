@@ -114,6 +114,10 @@ export function AndroidInstallSheet({
 
   const handleDownload = () => {
     openExternalLink(release.apk_url);
+    // После скачивания APK не долбим снова ближайшие 3 дня.
+    dismissAndroidInstallPrompt(release);
+    setSheetState('hidden');
+    setEligible(false);
   };
 
   const handleDismiss = () => {

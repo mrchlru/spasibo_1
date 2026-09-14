@@ -1,0 +1,255 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1210;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
+@media (min-width: 768px) {
+  .overlay {
+    align-items: center;
+    padding: 24px;
+  }
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: rgba(18, 32, 18, 0.28);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.sheet {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 440px;
+  max-height: min(92vh, 720px);
+  overflow: auto;
+  margin: 0;
+  padding: 0.4rem 1.15rem calc(1.1rem + env(safe-area-inset-bottom, 0px));
+  border-radius: 22px 22px 0 0;
+  background: linear-gradient(180deg, #f8fcf7 0%, #eef6ec 100%);
+  box-shadow: 0 -12px 36px rgba(47, 106, 44, 0.18);
+  pointer-events: auto;
+  animation: sheetIn 0.32s ease;
+}
+
+.sheetDesktop {
+  border-radius: 22px;
+  padding-bottom: 1.2rem;
+}
+
+.sheetAboveNav {
+  margin-bottom: calc(4.35rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 768px) {
+  .sheetAboveNav {
+    margin-bottom: 0;
+  }
+}
+
+@keyframes sheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.handle {
+  width: 42px;
+  height: 5px;
+  margin: 0.35rem auto 0.75rem;
+  border-radius: 999px;
+  background: rgba(47, 106, 44, 0.28);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.badgeRow {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.55rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #2f6a2c;
+  background: rgba(92, 161, 74, 0.16);
+}
+
+.iconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 0.75rem;
+  border-radius: 18px;
+  color: #2f6a2c;
+  background: rgba(92, 161, 74, 0.14);
+}
+
+.visualWrap {
+  width: 100%;
+  max-width: 280px;
+  margin-bottom: 0.35rem;
+  transform: scale(0.92);
+  transform-origin: center top;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.2rem;
+  line-height: 1.3;
+  color: #234a20;
+}
+
+.text {
+  margin: 0.55rem 0 0;
+  font-size: 0.94rem;
+  line-height: 1.45;
+  color: #456843;
+}
+
+.steps {
+  width: 100%;
+  margin: 0.85rem 0 0;
+  padding: 0.7rem 0.9rem 0.7rem 1.5rem;
+  border-radius: 14px;
+  text-align: left;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: #456843;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.steps li + li {
+  margin-top: 0.35rem;
+}
+
+.qrWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.95rem;
+  padding: 0.75rem;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(47, 106, 44, 0.08);
+}
+
+.qrImage {
+  display: block;
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+}
+
+.linkBtn {
+  margin-top: 0.7rem;
+  border: none;
+  background: transparent;
+  color: #2f6a2c;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.urlHint {
+  margin: 0.35rem 0 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: #6a8567;
+}
+
+.status {
+  margin: 0.7rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: #2f6a2c;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.primaryBtn,
+.secondaryBtn,
+.ghostBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 46px;
+  border-radius: 14px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryBtn {
+  border: none;
+  color: #fff;
+  background: linear-gradient(135deg, #6fbf4a 0%, #2f6a2c 100%);
+  box-shadow: 0 8px 18px rgba(47, 106, 44, 0.2);
+}
+
+.secondaryBtn {
+  border: none;
+  color: #234a20;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.ghostBtn {
+  border: none;
+  color: #6a8567;
+  background: transparent;
+  font-weight: 500;
+}
+
+.primaryBtn:disabled,
+.secondaryBtn:disabled,
+.ghostBtn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.primaryBtn:active,
+.secondaryBtn:active,
+.ghostBtn:active {
+  transform: scale(0.98);
+}

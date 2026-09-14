@@ -10,6 +10,7 @@ import {
   isMobileWelcomeSeen,
   markMobileWelcomeSeen,
 } from '../pwa/mobileWelcomeGuide.js';
+import { snoozeAppInstallPromo } from '../pwa/appInstallPromo.js';
 import {
   enablePushWithTestPush,
   formatPushEnableError,
@@ -83,6 +84,8 @@ function MobileWelcomeGuide({
 
   const closeGuide = useCallback(() => {
     markMobileWelcomeSeen();
+    // Welcome уже показал установку/push — не дублируем soft-promo в эту же сессию.
+    snoozeAppInstallPromo();
     setVisible(false);
   }, []);
 

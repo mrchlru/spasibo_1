@@ -65,6 +65,7 @@ import AndroidNativeSessionBridge from './pwa/AndroidNativeSessionBridge.jsx';
 import MobileWelcomeGuide from './components/MobileWelcomeGuide.jsx';
 import PushEnablePrompt from './components/PushEnablePrompt.jsx';
 import AndroidInstallSheet from './components/AndroidInstallSheet.jsx';
+import AppInstallPromo from './components/AppInstallPromo.jsx';
 import { DEFAULT_ANDROID_RELEASE, normalizeAndroidRelease } from './pwa/androidInstallPrompt.js';
 
 import { useSessionTracking } from './hooks/useSessionTracking';
@@ -899,6 +900,13 @@ function App() {
         loading={loading}
         isOnboardingVisible={isOnboardingVisible}
         androidRelease={androidRelease}
+        hasBottomNav={Boolean(shouldShowBottomNav)}
+      />
+      <AppInstallPromo
+        user={user}
+        bootReady={bootReady}
+        loading={loading}
+        isOnboardingVisible={isOnboardingVisible}
         hasBottomNav={Boolean(shouldShowBottomNav)}
       />
       {/* Теперь меню показываются на основе новых, правильных переменных */}
