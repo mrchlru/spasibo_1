@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal, Optional
 
 from sqlalchemy import and_, func, or_, select
@@ -19,6 +19,8 @@ _MSK = ZoneInfo("Europe/Moscow")
 _STRIKE_RESET_DAYS = 90
 _CONFIRMED_SENDERS = 3
 _SUSPICIOUS_SENDERS = 2
+# Каждый из N отправителей должен передать получателю не меньше стольких спасибок за день.
+_MIN_SPASIBKI_PER_SENDER = 3
 _BAN_DAYS_STRIKE1 = 3
 _BAN_DAYS_STRIKE2 = 7
 _LIMIT_DAYS = 7
@@ -31,7 +33,7 @@ _SENDER_PATTERN_DAILY_MAX = 3
 _SUSPICIOUS_TTL_DAYS = 14
 
 BAN_REASON = (
-    "получение большого числа благодарностей от разных коллег за один день "
+    "получение по 3 и более спасибок от трёх разных коллег за один день "
     "(подозрение на искусственную «карусель»)"
 )
 LIMIT_REASON = (
@@ -48,7 +50,17 @@ class FairPlayClearedFlags:
 
 
 def _now_utc() -> datetime:
+    """Naive UTC — единый формат для сравнений в памяти."""
     return datetime.utcnow()
+
+
+def _as_utc_naive(value: Optional[datetime]) -> Optional[datetime]:
+    """Приводит TIMESTAMPTZ / aware datetime к naive UTC для безопасных сравнений."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def msk_calendar_date(when: Optional[datetime] = None) -> date:
@@ -75,10 +87,11 @@ def is_birthday_today(user: models.User, today: Optional[date] = None) -> bool:
 
 def _maybe_reset_strikes(user: models.User, now: Optional[datetime] = None) -> None:
     """Сбрасывает strike_count после 90 дней без нарушений."""
-    now = now or _now_utc()
-    if user.fair_play_last_violation_at is None:
+    now = _as_utc_naive(now) or _now_utc()
+    last_violation = _as_utc_naive(user.fair_play_last_violation_at)
+    if last_violation is None:
         return
-    if user.fair_play_last_violation_at + timedelta(days=_STRIKE_RESET_DAYS) <= now:
+    if last_violation + timedelta(days=_STRIKE_RESET_DAYS) <= now:
         user.fair_play_strike_count = 0
         user.fair_play_last_violation_at = None
 
@@ -88,22 +101,24 @@ def refresh_expired_sanctions(
     now: Optional[datetime] = None,
 ) -> FairPlayClearedFlags:
     """Снимает истёкшие бан/лимит и устаревшую «подозрительность»."""
-    now = now or _now_utc()
+    now = _as_utc_naive(now) or _now_utc()
     cleared = FairPlayClearedFlags()
     _maybe_reset_strikes(user, now)
-    if user.fair_play_ban_until and user.fair_play_ban_until <= now:
+    ban_until = _as_utc_naive(user.fair_play_ban_until)
+    if ban_until and ban_until <= now:
         user.fair_play_ban_until = None
         cleared.ban = True
-    if user.fair_play_limit_until and user.fair_play_limit_until <= now:
+    limit_until = _as_utc_naive(user.fair_play_limit_until)
+    if limit_until and limit_until <= now:
         user.fair_play_limit_mode = None
         user.fair_play_limit_cap = None
         user.fair_play_limit_until = None
         user.fair_play_weekly_sent_count = 0
         user.fair_play_weekly_sent_for_date = None
         cleared.limit = True
-    if user.fair_play_suspicious_at:
-        if user.fair_play_suspicious_at + timedelta(days=_SUSPICIOUS_TTL_DAYS) <= now:
-            user.fair_play_suspicious_at = None
+    suspicious_at = _as_utc_naive(user.fair_play_suspicious_at)
+    if suspicious_at and suspicious_at + timedelta(days=_SUSPICIOUS_TTL_DAYS) <= now:
+        user.fair_play_suspicious_at = None
     return cleared
 
 
@@ -121,36 +136,40 @@ def _user_notify_snapshot(user: models.User, *, role: str | None = None) -> dict
 
 def is_fair_play_banned(user: models.User, now: Optional[datetime] = None) -> bool:
     """Пользователь под fair-play баном (не может отправлять и получать)."""
-    now = now or _now_utc()
-    return bool(user.fair_play_ban_until and user.fair_play_ban_until > now)
+    now = _as_utc_naive(now) or _now_utc()
+    ban_until = _as_utc_naive(user.fair_play_ban_until)
+    return bool(ban_until and ban_until > now)
 
 
 def is_suspicious_active(user: models.User, now: Optional[datetime] = None) -> bool:
     """«Замечена подозрительная активность» — пограничный случай."""
-    now = now or _now_utc()
-    if not user.fair_play_suspicious_at:
+    now = _as_utc_naive(now) or _now_utc()
+    suspicious_at = _as_utc_naive(user.fair_play_suspicious_at)
+    if not suspicious_at:
         return False
-    return user.fair_play_suspicious_at + timedelta(days=_SUSPICIOUS_TTL_DAYS) > now
+    return suspicious_at + timedelta(days=_SUSPICIOUS_TTL_DAYS) > now
 
 
 def strike_reset_at(user: models.User) -> Optional[datetime]:
     """Дата автосброса strikes (last_violation + 90 дней)."""
-    if user.fair_play_last_violation_at is None:
+    last_violation = _as_utc_naive(user.fair_play_last_violation_at)
+    if last_violation is None:
         return None
-    return user.fair_play_last_violation_at + timedelta(days=_STRIKE_RESET_DAYS)
+    return last_violation + timedelta(days=_STRIKE_RESET_DAYS)
 
 
 def get_effective_daily_limit(user: models.User, now: Optional[datetime] = None) -> int:
     """Дневной лимит отправок с учётом fair-play ограничений."""
-    now = now or _now_utc()
+    now = _as_utc_naive(now) or _now_utc()
     refresh_expired_sanctions(user, now)
     if is_fair_play_banned(user, now):
         return 0
+    limit_until = _as_utc_naive(user.fair_play_limit_until)
     if (
         user.fair_play_limit_mode == "daily"
         and user.fair_play_limit_cap
-        and user.fair_play_limit_until
-        and user.fair_play_limit_until > now
+        and limit_until
+        and limit_until > now
     ):
         return user.fair_play_limit_cap
     return _DEFAULT_DAILY_LIMIT
@@ -160,7 +179,7 @@ def _assert_not_fair_play_banned(user: models.User, role: Literal["sender", "rec
     refresh_expired_sanctions(user)
     if not is_fair_play_banned(user):
         return
-    until = user.fair_play_ban_until
+    until = _as_utc_naive(user.fair_play_ban_until)
     until_str = until.strftime("%d.%m.%Y %H:%M") if until else "—"
     if role == "sender":
         raise ValueError(
@@ -178,18 +197,19 @@ def assert_sender_may_send(db: AsyncSession, sender: models.User) -> None:
     _assert_not_fair_play_banned(sender, "sender")
 
     now = _now_utc()
+    limit_until = _as_utc_naive(sender.fair_play_limit_until)
     if (
         sender.fair_play_limit_mode == "weekly"
         and sender.fair_play_limit_cap == _WEEKLY_CAP_STRIKE2
-        and sender.fair_play_limit_until
-        and sender.fair_play_limit_until > now
+        and limit_until
+        and limit_until > now
     ):
         week_start = _msk_week_start(msk_calendar_date())
         if sender.fair_play_weekly_sent_for_date != week_start:
             sender.fair_play_weekly_sent_count = 0
             sender.fair_play_weekly_sent_for_date = week_start
         if sender.fair_play_weekly_sent_count >= _WEEKLY_CAP_STRIKE2:
-            until_str = sender.fair_play_limit_until.strftime("%d.%m.%Y %H:%M")
+            until_str = limit_until.strftime("%d.%m.%Y %H:%M")
             raise ValueError(
                 f"Действует ограничение: 1 спасибо в неделю до {until_str} (МСК). "
                 f"Причина: {LIMIT_REASON}."
@@ -205,11 +225,12 @@ def assert_receiver_may_receive(receiver: models.User) -> None:
 def record_sender_weekly_usage(sender: models.User) -> None:
     """Учитывает отправку при недельном лимите."""
     now = _now_utc()
+    limit_until = _as_utc_naive(sender.fair_play_limit_until)
     if not (
         sender.fair_play_limit_mode == "weekly"
         and sender.fair_play_limit_cap == _WEEKLY_CAP_STRIKE2
-        and sender.fair_play_limit_until
-        and sender.fair_play_limit_until > now
+        and limit_until
+        and limit_until > now
     ):
         return
     week_start = _msk_week_start(msk_calendar_date())
@@ -219,40 +240,49 @@ def record_sender_weekly_usage(sender: models.User) -> None:
     sender.fair_play_weekly_sent_count += 1
 
 
-async def _count_distinct_senders_today(
+def _moscow_day_expr():
+    """Календарный день МСК для timestamp транзакции."""
+    return func.date(
+        models.Transaction.timestamp.op("AT TIME ZONE")("UTC").op("AT TIME ZONE")("Europe/Moscow")
+    )
+
+
+async def _count_qualifying_senders_today(
     db: AsyncSession,
     receiver_id: int,
     day: date,
 ) -> int:
-    """Число разных отправителей, переводивших получателю за календарный день МСК."""
-    moscow_day = func.date(
-        models.Transaction.timestamp.op("AT TIME ZONE")("UTC").op("AT TIME ZONE")("Europe/Moscow")
-    )
-    q = (
-        select(func.count(func.distinct(models.Transaction.sender_id)))
+    """Число отправителей, передавших получателю >= 3 спасибки за календарный день МСК."""
+    moscow_day = _moscow_day_expr()
+    per_sender = (
+        select(models.Transaction.sender_id)
         .where(
             models.Transaction.receiver_id == receiver_id,
             moscow_day == day,
         )
+        .group_by(models.Transaction.sender_id)
+        .having(func.coalesce(func.sum(models.Transaction.amount), 0) >= _MIN_SPASIBKI_PER_SENDER)
+        .subquery()
     )
+    q = select(func.count()).select_from(per_sender)
     return (await db.execute(q)).scalar_one()
 
 
-async def _sender_ids_today(
+async def _qualifying_sender_ids_today(
     db: AsyncSession,
     receiver_id: int,
     day: date,
 ) -> list[int]:
-    moscow_day = func.date(
-        models.Transaction.timestamp.op("AT TIME ZONE")("UTC").op("AT TIME ZONE")("Europe/Moscow")
-    )
+    """ID отправителей с >= 3 спасибками получателю за день МСК."""
+    moscow_day = _moscow_day_expr()
     q = (
         select(models.Transaction.sender_id)
         .where(
             models.Transaction.receiver_id == receiver_id,
             moscow_day == day,
         )
-        .distinct()
+        .group_by(models.Transaction.sender_id)
+        .having(func.coalesce(func.sum(models.Transaction.amount), 0) >= _MIN_SPASIBKI_PER_SENDER)
     )
     return list((await db.execute(q)).scalars().all())
 
@@ -266,9 +296,7 @@ async def _count_days_with_max_sends_to_receiver(
     """Сколько дней за окно отправитель исчерпал дневной лимит (3) в пользу одного получателя."""
     today = msk_calendar_date()
     since = today - timedelta(days=window_days - 1)
-    moscow_day = func.date(
-        models.Transaction.timestamp.op("AT TIME ZONE")("UTC").op("AT TIME ZONE")("Europe/Moscow")
-    )
+    moscow_day = _moscow_day_expr()
     daily_counts = (
         select(
             moscow_day.label("day"),
@@ -368,10 +396,10 @@ async def analyze_transfer(
     if is_birthday_today(receiver, today):
         return None
 
-    distinct_count = await _count_distinct_senders_today(db, receiver.id, today)
+    distinct_count = await _count_qualifying_senders_today(db, receiver.id, today)
 
     if distinct_count == _SUSPICIOUS_SENDERS:
-        sender_ids = await _sender_ids_today(db, receiver.id, today)
+        sender_ids = await _qualifying_sender_ids_today(db, receiver.id, today)
         _mark_suspicious(receiver, now)
         participants = [_user_notify_snapshot(receiver, role="receiver")]
         for sid in sender_ids:
@@ -384,12 +412,17 @@ async def analyze_transfer(
             receiver.id,
             "suspicious",
             related_user_id=sender.id,
-            details={"distinct_senders": distinct_count, "trigger_date": today.isoformat()},
+            details={
+                "distinct_senders": distinct_count,
+                "min_spasibki_per_sender": _MIN_SPASIBKI_PER_SENDER,
+                "trigger_date": today.isoformat(),
+            },
         )
         return {
             "type": "suspicious",
             "trigger_date": today.isoformat(),
             "distinct_senders": distinct_count,
+            "min_spasibki_per_sender": _MIN_SPASIBKI_PER_SENDER,
             "receiver": _user_notify_snapshot(receiver),
             "participants": participants,
         }
@@ -415,6 +448,7 @@ async def analyze_transfer(
         "ban",
         details={
             "distinct_senders": distinct_count,
+            "min_spasibki_per_sender": _MIN_SPASIBKI_PER_SENDER,
             "ban_until": receiver.fair_play_ban_until.isoformat() if receiver.fair_play_ban_until else None,
             "strike": receiver.fair_play_strike_count,
         },
@@ -429,7 +463,7 @@ async def analyze_transfer(
     ]
     limited_payload: list[dict[str, Any]] = []
 
-    sender_ids = await _sender_ids_today(db, receiver.id, today)
+    sender_ids = await _qualifying_sender_ids_today(db, receiver.id, today)
     for sid in sender_ids:
         sender_user = await db.get(models.User, sid)
         if not sender_user:
@@ -467,6 +501,7 @@ async def analyze_transfer(
         "type": "sanctions",
         "trigger_date": today.isoformat(),
         "distinct_senders": distinct_count,
+        "min_spasibki_per_sender": _MIN_SPASIBKI_PER_SENDER,
         "banned": banned_payload,
         "limited": limited_payload,
     }
@@ -476,9 +511,10 @@ def build_fair_play_status(user: models.User) -> dict:
     """Сериализуемый статус fair play для API."""
     now = _now_utc()
     refresh_expired_sanctions(user, now)
+    limit_until = _as_utc_naive(user.fair_play_limit_until)
     limited = bool(
-        user.fair_play_limit_until
-        and user.fair_play_limit_until > now
+        limit_until
+        and limit_until > now
         and user.fair_play_limit_mode
         and user.fair_play_limit_cap
     )
@@ -539,9 +575,10 @@ async def sync_user_sanctions(db: AsyncSession, user: models.User) -> None:
     """Снимает истёкшие санкции, сохраняет и уведомляет пользователя push-ом."""
     now = _now_utc()
     had_ban = is_fair_play_banned(user, now)
+    limit_until = _as_utc_naive(user.fair_play_limit_until)
     had_limit = bool(
-        user.fair_play_limit_until
-        and user.fair_play_limit_until > now
+        limit_until
+        and limit_until > now
         and user.fair_play_limit_mode
     )
     cleared = refresh_expired_sanctions(user, now)

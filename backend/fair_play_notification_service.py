@@ -76,7 +76,8 @@ def _build_suspicious_email(payload: dict[str, Any]) -> tuple[str, str, str]:
         <div style="max-width: 640px; margin: 0 auto; padding: 20px;">
             <h2 style="color: #856404;">Замечена подозрительная активность</h2>
             <p>За {html.escape(str(trigger_date))} (МСК) у получателя <strong>{receiver_name}</strong>
-            ({receiver_pos}) зафиксировано <strong>{distinct}</strong> разных отправителя спасибок.</p>
+            ({receiver_pos}) зафиксировано <strong>{distinct}</strong> разных отправителя,
+            каждый из которых передал по 3 и более спасибки.</p>
             <p>Санкции не применены — это пограничный случай. Пользователям проставлена метка
             «подозрительная активность» в приложении.</p>
             <ul>{rows}</ul>
@@ -141,7 +142,7 @@ def _build_sanctions_email(payload: dict[str, Any]) -> tuple[str, str, str]:
         <div style="max-width: 640px; margin: 0 auto; padding: 20px;">
             <h2 style="color: #c0392b;">Fair Play: применены санкции</h2>
             <p>Дата (МСК): <strong>{html.escape(str(trigger_date))}</strong>.
-            Разных отправителей одному получателю: <strong>{distinct}</strong>.</p>
+            Получателю передали по 3+ спасибки <strong>{distinct}</strong> разных отправителя.</p>
             {"<h3>Заблокированные</h3><ul>" + banned_html + "</ul>" if banned_html else ""}
             {"<h3>Сниженный лимит</h3><ul>" + limited_html + "</ul>" if limited_html else ""}
             {"<p>Отправители без паттерна злоупотребления не ограничены.</p>" if banned and not limited else ""}
