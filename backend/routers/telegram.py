@@ -24,6 +24,24 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Заглушка аватара, если Telegram/relay недоступны и локального файла нет.
+_PLACEHOLDER_AVATAR_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">'
+    b'<rect width="128" height="128" fill="#e8f0e6"/>'
+    b'<circle cx="64" cy="48" r="24" fill="#9bb896"/>'
+    b'<ellipse cx="64" cy="104" rx="40" ry="28" fill="#9bb896"/>'
+    b"</svg>"
+)
+
+
+def _placeholder_avatar_response() -> Response:
+    """Отдаёт нейтральный SVG-аватар вместо 502 при таймауте Telegram."""
+    return Response(
+        content=_PLACEHOLDER_AVATAR_SVG,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
 
 async def safe_send_message(
     chat_id: int,
@@ -49,6 +67,17 @@ async def safe_send_message(
     try:
         await send_telegram_message(chat_id, text, reply_markup, message_thread_id)
     except Exception as e:
+        if isinstance(
+            e,
+            (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError),
+        ) or "ConnectTimeout" in type(e).__name__ or "timeout" in str(e).lower():
+            logger.warning(
+                "safe_send_message transport issue: chat_id=%s thread=%s err=%s",
+                chat_id,
+                message_thread_id,
+                e,
+            )
+            return
         logger.error(
             "safe_send_message: chat_id=%s thread=%s err=%s",
             chat_id,
@@ -120,20 +149,31 @@ async def telegram_photo_proxy(
     try:
         content, content_type = await fetch_telegram_photo_url(url)
     except Exception as exc:
-        logger.warning("telegram photo proxy failed url=%s user_id=%s: %s", url, user_id, exc)
+        is_timeout = isinstance(
+            exc,
+            (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError),
+        )
+        log_fn = logger.warning if is_timeout else logger.error
+        log_fn(
+            "telegram photo proxy failed url=%s user_id=%s: %s",
+            url,
+            user_id,
+            exc,
+        )
         if user_id is not None:
             fallback = await _local_avatar_response(user_id, db)
             if fallback is not None:
                 logger.info("telegram photo proxy fallback to local avatar user_id=%s", user_id)
                 return fallback
-        raise HTTPException(status_code=502, detail="Telegram photo proxy failed") from exc
+        # Не роняем ленту/лидерборд 502 — UI получит заглушку.
+        return _placeholder_avatar_response()
 
     if not content:
         if user_id is not None:
             fallback = await _local_avatar_response(user_id, db)
             if fallback is not None:
                 return fallback
-        raise HTTPException(status_code=502, detail="Telegram photo is empty")
+        return _placeholder_avatar_response()
 
     return Response(
         content=content,

@@ -145,6 +145,7 @@ async def _fetch_telegram_binary(
     relay_payload: dict,
     direct_url: str,
     timeout: httpx.Timeout,
+    attempts: int | None = None,
 ) -> tuple[bytes, str]:
     relay_url = _telegram_relay_url()
 
@@ -164,7 +165,7 @@ async def _fetch_telegram_binary(
         content_type = response.headers.get("content-type") or "application/octet-stream"
         return response.content, content_type
 
-    return await _retry_telegram_transport(_call)
+    return await _retry_telegram_transport(_call, attempts=attempts)
 
 
 def escape_markdown(text) -> str:
@@ -361,11 +362,22 @@ async def send_telegram_message(chat_id: int, text: str, reply_markup: dict = No
         raise Exception(f"HTTP error: {error_msg}")
     except Exception as e:
         error_text = _format_exception_for_log(e)
-        logger.error(
-            "Unexpected error sending to %s (thread=%s): %s",
-            chat_id, message_thread_id, error_text,
-            exc_info=True,
-        )
+        if _is_retryable_telegram_transport_error(e):
+            # Timeweb часто не достучится до api.telegram.org без relay — это ожидаемо.
+            logger.warning(
+                "Telegram transport timeout sending to %s (thread=%s): %s",
+                chat_id,
+                message_thread_id,
+                error_text,
+            )
+        else:
+            logger.error(
+                "Unexpected error sending to %s (thread=%s): %s",
+                chat_id,
+                message_thread_id,
+                error_text,
+                exc_info=True,
+            )
         raise
 
 
@@ -554,13 +566,18 @@ async def download_telegram_file(file_path: str) -> bytes:
 
 
 async def fetch_telegram_photo_url(photo_url: str) -> tuple[bytes, str]:
-    """Скачивает Telegram WebApp photo_url через relay, если он настроен."""
-    timeout = httpx.Timeout(30.0, connect=10.0, read=30.0)
+    """Скачивает Telegram WebApp photo_url через relay, если он настроен.
+
+    Для аватаров один attempt: при недоступности Telegram/relay лучше быстро
+    отдать fallback, чем ждать тройной ConnectTimeout.
+    """
+    timeout = httpx.Timeout(12.0, connect=5.0, read=10.0)
     return await _fetch_telegram_binary(
         relay_path="fetch-url",
         relay_payload={"url": photo_url},
         direct_url=photo_url,
         timeout=timeout,
+        attempts=1,
     )
 
 async def send_shared_gift_invitation(invited_user_telegram_id: int, buyer_name: str, item_name: str, invitation_id: int):
