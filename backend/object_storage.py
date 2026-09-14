@@ -112,7 +112,11 @@ def public_url_to_object_key(url: str) -> str | None:
     path = path.lstrip("/")
     if bucket and path.startswith(f"{bucket}/"):
         return path[len(bucket) + 1 :]
-    return path or None
+    # Локальная статика сборки (/assets/…) и прочие URL не считаем ключами S3.
+    known_prefixes = ("media/", "feed-posts/", "market-prizes/")
+    if any(path.startswith(prefix) for prefix in known_prefixes):
+        return path
+    return None
 
 
 def _s3_client() -> Any:
