@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +37,14 @@ BAN_REASON = (
 LIMIT_REASON = (
     "регулярная отправка максимального числа спасибок одному и тому же коллеге"
 )
+
+
+@dataclass
+class FairPlayClearedFlags:
+    """Какие санкции сняты при refresh_expired_sanctions."""
+
+    ban: bool = False
+    limit: bool = False
 
 
 def _now_utc() -> datetime:
@@ -74,21 +83,40 @@ def _maybe_reset_strikes(user: models.User, now: Optional[datetime] = None) -> N
         user.fair_play_last_violation_at = None
 
 
-def refresh_expired_sanctions(user: models.User, now: Optional[datetime] = None) -> None:
+def refresh_expired_sanctions(
+    user: models.User,
+    now: Optional[datetime] = None,
+) -> FairPlayClearedFlags:
     """Снимает истёкшие бан/лимит и устаревшую «подозрительность»."""
     now = now or _now_utc()
+    cleared = FairPlayClearedFlags()
     _maybe_reset_strikes(user, now)
     if user.fair_play_ban_until and user.fair_play_ban_until <= now:
         user.fair_play_ban_until = None
+        cleared.ban = True
     if user.fair_play_limit_until and user.fair_play_limit_until <= now:
         user.fair_play_limit_mode = None
         user.fair_play_limit_cap = None
         user.fair_play_limit_until = None
         user.fair_play_weekly_sent_count = 0
         user.fair_play_weekly_sent_for_date = None
+        cleared.limit = True
     if user.fair_play_suspicious_at:
         if user.fair_play_suspicious_at + timedelta(days=_SUSPICIOUS_TTL_DAYS) <= now:
             user.fair_play_suspicious_at = None
+    return cleared
+
+
+def _user_notify_snapshot(user: models.User, *, role: str | None = None) -> dict[str, Any]:
+    """Краткие данные пользователя для email/push."""
+    data: dict[str, Any] = {
+        "id": user.id,
+        "name": f"{user.first_name or ''} {user.last_name or ''}".strip(),
+        "position": user.position,
+    }
+    if role:
+        data["role"] = role
+    return data
 
 
 def is_fair_play_banned(user: models.User, now: Optional[datetime] = None) -> bool:
@@ -328,23 +356,29 @@ async def analyze_transfer(
     db: AsyncSession,
     sender: models.User,
     receiver: models.User,
-) -> None:
-    """Анализ перевода после успешного создания (до commit)."""
+) -> Optional[dict[str, Any]]:
+    """Анализ перевода после успешного создания (до commit).
+
+    Returns:
+        Payload для email-уведомления админам или None.
+    """
     now = _now_utc()
     today = msk_calendar_date(now)
 
     if is_birthday_today(receiver, today):
-        return
+        return None
 
     distinct_count = await _count_distinct_senders_today(db, receiver.id, today)
 
     if distinct_count == _SUSPICIOUS_SENDERS:
         sender_ids = await _sender_ids_today(db, receiver.id, today)
         _mark_suspicious(receiver, now)
+        participants = [_user_notify_snapshot(receiver, role="receiver")]
         for sid in sender_ids:
             u = await db.get(models.User, sid)
             if u:
                 _mark_suspicious(u, now)
+                participants.append(_user_notify_snapshot(u, role="sender"))
         await _log_audit(
             db,
             receiver.id,
@@ -352,13 +386,19 @@ async def analyze_transfer(
             related_user_id=sender.id,
             details={"distinct_senders": distinct_count, "trigger_date": today.isoformat()},
         )
-        return
+        return {
+            "type": "suspicious",
+            "trigger_date": today.isoformat(),
+            "distinct_senders": distinct_count,
+            "receiver": _user_notify_snapshot(receiver),
+            "participants": participants,
+        }
 
     if distinct_count < _CONFIRMED_SENDERS:
-        return
+        return None
 
     if await _receiver_event_exists(db, receiver.id, today):
-        return
+        return None
 
     db.add(
         models.FairPlayReceiverEvent(
@@ -379,6 +419,15 @@ async def analyze_transfer(
             "strike": receiver.fair_play_strike_count,
         },
     )
+
+    banned_payload = [
+        {
+            **_user_notify_snapshot(receiver),
+            "ban_until": receiver.fair_play_ban_until,
+            "strike": receiver.fair_play_strike_count,
+        }
+    ]
+    limited_payload: list[dict[str, Any]] = []
 
     sender_ids = await _sender_ids_today(db, receiver.id, today)
     for sid in sender_ids:
@@ -404,6 +453,23 @@ async def analyze_transfer(
                     "cap": sender_user.fair_play_limit_cap,
                 },
             )
+            limited_payload.append(
+                {
+                    **_user_notify_snapshot(sender_user),
+                    "limit_until": sender_user.fair_play_limit_until,
+                    "limit_mode": sender_user.fair_play_limit_mode,
+                    "limit_cap": sender_user.fair_play_limit_cap,
+                    "strike": sender_user.fair_play_strike_count,
+                }
+            )
+
+    return {
+        "type": "sanctions",
+        "trigger_date": today.isoformat(),
+        "distinct_senders": distinct_count,
+        "banned": banned_payload,
+        "limited": limited_payload,
+    }
 
 
 def build_fair_play_status(user: models.User) -> dict:
@@ -470,10 +536,28 @@ async def admin_reset_strikes(db: AsyncSession, user: models.User) -> None:
 
 
 async def sync_user_sanctions(db: AsyncSession, user: models.User) -> None:
-    """Снимает истёкшие санкции и сохраняет изменения в БД."""
-    refresh_expired_sanctions(user)
+    """Снимает истёкшие санкции, сохраняет и уведомляет пользователя push-ом."""
+    now = _now_utc()
+    had_ban = is_fair_play_banned(user, now)
+    had_limit = bool(
+        user.fair_play_limit_until
+        and user.fair_play_limit_until > now
+        and user.fair_play_limit_mode
+    )
+    cleared = refresh_expired_sanctions(user, now)
     await db.commit()
     await db.refresh(user)
+
+    if not cleared.ban and not cleared.limit:
+        return
+
+    from fair_play_notification_service import notify_user_sanction_lifted
+
+    if cleared.ban and had_ban:
+        await notify_user_sanction_lifted(db, user.id, "ban")
+    if cleared.limit and had_limit:
+        await notify_user_sanction_lifted(db, user.id, "limit")
+    await db.commit()
 
 
 async def get_fair_play_dashboard_counts(db: AsyncSession) -> dict:

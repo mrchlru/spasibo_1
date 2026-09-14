@@ -1366,6 +1366,10 @@ async def fair_play_lift_ban_route(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
     await fair_play_service.admin_lift_ban(db, user)
     await db.commit()
+    from fair_play_notification_service import notify_user_sanction_lifted
+
+    await notify_user_sanction_lifted(db, user_id, "ban")
+    await db.commit()
     return {"detail": "Бан снят"}
 
 
@@ -1380,6 +1384,10 @@ async def fair_play_lift_limit_route(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
     await fair_play_service.admin_lift_limit(db, user)
+    await db.commit()
+    from fair_play_notification_service import notify_user_sanction_lifted
+
+    await notify_user_sanction_lifted(db, user_id, "limit")
     await db.commit()
     return {"detail": "Ограничение лимита снято"}
 

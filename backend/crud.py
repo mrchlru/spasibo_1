@@ -408,8 +408,12 @@ async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
         message=notification_message,
     )
     db.add(notification)
-    await fair_play_service.analyze_transfer(db, sender, receiver)
+    fair_play_admin_payload = await fair_play_service.analyze_transfer(db, sender, receiver)
     await db.commit()
+    if fair_play_admin_payload:
+        from fair_play_notification_service import schedule_fair_play_admin_notification
+
+        schedule_fair_play_admin_notification(fair_play_admin_payload)
     await db.refresh(sender)
     await db.refresh(notification)
 

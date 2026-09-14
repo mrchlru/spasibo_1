@@ -698,6 +698,47 @@ async def send_purchase_notification_to_admins(
         return False
 
 
+async def send_fair_play_alert_to_admins(
+    subject: str,
+    body_html: str,
+    body_text: str,
+) -> bool:
+    """
+    Отправляет админам (ADMIN_EMAILS) уведомление о fair-play событии.
+
+    Returns:
+        True если хотя бы одно письмо доставлено.
+    """
+    try:
+        admin_emails = getattr(settings, "ADMIN_EMAILS", None)
+        if not admin_emails:
+            logger.warning("ADMIN_EMAILS не задан. Fair Play email не отправлен.")
+            return False
+        admin_list = [e.strip() for e in admin_emails.split(",") if e.strip()]
+        if not admin_list:
+            return False
+
+        success = 0
+        for admin_email in admin_list:
+            if await send_email(
+                to_email=admin_email,
+                subject=subject,
+                body_html=body_html,
+                body_text=body_text,
+            ):
+                success += 1
+        if success:
+            logger.info(
+                "Fair Play email отправлен %s из %s админам",
+                success,
+                len(admin_list),
+            )
+        return success > 0
+    except Exception as e:
+        logger.error("Ошибка fair-play email админам: %s", e)
+        return False
+
+
 def build_broadcast_email_content(
     body_plain: str,
     login_url: Optional[str] = None,
