@@ -358,23 +358,35 @@ async def update_user_profile(db: AsyncSession, user_id: int, data: schemas.User
 
 # Транзакции
 async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
+    import fair_play_service
+
     today = _transfer_limit_calendar_date()
     sender = await db.get(models.User, tr.sender_id)
     if not sender:
         raise ValueError("Отправитель не найден")
 
+    fair_play_service.assert_sender_may_send(db, sender)
+
     if sender.daily_transfer_count_for_date is None or sender.daily_transfer_count_for_date != today:
         sender.daily_transfer_count = 0
 
     fixed_amount = 1
-    if sender.daily_transfer_count >= 3:
-        raise ValueError("Дневной лимит переводов исчерпан (3 в день)")
+    daily_limit = fair_play_service.get_effective_daily_limit(sender)
+    if daily_limit <= 0:
+        raise ValueError("Отправка спасибок временно недоступна.")
+    if sender.daily_transfer_count >= daily_limit:
+        raise ValueError(
+            f"Дневной лимит переводов исчерпан ({daily_limit} в день)"
+        )
 
     receiver = await db.get(models.User, tr.receiver_id)
     if not receiver:
         raise ValueError("Получатель не найден")
+
+    fair_play_service.assert_receiver_may_receive(receiver)
     
     sender.daily_transfer_count += 1
+    fair_play_service.record_sender_weekly_usage(sender)
     sender.daily_transfer_count_for_date = today
     receiver.balance += fixed_amount
     sender.ticket_parts += 1
@@ -396,6 +408,7 @@ async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
         message=notification_message,
     )
     db.add(notification)
+    await fair_play_service.analyze_transfer(db, sender, receiver)
     await db.commit()
     await db.refresh(sender)
     await db.refresh(notification)
@@ -3258,6 +3271,9 @@ async def get_dashboard_statistics(
             await _dashboard_activity_period_stats(db, period_days, period_label, total_users)
         )
 
+    import fair_play_service
+    fair_play_counts = await fair_play_service.get_fair_play_dashboard_counts(db)
+
     return {
         "total_users": total_users,
         "active_users_count": active_users_count,
@@ -3267,6 +3283,7 @@ async def get_dashboard_statistics(
         "total_store_spent": total_store_spent,
         "top_store_items": top_store_items,
         "activity_by_period": activity_by_period,
+        **fair_play_counts,
     }
 
 

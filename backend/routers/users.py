@@ -89,8 +89,11 @@ async def login_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Ваша заявка еще на рассмотрении"
         )
+
+    import fair_play_service
+    await fair_play_service.sync_user_sanctions(db, user)
     
-    return schemas.user_response_for_public_api(user)
+    return schemas.user_response_for_public_api(user, fair_play_full=True)
 
 @router.post("/auth/register", response_model=schemas.UserResponse)
 async def register_user(request: schemas.RegisterRequest, db: AsyncSession = Depends(get_db)):
@@ -132,7 +135,9 @@ async def get_self(
             await db.refresh(user)
     except Exception as exc:
         logger.warning("Не удалось обновить аватар при GET /me user_id=%s: %s", user.id, exc)
-    return schemas.user_response_for_public_api(user)
+    import fair_play_service
+    await fair_play_service.sync_user_sanctions(db, user)
+    return schemas.user_response_for_public_api(user, fair_play_full=True)
 
 @router.get("/{user_id}/avatar")
 async def get_user_avatar(user_id: int, db: AsyncSession = Depends(get_db)) -> Response:

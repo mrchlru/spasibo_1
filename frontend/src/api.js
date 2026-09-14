@@ -450,6 +450,21 @@ export const getDashboardStats = (startDate, endDate) => {
     return apiClient.get(`/admin/statistics/dashboard?${params.toString()}`, getAuthHeaders());
 };
 
+export const getFairPlayUsers = (sanction = 'all') =>
+  apiClient.get(`/admin/fair-play/users?sanction=${sanction}`, getAuthHeaders());
+
+export const fairPlayLiftBan = (userId) =>
+  apiClient.post(`/admin/fair-play/users/${userId}/lift-ban`, {}, getAuthHeaders());
+
+export const fairPlayLiftLimit = (userId) =>
+  apiClient.post(`/admin/fair-play/users/${userId}/lift-limit`, {}, getAuthHeaders());
+
+export const fairPlayClearSuspicious = (userId) =>
+  apiClient.post(`/admin/fair-play/users/${userId}/clear-suspicious`, {}, getAuthHeaders());
+
+export const fairPlayResetStrikes = (userId) =>
+  apiClient.post(`/admin/fair-play/users/${userId}/reset-strikes`, {}, getAuthHeaders());
+
 export const getHourlyActivityStats = (startDate, endDate) => {
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);

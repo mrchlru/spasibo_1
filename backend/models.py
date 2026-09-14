@@ -52,6 +52,15 @@ class User(Base):
     last_client_shell: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     has_ios_pwa: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
     has_android_app: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false', nullable=False)
+    fair_play_strike_count: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
+    fair_play_last_violation_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    fair_play_ban_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    fair_play_limit_mode: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    fair_play_limit_cap: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    fair_play_limit_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    fair_play_suspicious_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    fair_play_weekly_sent_count: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
+    fair_play_weekly_sent_for_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     sent_transactions = relationship(
         "Transaction",
         back_populates="sender",
@@ -321,6 +330,33 @@ class FeedPostAttachment(Base):
     sort_order = Column(Integer, default=0, server_default="0", nullable=False)
 
     post = relationship("FeedPost", back_populates="attachments")
+
+
+class FairPlayReceiverEvent(Base):
+    """Зафиксированное нарушение «карусели» у получателя за календарный день МСК."""
+
+    __tablename__ = "fair_play_receiver_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    receiver_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    trigger_date: Mapped[date] = mapped_column(Date, nullable=False)
+    distinct_sender_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("receiver_id", "trigger_date", name="uq_fair_play_receiver_day"),)
+
+
+class FairPlayAuditLog(Base):
+    """Журнал fair-play событий и действий админа."""
+
+    __tablename__ = "fair_play_audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    related_user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
 
 
 class AppSettings(Base):

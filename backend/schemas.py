@@ -13,6 +13,23 @@ class MarketItemBase(OrmBase):
     stock: int
     original_price: Optional[int] = None
 
+class FairPlayStatus(BaseModel):
+    """Статус fair play для UI (отправка/получение спасибок)."""
+
+    is_fair_play_banned: bool = False
+    ban_until: Optional[datetime] = None
+    ban_reason: Optional[str] = None
+    limit_mode: Optional[str] = None
+    limit_cap: Optional[int] = None
+    limit_until: Optional[datetime] = None
+    limit_reason: Optional[str] = None
+    suspicious_active: bool = False
+    suspicious_at: Optional[datetime] = None
+    strike_count: int = 0
+    strike_reset_at: Optional[datetime] = None
+    effective_daily_limit: int = 3
+
+
 class UserBase(OrmBase):
     id: int
     telegram_id: Optional[int] = None
@@ -69,6 +86,7 @@ class UserResponse(UserBase):
     can_publish_feed_posts: bool = False
     registration_date: Optional[datetime] = None
     is_primary_admin: bool = False
+    fair_play: Optional[FairPlayStatus] = None
 
     @field_serializer('date_of_birth')
     def serialize_date(self, dob: Optional[date], _info):
@@ -83,16 +101,23 @@ class UserResponse(UserBase):
         return val.isoformat()
 
 
-def user_response_for_public_api(user: object) -> UserResponse:
+def user_response_for_public_api(user: object, *, fair_play_full: bool = False) -> UserResponse:
     """Убирает password_plain из ответов для клиента; у веб-заявки в pending скрывает и login."""
     from admin_utils import user_is_primary_admin
     from avatar_service import resolve_public_avatar_url
+    import fair_play_service
 
     u = UserResponse.model_validate(user)
     avatar_url = resolve_public_avatar_url(user)
+    fp_data = (
+        fair_play_service.build_fair_play_status(user)
+        if fair_play_full
+        else {**fair_play_service.build_fair_play_public_hint(user), "effective_daily_limit": 3}
+    )
     extra: dict = {
         "password_plain": None,
         "is_primary_admin": user_is_primary_admin(user),
+        "fair_play": FairPlayStatus(**fp_data),
     }
     if avatar_url:
         extra["telegram_photo_url"] = avatar_url
@@ -386,6 +411,16 @@ class DashboardStatsResponse(BaseModel):
     total_store_spent: int
     top_store_items: List[DashboardTopStoreItem]
     activity_by_period: List[DashboardActivityPeriod]
+    fair_play_banned_count: int = 0
+    fair_play_limited_count: int = 0
+    fair_play_suspicious_count: int = 0
+
+
+class FairPlayAdminUser(BaseModel):
+    """Пользователь с fair-play санкциями для админки."""
+
+    user: UserResponse
+    fair_play: FairPlayStatus
 
 class HourlyActivityStats(BaseModel):
     hourly_stats: dict[int, int]

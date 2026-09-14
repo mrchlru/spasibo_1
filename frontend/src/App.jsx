@@ -56,6 +56,7 @@ const RoulettePage = lazy(() => import('./pages/RoulettePage'));
 const BonusCardPage = lazy(() => import('./pages/BonusCardPage'));
 const EditProfilePage = lazy(() => import('./pages/EditProfilePage'));
 const BlockedPage = lazy(() => import('./pages/BlockedPage'));
+const FairPlayBlockedPage = lazy(() => import('./pages/FairPlayBlockedPage'));
 const TransferPage = lazy(() => import('./pages/TransferPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const OnboardingStories = lazy(() => import('./components/OnboardingStories'));
@@ -712,6 +713,10 @@ function App() {
     }
     if (user.status === 'rejected') {
       return <RejectedPage />;
+    }
+
+    if (user.status === 'approved' && user.fair_play?.is_fair_play_banned) {
+      return <FairPlayBlockedPage user={user} />;
     }
 
     // 2. Только если пользователь одобрен, проверяем, видел ли он обучение.

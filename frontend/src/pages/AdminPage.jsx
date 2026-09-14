@@ -19,6 +19,7 @@ import AppearanceSettings from './admin/AppearanceSettings';
 import AndroidReleaseSettings from './admin/AndroidReleaseSettings';
 import EmailBroadcast from './admin/EmailBroadcast';
 import FeedPostManager from './admin/FeedPostManager';
+import FairPlayManager from './admin/FairPlayManager';
 import { addPointsToAll, addTicketsToAll, adminGenerateLeaderboardBanners, adminGenerateTestLeaderboardBanners, resetDailyTransferLimits } from '../api';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 import { useConfirmation } from '../contexts/ConfirmationContext';
@@ -202,6 +203,7 @@ function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppS
         <div className={styles.grid}>
           <button onClick={() => setActiveSection('stats')} className={styles.gridButton}>Статистика</button>
           <button onClick={() => setActiveSection('users')} className={styles.gridButton}>Пользователи</button>
+          <button onClick={() => setActiveSection('fair-play')} className={styles.gridButton}>Fair Play</button>
           <button onClick={() => setActiveSection('registrations')} className={styles.gridButton}>Заявки на регистрацию</button>
           <button onClick={() => setActiveSection('purchases')} className={styles.gridButton}>Покупки</button>
           <button onClick={() => setActiveSection('approvals')} className={styles.gridButton}>Согласования</button>
@@ -254,6 +256,7 @@ function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppS
       case 'items': return <ItemManager />;
         {/*case 'mass-actions': return <MassActions />;*/}
       case 'users': return <UserManager />;
+      case 'fair-play': return <FairPlayManager />;
       case 'registrations': return <RegistrationManager />;
       case 'purchases': return <PurchasesManager />;
       case 'approvals': return <ApprovalsManager />;

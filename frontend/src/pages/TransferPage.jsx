@@ -7,7 +7,13 @@ import styles from './TransferPage.module.css';
 import PageLayout from '../components/PageLayout';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 
+function formatMskDateTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
+}
+
 function UserSearch({ currentUser, onUserSelect }) {
+  const { showAlert } = useModalAlert();
   const [query, setQuery] = useState('');
   const [allUsers, setAllUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
@@ -16,19 +22,16 @@ function UserSearch({ currentUser, onUserSelect }) {
   const [isListVisible, setIsListVisible] = useState(false);
   const searchContainerRef = useRef(null);
 
-  // Загружаем всех пользователей при монтировании компонента
   useEffect(() => {
     loadAllUsers();
   }, []);
 
-  // Фильтруем пользователей при изменении запроса
   useEffect(() => {
     if (query.trim() === '') {
-      // Если запрос пустой, показываем всех пользователей
       setFilteredUsers(allUsers);
     } else {
       const searchLower = query.toLowerCase();
-      const filtered = allUsers.filter(user => 
+      const filtered = allUsers.filter(user =>
         user.first_name?.toLowerCase().includes(searchLower) ||
         user.last_name?.toLowerCase().includes(searchLower) ||
         user.username?.toLowerCase().includes(searchLower) ||
@@ -43,12 +46,8 @@ function UserSearch({ currentUser, onUserSelect }) {
   const loadAllUsers = async () => {
     setIsLoading(true);
     try {
-      // Получаем telegramId из Telegram WebApp (если доступен)
-      // Если нет, функция getAllUsers сама использует userId из localStorage
       const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id || null;
-      
       const response = await getAllUsers(telegramId);
-      // Фильтруем текущего пользователя и пользователей со статусом rejected, сортируем по имени в алфавитном порядке
       const users = response.data
         .filter(u => u.id !== currentUser.id && u.status !== 'rejected')
         .sort((a, b) => {
@@ -59,15 +58,14 @@ function UserSearch({ currentUser, onUserSelect }) {
       setAllUsers(users);
       setFilteredUsers(users);
     } catch (error) {
-      console.error("Ошибка загрузки пользователей:", error);
+      console.error('Ошибка загрузки пользователей:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleInputChange = (e) => {
-    const value = e.target.value;
-    setQuery(value);
+    setQuery(e.target.value);
   };
 
   const handleFocus = () => {
@@ -76,16 +74,24 @@ function UserSearch({ currentUser, onUserSelect }) {
   };
 
   const handleBlur = (e) => {
-    // Проверяем, не кликнули ли мы на элемент списка
     if (searchContainerRef.current && !searchContainerRef.current.contains(e.relatedTarget)) {
       setIsFocused(false);
-      // Небольшая задержка, чтобы клик по элементу успел обработаться
       setTimeout(() => setIsListVisible(false), 200);
     }
   };
 
   const handleUserClick = (user) => {
-    const displayName = user.position 
+    if (user.fair_play?.is_fair_play_banned) {
+      const until = formatMskDateTime(user.fair_play.ban_until);
+      const reason = user.fair_play.ban_reason || 'нарушение правил fair play';
+      showAlert(
+        `Пользователь временно заблокирован в связи с ${reason} до ${until} (МСК).`,
+        'error'
+      );
+      return;
+    }
+
+    const displayName = user.position
       ? `${user.first_name} • ${user.position}`
       : user.first_name;
     setQuery(displayName);
@@ -94,7 +100,6 @@ function UserSearch({ currentUser, onUserSelect }) {
     onUserSelect(user);
   };
 
-  // Обработка клика вне компонента
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
@@ -124,14 +129,19 @@ function UserSearch({ currentUser, onUserSelect }) {
       {isListVisible && filteredUsers.length > 0 && (
         <div className={styles.searchResults}>
           {filteredUsers.map((user) => (
-            <div 
-              key={user.id} 
-              onClick={() => handleUserClick(user)} 
+            <div
+              key={user.id}
+              onClick={() => handleUserClick(user)}
               className={styles.searchResultItem}
-              onMouseDown={(e) => e.preventDefault()} // Предотвращаем blur при клике
+              onMouseDown={(e) => e.preventDefault()}
             >
-              <div className={styles.userName}>
-                {formatUserName(user.first_name, user.last_name)}
+              <div className={styles.userNameRow}>
+                <div className={styles.userName}>
+                  {formatUserName(user.first_name, user.last_name)}
+                </div>
+                {user.fair_play?.suspicious_active && (
+                  <span className={styles.suspiciousBadge}>Подозрительная активность</span>
+                )}
               </div>
               {user.position && (
                 <div className={styles.userPosition}>{user.position}</div>
@@ -159,15 +169,18 @@ function TransferPage({ user, onBack, onTransferSuccess }) {
   const submitLockRef = useRef(false);
   const MIN_MESSAGE_LENGTH = 20;
 
-  // Функция для подсчета только букв (русских и английских)
-  const countLetters = (text) => {
-    return text.replace(/[^а-яёА-ЯЁa-zA-Z]/g, '').length;
-  };
+  const dailyLimit = user?.fair_play?.effective_daily_limit ?? 3;
+  const transfersLeft = Math.max(dailyLimit - (user?.daily_transfer_count || 0), 0);
 
-  // --- ИСПРАВЛЕНИЕ №1: Проверка на наличие user для предотвращения падения ---
+  const countLetters = (text) => text.replace(/[^а-яёА-ЯЁa-zA-Z]/g, '').length;
+
   if (!user) {
     return <PageLayout title="Отправить спасибку"><div className="loading-container">Загрузка...</div></PageLayout>;
   }
+
+  const handleReceiverSelect = (selected) => {
+    setReceiver(selected);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -179,6 +192,11 @@ function TransferPage({ user, onBack, onTransferSuccess }) {
 
     if (!receiver || !message) {
       setError('Пожалуйста, выберите получателя и напишите сообщение.');
+      return;
+    }
+
+    if (receiver.fair_play?.is_fair_play_banned) {
+      setError('Этому пользователю сейчас нельзя отправить спасибку.');
       return;
     }
 
@@ -220,19 +238,35 @@ function TransferPage({ user, onBack, onTransferSuccess }) {
     }
   };
 
+  const limitNotice = user.fair_play?.limit_until && new Date(user.fair_play.limit_until) > new Date();
+
   return (
     <PageLayout title="Отправить спасибку">
       <button onClick={onBack} className={styles.backButton}>&larr; Назад</button>
-      
+
+      {limitNotice && (
+        <div className={styles.limitNotice}>
+          Действует ограничение: {user.fair_play.limit_cap} спасибо
+          {user.fair_play.limit_mode === 'weekly' ? ' в неделю' : ' в день'}
+          {' '}до {formatMskDateTime(user.fair_play.limit_until)} (МСК).
+        </div>
+      )}
+
       <div className={styles.balanceInfo}>
-          <p>Переводов сегодня: <strong>{3 - user.daily_transfer_count} / 3</strong></p>
+        <p>Переводов сегодня: <strong>{transfersLeft} / {dailyLimit}</strong></p>
       </div>
 
       <form onSubmit={handleSubmit}>
         <div className={styles.formGroup}>
           <label className={styles.label}>Кому:</label>
-          <UserSearch currentUser={user} onUserSelect={setReceiver} />
+          <UserSearch currentUser={user} onUserSelect={handleReceiverSelect} />
         </div>
+
+        {receiver?.fair_play?.suspicious_active && (
+          <div className={styles.suspiciousNotice}>
+            Замечена подозрительная активность у выбранного получателя.
+          </div>
+        )}
 
         <div className={styles.formGroup}>
           <label className={styles.label}>За что (обязательно):</label>
@@ -243,7 +277,7 @@ function TransferPage({ user, onBack, onTransferSuccess }) {
               placeholder="Например, за помощь с отчетом"
               rows="3"
               className={styles.textarea}
-            ></textarea>
+            />
             {message.length > 0 && (
               <div className={styles.charCounter}>
                 {countLetters(message)} / {MIN_MESSAGE_LENGTH}

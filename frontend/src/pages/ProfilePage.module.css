@@ -7,6 +7,38 @@
   overflow-x: hidden;
 }
 
+.fairPlayNotice,
+.fairPlayNoticeWarning {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.fairPlayNotice {
+  background: #fdecea;
+  color: #912018;
+  border-left: 4px solid #f04438;
+}
+
+.fairPlayNoticeWarning {
+  background: #fff3cd;
+  color: #856404;
+  border-left: 4px solid #ffc107;
+}
+
+.fairPlayNotice p,
+.fairPlayReason,
+.fairPlaySub {
+  margin: 6px 0 0;
+}
+
+.fairPlaySub {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
 /* --- Стили шапки профиля --- */
 .profileHeader {
   display: flex;

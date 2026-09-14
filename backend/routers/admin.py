@@ -1331,3 +1331,84 @@ async def delete_admin_feed_post_route(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/fair-play/users", response_model=List[schemas.FairPlayAdminUser])
+async def list_fair_play_users_route(
+    sanction: str = Query("all", pattern="^(all|banned|limited|suspicious)$"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Список пользователей с активными fair-play санкциями."""
+    import fair_play_service
+
+    users = await fair_play_service.list_fair_play_users(db, sanction=sanction)  # type: ignore[arg-type]
+    result = []
+    for u in users:
+        fp = fair_play_service.build_fair_play_status(u)
+        result.append(
+            schemas.FairPlayAdminUser(
+                user=schemas.user_response_for_public_api(u, fair_play_full=True),
+                fair_play=schemas.FairPlayStatus(**fp),
+            )
+        )
+    return result
+
+
+@router.post("/fair-play/users/{user_id}/lift-ban")
+async def fair_play_lift_ban_route(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    import fair_play_service
+
+    user = await crud.get_user(db, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    await fair_play_service.admin_lift_ban(db, user)
+    await db.commit()
+    return {"detail": "Бан снят"}
+
+
+@router.post("/fair-play/users/{user_id}/lift-limit")
+async def fair_play_lift_limit_route(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    import fair_play_service
+
+    user = await crud.get_user(db, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    await fair_play_service.admin_lift_limit(db, user)
+    await db.commit()
+    return {"detail": "Ограничение лимита снято"}
+
+
+@router.post("/fair-play/users/{user_id}/clear-suspicious")
+async def fair_play_clear_suspicious_route(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    import fair_play_service
+
+    user = await crud.get_user(db, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    await fair_play_service.admin_clear_suspicious(db, user)
+    await db.commit()
+    return {"detail": "Метка подозрительной активности снята"}
+
+
+@router.post("/fair-play/users/{user_id}/reset-strikes")
+async def fair_play_reset_strikes_route(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    import fair_play_service
+
+    user = await crud.get_user(db, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    await fair_play_service.admin_reset_strikes(db, user)
+    await db.commit()
+    return {"detail": "Счётчик нарушений сброшен"}

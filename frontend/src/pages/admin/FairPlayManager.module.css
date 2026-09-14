@@ -1,0 +1,96 @@
+.hint {
+  color: #6e7a85;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.filterBtn,
+.filterActive {
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.filterActive {
+  border-color: var(--theme-primary-dark, #007aff);
+  background: #eef5ff;
+  font-weight: 600;
+}
+
+.empty {
+  color: #6e7a85;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.position {
+  color: #6e7a85;
+  font-size: 13px;
+}
+
+.badges {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fff3cd;
+  color: #856404;
+}
+
+.details {
+  font-size: 13px;
+  color: #444;
+  margin-bottom: 10px;
+}
+
+.details p {
+  margin: 4px 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.buttonSecondary {
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+}

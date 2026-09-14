@@ -30,8 +30,15 @@ function ProfilePage({ user, telegramPhotoUrl, onNavigate, onPurchaseSuccess }) 
 
   // Теперь, когда мы уверены, что user существует, можно форматировать дату
   const displayDateOfBirth = formatDateForDisplay(user.date_of_birth);
-  
-  return (
+  const fp = user.fair_play;
+  const hasLimit = fp?.limit_until && new Date(fp.limit_until) > new Date();
+
+  function formatMskDateTime(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
+  }
+
+  return (
     <PageLayout title="Профиль">
       <div className={styles.settingsIconContainer}>
         <button onClick={() => onNavigate('settings')} className={styles.settingsButton}>
@@ -51,11 +58,33 @@ function ProfilePage({ user, telegramPhotoUrl, onNavigate, onPurchaseSuccess }) 
       </div>
 
       {/* --- 2. ИСПРАВЛЕНИЕ ВЕРСТКИ: Все <p> теперь внутри .card --- */}
-      <div className={styles.card}>
-        <p className={styles.infoItem}>
-          <span className={styles.label}>Подразделение:</span>
-          {user.department}
-        </p>
+      {hasLimit && (
+        <div className={styles.fairPlayNotice}>
+          <strong>Ограничение на отправку спасибок</strong>
+          <p>
+            {fp.limit_cap} спасибо{fp.limit_mode === 'weekly' ? ' в неделю' : ' в день'}
+            {' '}до {formatMskDateTime(fp.limit_until)} (МСК).
+          </p>
+          {fp.limit_reason && <p className={styles.fairPlayReason}>{fp.limit_reason}</p>}
+          {fp.strike_reset_at && (
+            <p className={styles.fairPlaySub}>
+              Сброс счётчика нарушений: {formatMskDateTime(fp.strike_reset_at)}
+            </p>
+          )}
+        </div>
+      )}
+
+      {!hasLimit && fp?.suspicious_active && (
+        <div className={styles.fairPlayNoticeWarning}>
+          Замечена подозрительная активность. Будьте внимательны при отправке спасибок.
+        </div>
+      )}
+
+      <div className={styles.card}>
+        <p className={styles.infoItem}>
+          <span className={styles.label}>Подразделение:</span>
+          {user.department}
+        </p>
         <p className={styles.infoItem}>
           <span className={styles.label}>Телефон:</span>
           {user.phone_number || 'Не указан'}

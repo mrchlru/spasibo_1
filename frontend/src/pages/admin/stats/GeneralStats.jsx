@@ -14,6 +14,9 @@ const METRIC_HINTS = {
   total_balance: 'Сумма спасибок на балансах: переводы, подарки на день рождения и выигрыши в рулетке.',
   store_purchases_count: 'Сколько покупок совершено в магазине за всё время.',
   total_store_spent: 'Сколько спасибок потрачено в магазине за всё время.',
+  fair_play_banned_count: 'Пользователи с активным fair-play баном (не могут отправлять и получать).',
+  fair_play_limited_count: 'Пользователи со сниженным лимитом отправки спасибок.',
+  fair_play_suspicious_count: 'Пользователи с меткой «подозрительная активность» (пограничный случай).',
 };
 
 const PERIOD_RING_COLORS = {
@@ -197,6 +200,21 @@ function GeneralStats({ startDate, endDate }) {
           title="Потрачено в магазине"
           value={`${stats.total_store_spent} спас.`}
           hintKey="total_store_spent"
+        />
+        <MetricCard
+          title="Fair Play: заблокированы"
+          value={stats.fair_play_banned_count}
+          hintKey="fair_play_banned_count"
+        />
+        <MetricCard
+          title="Fair Play: снижен лимит"
+          value={stats.fair_play_limited_count}
+          hintKey="fair_play_limited_count"
+        />
+        <MetricCard
+          title="Fair Play: подозрительные"
+          value={stats.fair_play_suspicious_count}
+          hintKey="fair_play_suspicious_count"
         />
       </div>
 
