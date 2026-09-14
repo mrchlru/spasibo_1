@@ -153,6 +153,47 @@ async def reset_daily_transfer_limits_route(db: AsyncSession = Depends(get_db)):
 async def get_all_users_for_admin_route(db: AsyncSession = Depends(get_db)):
     return await crud.get_all_users_for_admin(db)
 
+
+@router.get("/users/export")
+async def export_all_users(db: AsyncSession = Depends(get_db)):
+    """Excel со списком сотрудников (approved + blocked)."""
+    employees = await crud.get_employee_users_for_export(db)
+    moscow_tz = ZoneInfo("Europe/Moscow")
+
+    status_labels = {
+        'approved': 'Активен',
+        'blocked': 'Заблокирован',
+    }
+
+    users_list = [
+        {
+            "№": index,
+            "ФИО": crud._format_user_full_name(user),
+            "Телефон": user.phone_number or "",
+            "Email": user.email or "",
+            "Должность": user.position or "",
+            "Отдел": user.department or "",
+            "Статус": status_labels.get(user.status, user.status or ""),
+            "Баланс": user.balance,
+            "Дата регистрации": _format_dt_moscow(user.registration_date, moscow_tz) or "",
+            "Последний вход": _format_dt_moscow(user.last_login_date, moscow_tz) or "",
+        }
+        for index, user in enumerate(employees, 1)
+    ]
+
+    filename = f"all_users_{datetime.utcnow().date()}.xlsx"
+    return _build_excel_streaming_response(
+        users_list,
+        sheet_title="Сотрудники",
+        filename=filename,
+        column_widths={"ФИО": 36, "Email": 28, "Должность": 24, "Отдел": 20},
+        default_headers=[
+            "№", "ФИО", "Телефон", "Email", "Должность", "Отдел",
+            "Статус", "Баланс", "Дата регистрации", "Последний вход",
+        ],
+    )
+
+
 @router.get("/users/pending", response_model=List[schemas.UserResponse])
 async def get_pending_users_route(db: AsyncSession = Depends(get_db)):
     result = await db.execute(
@@ -637,6 +678,15 @@ async def get_general_statistics_route(start_date: Optional[date] = Query(None),
     stats = await crud.get_general_statistics(db=db, start_date=start_date, end_date=end_date)
     return stats
 
+
+@router.get("/statistics/dashboard", response_model=schemas.DashboardStatsResponse)
+async def get_dashboard_statistics_route(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    return await crud.get_dashboard_statistics(db=db, start_date=start_date, end_date=end_date)
+
 @router.get("/statistics/hourly_activity", response_model=schemas.HourlyActivityStats)
 async def get_hourly_activity(start_date: Optional[date] = Query(None), end_date: Optional[date] = Query(None), db: AsyncSession = Depends(get_db)):
     stats = await crud.get_hourly_activity_stats(db, start_date=start_date, end_date=end_date)
@@ -659,6 +709,31 @@ async def get_active_user_ratio_route(
 @router.get("/statistics/client_stats", response_model=schemas.ClientStatisticsResponse)
 async def get_client_statistics_route(db: AsyncSession = Depends(get_db)):
     return await crud.get_client_statistics(db)
+
+
+@router.get("/statistics/client_stats/export")
+async def export_client_platform_users(db: AsyncSession = Depends(get_db)):
+    """Excel со списком сотрудников и их платформами."""
+    users = await crud.get_client_platform_users(db)
+    rows = [
+        {
+            "№": index,
+            "ФИО": row["full_name"],
+            "Телефон": row["phone_number"],
+            "Email": row["email"],
+            "Должность": row["position"],
+            "Платформа": row["platform_label"],
+        }
+        for index, row in enumerate(users, 1)
+    ]
+    filename = f"client_platforms_{datetime.utcnow().date()}.xlsx"
+    return _build_excel_streaming_response(
+        rows,
+        sheet_title="Платформы",
+        filename=filename,
+        column_widths={"ФИО": 36, "Email": 28, "Должность": 24, "Платформа": 28},
+        default_headers=["№", "ФИО", "Телефон", "Email", "Должность", "Платформа"],
+    )
 
 
 @router.get("/statistics/active_senders", response_model=schemas.ActiveSendersStats)
@@ -868,11 +943,11 @@ async def export_consolidated_report(
 
     general_stats_translation = {
         "new_users_count": "Всего пользователей",
-        "active_users_count": "Отправляли спасибки",
-        "transactions_count": "Всего транзакций",
-        "store_purchases_count": "Покупок в магазине",
-        "total_turnover": "Оборот 'спасибок'",
-        "total_store_spent": "Потрачено в магазине",
+        "active_users_count": "Отправляли спасибки (за период)",
+        "transactions_count": "Всего транзакций (за период)",
+        "store_purchases_count": "Покупок в магазине (всего)",
+        "total_turnover": "Спасибок на счетах",
+        "total_store_spent": "Потрачено в магазине (всего)",
         "average_session_duration_minutes": "Среднее время сессии (мин)"
     }
 
@@ -928,46 +1003,6 @@ async def export_consolidated_report(
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
     
-@router.get("/users/export")
-async def export_all_users(db: AsyncSession = Depends(get_db)):
-    all_users = await crud.get_all_users_for_admin(db)
-
-    moscow_tz = ZoneInfo("Europe/Moscow")
-
-    users_list = [
-        {
-            "ID": user.id,
-            "Telegram ID": user.telegram_id,
-            "Имя": user.first_name,
-            "Фамилия": user.last_name,
-            "Username": user.username,
-            "Отдел": user.department,
-            "Должность": user.position,
-            "Баланс": user.balance,
-            "Билеты": user.tickets,
-            "Статус": user.status,
-            "Админ": "Да" if user.is_admin else "Нет",
-            "Дата регистрации": _format_dt_moscow(user.registration_date, moscow_tz),
-            "Последний вход": _format_dt_moscow(user.last_login_date, moscow_tz),
-        }
-        for user in all_users
-    ]
-
-    output = io.BytesIO()
-    workbook = Workbook()
-    ws = workbook.active
-    ws.title = "Все пользователи"
-    _write_dict_rows_on_sheet(ws, users_list)
-    workbook.save(output)
-    output.seek(0)
-
-    filename = f"all_users_{datetime.utcnow().date()}.xlsx"
-    return StreamingResponse(
-        output,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
-
 @router.delete("/market-items/{item_id}/permanent", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item_permanently_route(
     item_id: int,
@@ -1191,20 +1226,78 @@ async def _get_all_purchases_from_db(
 
 
 def _format_dt_moscow(dt: Optional[datetime], tz: ZoneInfo) -> Optional[str]:
-    """Форматирует aware-datetime в локальное время Москвы."""
+    """Форматирует datetime в локальное время Москвы."""
     if dt is None:
         return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
     return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M")
 
 
-def _write_dict_rows_on_sheet(ws: Worksheet, rows: list[dict[str, object]]) -> None:
+def _autosize_worksheet_columns(
+    ws: Worksheet,
+    column_widths: Optional[dict[str, float]] = None,
+) -> None:
+    """Подбирает ширину колонок по содержимому с возможными переопределениями."""
+    overrides = column_widths or {}
+    for column_cells in ws.columns:
+        col_letter = column_cells[0].column_letter
+        header = column_cells[0].value
+        if header in overrides:
+            ws.column_dimensions[col_letter].width = overrides[header]
+            continue
+        max_length = 0
+        for cell in column_cells:
+            value = "" if cell.value is None else str(cell.value)
+            if len(value) > max_length:
+                max_length = len(value)
+        ws.column_dimensions[col_letter].width = min(max(max_length + 2, 10), 60)
+
+
+def _write_dict_rows_on_sheet(
+    ws: Worksheet,
+    rows: list[dict[str, object]],
+    *,
+    column_widths: Optional[dict[str, float]] = None,
+    default_headers: Optional[list[str]] = None,
+) -> None:
     """Записывает заголовки и строки из списка словарей на существующий лист."""
-    if not rows:
+    headers = list(rows[0].keys()) if rows else (default_headers or [])
+    if not headers:
+        ws.append(["Нет данных"])
         return
-    headers = list(rows[0].keys())
     ws.append(headers)
     for row in rows:
-        ws.append([row.get(h) for h in headers])
+        ws.append([row.get(h, "") for h in headers])
+    _autosize_worksheet_columns(ws, column_widths)
+
+
+def _build_excel_streaming_response(
+    rows: list[dict[str, object]],
+    *,
+    sheet_title: str,
+    filename: str,
+    column_widths: Optional[dict[str, float]] = None,
+    default_headers: Optional[list[str]] = None,
+) -> StreamingResponse:
+    """Собирает Excel-файл и отдаёт его как attachment."""
+    output = io.BytesIO()
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = sheet_title[:31]
+    _write_dict_rows_on_sheet(
+        ws,
+        rows,
+        column_widths=column_widths,
+        default_headers=default_headers,
+    )
+    workbook.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 def _append_dict_rows_sheet(workbook: Workbook, title: str, rows: list[dict[str, object]]) -> None:

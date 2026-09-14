@@ -1,0 +1,53 @@
+.headerRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.categorySection {
+  margin-top: 28px;
+}
+
+.categoryTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.userList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.userRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(120px, 1fr) minmax(140px, 1fr) minmax(120px, 0.9fr);
+  gap: 12px;
+  align-items: center;
+  background: #f9f9f9;
+  border: 1px solid #f0f0f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.userName {
+  font-weight: 600;
+}
+
+.userMeta {
+  font-size: 0.85rem;
+  color: #6E7A85;
+}
+
+.emptyCategory {
+  color: #6E7A85;
+  font-size: 0.9rem;
+  margin: 0;
+}

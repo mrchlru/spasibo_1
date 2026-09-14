@@ -3151,49 +3151,135 @@ def _statistics_user_status_filter():
     return models.User.status == 'approved'
 
 
-async def get_general_statistics(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
-    start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
-        
-    # Исправлено: считаем новых пользователей в периоде, а не всех пользователей
-    query_new_users = select(func.count(models.User.id)).where(
-        _statistics_user_status_filter(),
-        models.User.registration_date.between(start_date, end_date_inclusive)
+async def _count_active_senders_between(
+    db: AsyncSession,
+    since: datetime,
+    until: datetime,
+) -> int:
+    """Уникальные отправители «спасибо» в интервале [since, until)."""
+    query = (
+        select(models.Transaction.sender_id)
+        .join(models.User, models.User.id == models.Transaction.sender_id)
+        .where(
+            models.Transaction.timestamp >= since,
+            models.Transaction.timestamp < until,
+            _statistics_user_status_filter(),
+        )
+        .distinct()
     )
-    new_users_count = (await db.execute(query_new_users)).scalar_one()
+    sender_ids = (await db.execute(query)).scalars().all()
+    return len(set(sender_ids))
 
-    active_senders_q = select(models.Transaction.sender_id).join(
-        models.User, models.User.id == models.Transaction.sender_id
-    ).where(
-        models.Transaction.timestamp.between(start_date, end_date_inclusive),
-        _statistics_user_status_filter(),
-    ).distinct()
 
+async def _dashboard_activity_period_stats(
+    db: AsyncSession,
+    period_days: int,
+    period_label: str,
+    total_users: int,
+) -> dict:
+    """Активность за period_days и изменение к прошлой неделе."""
+    now = datetime.utcnow()
+    since = now - timedelta(days=period_days)
+    active_users = await _count_active_senders_between(db, since, now)
+    inactive_users = max(total_users - active_users, 0)
+    active_percent = round(active_users / total_users * 100, 1) if total_users else 0.0
+
+    prev_since = since - timedelta(days=7)
+    prev_until = now - timedelta(days=7)
+    prev_active = await _count_active_senders_between(db, prev_since, prev_until)
+    week_change_percent: Optional[float]
+    if prev_active > 0:
+        week_change_percent = round((active_users - prev_active) / prev_active * 100, 1)
+    elif active_users > 0:
+        week_change_percent = 100.0
+    else:
+        week_change_percent = 0.0
+
+    return {
+        "period_days": period_days,
+        "period_label": period_label,
+        "active_users": active_users,
+        "inactive_users": inactive_users,
+        "active_percent": active_percent,
+        "week_change_percent": week_change_percent,
+    }
+
+
+async def get_dashboard_statistics(
+    db: AsyncSession,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+) -> dict:
+    """Метрики для вкладки «Дашборд» в админке."""
+    start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
+
+    total_users = (await db.execute(
+        select(func.count(models.User.id)).where(_statistics_user_status_filter())
+    )).scalar_one()
+
+    active_senders_q = (
+        select(models.Transaction.sender_id)
+        .join(models.User, models.User.id == models.Transaction.sender_id)
+        .where(
+            models.Transaction.timestamp.between(start_date, end_date_inclusive),
+            _statistics_user_status_filter(),
+        )
+        .distinct()
+    )
     active_senders_ids = (await db.execute(active_senders_q)).scalars().all()
     active_users_count = len(set(active_senders_ids))
 
-    query_transactions = select(func.count(models.Transaction.id)).filter(models.Transaction.timestamp.between(start_date, end_date_inclusive))
-    transactions_count = (await db.execute(query_transactions)).scalar_one()
+    transactions_count = (await db.execute(
+        select(func.count(models.Transaction.id)).where(
+            models.Transaction.timestamp.between(start_date, end_date_inclusive)
+        )
+    )).scalar_one()
 
-    query_purchases = select(func.count(models.Purchase.id)).filter(models.Purchase.timestamp.between(start_date, end_date_inclusive))
-    shop_purchases = (await db.execute(query_purchases)).scalar_one()
+    total_balance = await get_total_balance(db)
 
-    query_turnover = select(func.sum(models.Transaction.amount)).filter(models.Transaction.timestamp.between(start_date, end_date_inclusive))
-    total_turnover = (await db.execute(query_turnover)).scalar_one_or_none() or 0
+    store_purchases_count = (await db.execute(
+        select(func.count(models.Purchase.id))
+    )).scalar_one()
 
-    query_spent = (
+    total_store_spent = (await db.execute(
         select(func.sum(models.MarketItem.price))
         .join(models.Purchase, models.Purchase.item_id == models.MarketItem.id)
-        .filter(models.Purchase.timestamp.between(start_date, end_date_inclusive))
-    )
-    total_store_spent = (await db.execute(query_spent)).scalar_one_or_none() or 0
+    )).scalar_one_or_none() or 0
+
+    popular_rows = await get_popular_items_stats(db, limit=3)
+    top_store_items = [
+        {"name": row[0].name, "purchase_count": row.purchase_count}
+        for row in popular_rows
+    ]
+
+    activity_by_period = []
+    for period_days, period_label in ((7, "7 дней"), (30, "1 месяц"), (90, "3 месяца")):
+        activity_by_period.append(
+            await _dashboard_activity_period_stats(db, period_days, period_label, total_users)
+        )
 
     return {
-        "new_users_count": new_users_count,
+        "total_users": total_users,
         "active_users_count": active_users_count,
         "transactions_count": transactions_count,
-        "store_purchases_count": shop_purchases,
-        "total_turnover": total_turnover,
+        "total_balance": total_balance,
+        "store_purchases_count": store_purchases_count,
         "total_store_spent": total_store_spent,
+        "top_store_items": top_store_items,
+        "activity_by_period": activity_by_period,
+    }
+
+
+async def get_general_statistics(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
+    """Сводные метрики (совместимость со сводным Excel-отчётом)."""
+    dashboard = await get_dashboard_statistics(db, start_date, end_date)
+    return {
+        "new_users_count": dashboard["total_users"],
+        "active_users_count": dashboard["active_users_count"],
+        "transactions_count": dashboard["transactions_count"],
+        "store_purchases_count": dashboard["store_purchases_count"],
+        "total_turnover": dashboard["total_balance"],
+        "total_store_spent": dashboard["total_store_spent"],
     }
 
 async def get_hourly_activity_stats(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
@@ -3446,6 +3532,90 @@ async def start_user_session(
     return new_session
 
 
+CLIENT_PLATFORM_CATEGORY_ORDER = (
+    'ios_pwa',
+    'android_app',
+    'mobile_browser',
+    'desktop',
+    'telegram',
+    'unknown',
+)
+
+CLIENT_PLATFORM_CATEGORY_LABELS = {
+    'ios_pwa': 'iOS: на главный экран',
+    'android_app': 'Android: приложение',
+    'mobile_browser': 'Мобильный браузер',
+    'desktop': 'ПК',
+    'telegram': 'Telegram Mini App',
+    'unknown': 'Неизвестно',
+}
+
+
+def _format_user_full_name(user: models.User) -> str:
+    """Собирает ФИО для отчётов."""
+    parts = [user.first_name or '', user.last_name or '']
+    return ' '.join(part for part in parts if part).strip() or f'id:{user.id}'
+
+
+def _resolve_client_platform_category(user: models.User) -> str:
+    """Определяет основную категорию клиента для списков и Excel."""
+    shell = (user.last_client_shell or '').strip()
+    platform = (user.last_client_platform or '').strip()
+
+    if user.has_ios_pwa or shell == 'ios-pwa':
+        return 'ios_pwa'
+    if user.has_android_app or shell == 'android-app':
+        return 'android_app'
+    if shell in {'ios-browser', 'android-browser'}:
+        return 'mobile_browser'
+    if shell == 'telegram':
+        return 'telegram'
+    if platform == 'desktop' or shell == 'browser':
+        return 'desktop'
+    if platform in {'ios', 'android'}:
+        return 'mobile_browser'
+    return 'unknown'
+
+
+def _resolve_client_platform_label(user: models.User) -> str:
+    """Человекочитаемая платформа для Excel."""
+    category = _resolve_client_platform_category(user)
+    return CLIENT_PLATFORM_CATEGORY_LABELS.get(category, 'Неизвестно')
+
+
+async def get_client_platform_users(db: AsyncSession) -> list[dict]:
+    """Список одобренных пользователей с платформой для UI и Excel."""
+    result = await db.execute(
+        select(models.User)
+        .where(_statistics_user_status_filter())
+        .order_by(models.User.last_name, models.User.first_name, models.User.id)
+    )
+    users = result.scalars().all()
+    rows: list[dict] = []
+    for user in users:
+        category = _resolve_client_platform_category(user)
+        rows.append({
+            'id': user.id,
+            'full_name': _format_user_full_name(user),
+            'phone_number': user.phone_number or '',
+            'email': user.email or '',
+            'position': user.position or '',
+            'platform_label': _resolve_client_platform_label(user),
+            'category': category,
+        })
+    return rows
+
+
+async def get_employee_users_for_export(db: AsyncSession) -> list[models.User]:
+    """Сотрудники для выгрузки: одобренные и заблокированные (без pending/rejected/deleted)."""
+    result = await db.execute(
+        select(models.User)
+        .where(models.User.status.in_(('approved', 'blocked')))
+        .order_by(models.User.last_name, models.User.first_name, models.User.id)
+    )
+    return list(result.scalars().all())
+
+
 async def get_client_statistics(db: AsyncSession) -> dict:
     """Статистика платформ и установок по снимку users."""
     base_filter = _statistics_user_status_filter()
@@ -3503,6 +3673,8 @@ async def get_client_statistics(db: AsyncSession) -> dict:
         else:
             shell_counts['other'] += count
 
+    users = await get_client_platform_users(db)
+
     return {
         "total_users": total_users,
         "by_platform": {
@@ -3516,6 +3688,7 @@ async def get_client_statistics(db: AsyncSession) -> dict:
             "ios_pwa": ios_pwa,
             "android_app": android_app,
         },
+        "users": users,
     }
 
 

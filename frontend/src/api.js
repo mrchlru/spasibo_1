@@ -435,12 +435,19 @@ export const exportBroadcastReport = (payload) =>
 
 // Добавляем startDate и endDate в параметры
 export const getGeneralStats = (startDate, endDate) => {
-    // Формируем строку с параметрами
     const params = new URLSearchParams();
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
 
     return apiClient.get(`/admin/statistics/general?${params.toString()}`, getAuthHeaders());
+};
+
+export const getDashboardStats = (startDate, endDate) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+
+    return apiClient.get(`/admin/statistics/dashboard?${params.toString()}`, getAuthHeaders());
 };
 
 export const getHourlyActivityStats = (startDate, endDate) => {
@@ -537,9 +544,17 @@ export const exportConsolidatedReport = (startDate, endDate) => {
 export const exportAllUsers = () => {
     return apiClient.get('/admin/users/export', {
         ...getAuthHeaders(),
-        responseType: 'blob', // Указываем, что ждем файл
+        responseType: 'blob',
+        timeout: 120000,
     });
 };
+
+export const exportClientPlatformUsers = () =>
+  apiClient.get('/admin/statistics/client_stats/export', {
+    ...getAuthHeaders(),
+    responseType: 'blob',
+    timeout: 120000,
+  });
 
 // --- НОВЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С СЕССИЯМИ ---
 

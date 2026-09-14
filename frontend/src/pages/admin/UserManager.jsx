@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 // --- ИЗМЕНЕНИЕ: Добавляем иконку FaDownload и функцию exportAllUsers ---
 import { FaPencilAlt, FaTimes, FaDownload, FaKey, FaTrash } from 'react-icons/fa';
 import { adminGetAllUsers, adminUpdateUser, adminDeleteUser, exportAllUsers, adminChangeUserPassword, adminDeleteUserPassword } from '../../api';
+import { downloadExcelBlob } from '../../utils/downloadBlob';
 import styles from '../AdminPage.module.css';
 import userManagerStyles from './UserManager.module.css';
 import { useModalAlert } from '../../contexts/ModalAlertContext';
@@ -414,16 +415,10 @@ function UserManager() {
         setIsExporting(true);
         try {
             const response = await exportAllUsers();
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `all_users_${new Date().toISOString().slice(0, 10)}.xlsx`);
-            document.body.appendChild(link);
-            link.click();
-            link.parentNode.removeChild(link);
+            await downloadExcelBlob(response, `all_users_${new Date().toISOString().slice(0, 10)}.xlsx`);
         } catch (err) {
             console.error('Ошибка при экспорте пользователей:', err);
-            showAlert('Не удалось скачать отчет.', 'error');
+            showAlert(err.message || 'Не удалось скачать отчет.', 'error');
         } finally {
             setIsExporting(false);
         }

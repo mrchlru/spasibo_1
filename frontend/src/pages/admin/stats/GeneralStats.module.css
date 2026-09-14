@@ -1,0 +1,195 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.header {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: #6E7A85;
+  font-size: 0.9rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.cardWide {
+  grid-column: span 1;
+  min-height: 180px;
+}
+
+@media (min-width: 720px) {
+  .cardWide {
+    grid-column: span 2;
+  }
+}
+
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #6E7A85;
+  line-height: 1.3;
+}
+
+.cardValue {
+  margin: 10px 0 0;
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #1c1c1e;
+  letter-spacing: -0.03em;
+}
+
+.infoButton {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: #f2f2f7;
+  color: #8e8e93;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.infoButton:hover {
+  background: #e5e5ea;
+  color: #007aff;
+}
+
+.topItems {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.topItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f2f2f7;
+  border-radius: 12px;
+  font-size: 0.9rem;
+}
+
+.topItemName {
+  font-weight: 600;
+  color: #1c1c1e;
+}
+
+.topItemCount {
+  color: #6E7A85;
+  white-space: nowrap;
+}
+
+.chartsSection {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+@media (min-width: 900px) {
+  .chartsSection {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.chartCard {
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+.chartTitle {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.chartHint {
+  margin: 0 0 16px;
+  font-size: 0.82rem;
+  color: #6E7A85;
+}
+
+.chartWrap {
+  height: 300px;
+  position: relative;
+}
+
+.periodLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.periodBadge {
+  flex: 1 1 140px;
+  background: #f2f2f7;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.periodBadgeTitle {
+  font-size: 0.78rem;
+  color: #6E7A85;
+  margin-bottom: 4px;
+}
+
+.periodBadgeValue {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1c1c1e;
+}
+
+.changeUp {
+  color: #34c759;
+}
+
+.changeDown {
+  color: #ff3b30;
+}
+
+.changeNeutral {
+  color: #8e8e93;
+}

@@ -362,6 +362,31 @@ class GeneralStatsResponse(BaseModel):
     store_purchases_count: int
     total_store_spent: int
 
+
+class DashboardTopStoreItem(BaseModel):
+    name: str
+    purchase_count: int
+
+
+class DashboardActivityPeriod(BaseModel):
+    period_days: int
+    period_label: str
+    active_users: int
+    inactive_users: int
+    active_percent: float
+    week_change_percent: Optional[float] = None
+
+
+class DashboardStatsResponse(BaseModel):
+    total_users: int
+    active_users_count: int
+    transactions_count: int
+    total_balance: int
+    store_purchases_count: int
+    total_store_spent: int
+    top_store_items: List[DashboardTopStoreItem]
+    activity_by_period: List[DashboardActivityPeriod]
+
 class HourlyActivityStats(BaseModel):
     hourly_stats: dict[int, int]
 
@@ -502,11 +527,22 @@ class ClientShellStats(BaseModel):
     other: int
 
 
+class ClientPlatformUserRow(BaseModel):
+    id: int
+    full_name: str
+    phone_number: str
+    email: Optional[str] = None
+    position: str
+    platform_label: str
+    category: str
+
+
 class ClientStatisticsResponse(BaseModel):
     total_users: int
     by_platform: ClientPlatformStats
     by_shell: ClientShellStats
     installs: ClientInstallStats
+    users: List[ClientPlatformUserRow] = []
 
 
 class ActiveSenderRow(BaseModel):

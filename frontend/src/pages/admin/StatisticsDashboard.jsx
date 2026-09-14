@@ -51,7 +51,7 @@ const StatisticsDashboard = () => {
     };
 
     const tabs = [
-        { id: 'general', label: 'Общая', icon: <FaChartBar />, dateDependent: true },
+        { id: 'general', label: 'Дашборд', icon: <FaChartBar />, dateDependent: true },
         { id: 'duration', label: 'Время сессии', icon: <FaClock />, dateDependent: true },
         { id: 'hourly', label: 'Спасибо', icon: <FaHourglassHalf />, dateDependent: true },
         // { id: 'logins', label: 'Заходы', icon: <FaSignInAlt />, dateDependent: true },
