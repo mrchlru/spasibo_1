@@ -119,24 +119,35 @@
   white-space: nowrap;
 }
 
-.chartsSection {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 20px;
-}
-
-@media (min-width: 900px) {
-  .chartsSection {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
 .chartCard {
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 20px;
   padding: 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  width: 100%;
+}
+
+.chartBody {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+@media (min-width: 900px) {
+  .chartBody {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .chartWrap {
+    flex: 0 0 340px;
+    max-width: 340px;
+  }
+
+  .periodLegend {
+    flex: 1;
+  }
 }
 
 .chartTitle {
@@ -180,6 +191,13 @@
   font-size: 0.95rem;
   font-weight: 600;
   color: #1c1c1e;
+}
+
+.periodBadgeSub {
+  font-size: 0.88rem;
+  color: #6E7A85;
+  margin-top: 2px;
+  margin-bottom: 4px;
 }
 
 .changeUp {

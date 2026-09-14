@@ -54,30 +54,24 @@ function MetricCard({ title, value, hintKey, wide = false, children }) {
   );
 }
 
-function ActivityChart({ title, hint, periods, mode }) {
+function ActivityChart({ periods }) {
   const chartData = useMemo(() => {
     const datasets = periods.map((period) => {
       const colors = PERIOD_RING_COLORS[period.period_days] || PERIOD_RING_COLORS[7];
-      const active = period.active_users;
-      const inactive = period.inactive_users;
       return {
         label: period.period_label,
-        data: mode === 'inactive' ? [inactive, active] : [active, inactive],
-        backgroundColor: mode === 'inactive'
-          ? [colors.inactive, colors.active]
-          : [colors.active, colors.inactive],
+        data: [period.active_users, period.inactive_users],
+        backgroundColor: [colors.active, colors.inactive],
         borderWidth: 2,
         borderColor: '#ffffff',
       };
     });
 
     return {
-      labels: mode === 'inactive'
-        ? ['Не отправляли', 'Отправляли']
-        : ['Отправляли', 'Не отправляли'],
+      labels: ['Отправляли', 'Не отправляли'],
       datasets,
     };
-  }, [mode, periods]);
+  }, [periods]);
 
   const options = {
     responsive: true,
@@ -99,26 +93,30 @@ function ActivityChart({ title, hint, periods, mode }) {
 
   return (
     <div className={styles.chartCard}>
-      <h3 className={styles.chartTitle}>{title}</h3>
-      <p className={styles.chartHint}>{hint}</p>
-      <div className={styles.chartWrap}>
-        <Doughnut data={chartData} options={options} />
-      </div>
-      <div className={styles.periodLegend}>
-        {periods.map((period) => (
-          <div key={period.period_days} className={styles.periodBadge}>
-            <div className={styles.periodBadgeTitle}>{period.period_label}</div>
-            <div className={styles.periodBadgeValue}>
-              {mode === 'inactive'
-                ? `${period.inactive_users} неактивных`
-                : `${period.active_users} активных (${period.active_percent}%)`}
+      <h3 className={styles.chartTitle}>Активные — неактивные пользователи</h3>
+      <p className={styles.chartHint}>
+        Кольца: 7 дней, 1 месяц и 3 месяца. Сравнение с прошлой неделей — в процентах.
+      </p>
+      <div className={styles.chartBody}>
+        <div className={styles.chartWrap}>
+          <Doughnut data={chartData} options={options} />
+        </div>
+        <div className={styles.periodLegend}>
+          {periods.map((period) => (
+            <div key={period.period_days} className={styles.periodBadge}>
+              <div className={styles.periodBadgeTitle}>{period.period_label}</div>
+              <div className={styles.periodBadgeValue}>
+                {period.active_users} активных ({period.active_percent}%)
+              </div>
+              <div className={styles.periodBadgeSub}>
+                {period.inactive_users} неактивных
+              </div>
+              <div className={changeClassName(period.week_change_percent)}>
+                За неделю: {formatChange(period.week_change_percent)}
+              </div>
             </div>
-            <div className={changeClassName(period.week_change_percent)}>
-              {mode === 'inactive' ? 'Изм. активных: ' : 'За неделю: '}
-              {formatChange(period.week_change_percent)}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -202,20 +200,7 @@ function GeneralStats({ startDate, endDate }) {
         />
       </div>
 
-      <div className={styles.chartsSection}>
-        <ActivityChart
-          title="Активные пользователи"
-          hint="Кольца: 7 дней, 1 месяц и 3 месяца. Сравнение с прошлой неделей — в процентах."
-          periods={stats.activity_by_period || []}
-          mode="active"
-        />
-        <ActivityChart
-          title="Неактивные пользователи"
-          hint="Кто не отправлял «спасибо» за период. Те же три кольца, акцент на неактивных."
-          periods={stats.activity_by_period || []}
-          mode="inactive"
-        />
-      </div>
+      <ActivityChart periods={stats.activity_by_period || []} />
     </div>
   );
 }
