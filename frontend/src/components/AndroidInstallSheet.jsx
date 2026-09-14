@@ -25,6 +25,7 @@ export function AndroidInstallSheet({
   loading,
   isOnboardingVisible,
   androidRelease,
+  installPromo = null,
   hasBottomNav = false,
 }) {
   const release = useMemo(() => normalizeAndroidRelease(androidRelease), [androidRelease]);
@@ -54,7 +55,11 @@ export function AndroidInstallSheet({
       && !isOnboardingVisible
       && bootReady
       && isMobileWelcomeSeen()
-      && shouldShowAndroidInstallPrompt(release, { isPrimaryAdmin, isAdmin }),
+      && shouldShowAndroidInstallPrompt(release, {
+        isPrimaryAdmin,
+        isAdmin,
+        installPromo,
+      }),
     );
     setEligible(ok);
     if (!ok) {
@@ -62,6 +67,7 @@ export function AndroidInstallSheet({
     }
   }, [
     bootReady,
+    installPromo,
     isOnboardingVisible,
     isPrimaryAdmin,
     isAdmin,

@@ -67,6 +67,7 @@ import PushEnablePrompt from './components/PushEnablePrompt.jsx';
 import AndroidInstallSheet from './components/AndroidInstallSheet.jsx';
 import AppInstallPromo from './components/AppInstallPromo.jsx';
 import { DEFAULT_ANDROID_RELEASE, normalizeAndroidRelease } from './pwa/androidInstallPrompt.js';
+import { DEFAULT_INSTALL_PROMO, normalizeInstallPromo } from './pwa/appInstallPromo.js';
 
 import { useSessionTracking } from './hooks/useSessionTracking';
 
@@ -99,6 +100,7 @@ function App() {
     return getCachedAppSettingsSnapshot()?.theme_assets ?? null;
   });
   const [androidRelease, setAndroidRelease] = useState({ ...DEFAULT_ANDROID_RELEASE });
+  const [installPromo, setInstallPromo] = useState({ ...DEFAULT_INSTALL_PROMO });
   const [pendingFeedPostId, setPendingFeedPostId] = useState(null);
   const seasonThemeRef = useRef('summer');
   // Инициализация windowWidth с проверкой доступности window
@@ -185,6 +187,7 @@ function App() {
         }
         setThemeAssets(response?.data?.theme_assets ?? null);
         setAndroidRelease(normalizeAndroidRelease(response?.data?.android_release));
+        setInstallPromo(normalizeInstallPromo(response?.data?.install_promo));
         applyFrontendBuildUpdate(response?.data?.frontend_build_id);
         void warmShellAssetsForTheme(response?.data?.theme_assets ?? null);
       } catch (error) {
@@ -216,6 +219,9 @@ function App() {
     handleAppearanceUpdated(data);
     if (data && Object.prototype.hasOwnProperty.call(data, 'android_release')) {
       setAndroidRelease(normalizeAndroidRelease(data.android_release));
+    }
+    if (data && Object.prototype.hasOwnProperty.call(data, 'install_promo')) {
+      setInstallPromo(normalizeInstallPromo(data.install_promo));
     }
   }, [handleAppearanceUpdated]);
 
@@ -900,6 +906,7 @@ function App() {
         loading={loading}
         isOnboardingVisible={isOnboardingVisible}
         androidRelease={androidRelease}
+        installPromo={installPromo}
         hasBottomNav={Boolean(shouldShowBottomNav)}
       />
       <AppInstallPromo
@@ -907,6 +914,7 @@ function App() {
         bootReady={bootReady}
         loading={loading}
         isOnboardingVisible={isOnboardingVisible}
+        installPromo={installPromo}
         hasBottomNav={Boolean(shouldShowBottomNav)}
       />
       {/* Теперь меню показываются на основе новых, правильных переменных */}

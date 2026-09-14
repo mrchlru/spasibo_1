@@ -30,6 +30,7 @@ function AppInstallPromo({
   bootReady,
   loading,
   isOnboardingVisible,
+  installPromo = null,
   hasBottomNav = false,
 }) {
   const platform = useMemo(() => getAppInstallPromoPlatform(), []);
@@ -51,14 +52,22 @@ function AppInstallPromo({
       && !isOnboardingVisible
       && bootReady
       && isMobileWelcomeSeen()
-      && shouldShowAppInstallPromo(platform),
+      && shouldShowAppInstallPromo(platform, installPromo),
     );
     setVisible(canShow);
     if (!canShow) {
       setMode('promote');
       setStatusMessage('');
     }
-  }, [bootReady, isOnboardingVisible, loading, platform, user?.id, user?.status]);
+  }, [
+    bootReady,
+    installPromo,
+    isOnboardingVisible,
+    loading,
+    platform,
+    user?.id,
+    user?.status,
+  ]);
 
   useEffect(() => {
     bindPwaInstallPromptCapture();
@@ -78,7 +87,7 @@ function AppInstallPromo({
       || isOnboardingVisible
       || !bootReady
       || !isMobileWelcomeSeen()
-      || !shouldShowAppInstallPromo(platform)
+      || !shouldShowAppInstallPromo(platform, installPromo)
     ) {
       setVisible(false);
       return undefined;
@@ -93,6 +102,7 @@ function AppInstallPromo({
     };
   }, [
     bootReady,
+    installPromo,
     isOnboardingVisible,
     loading,
     platform,

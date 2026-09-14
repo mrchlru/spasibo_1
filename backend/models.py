@@ -369,3 +369,5 @@ class AppSettings(Base):
     theme_assets = Column(JSON, nullable=True)
     # Релиз Android APK для промпта установки в браузере
     android_release = Column(JSON, nullable=True)
+    # Мягкая реклама установки (ПК QR / iOS Home Screen / Android браузер)
+    install_promo = Column(JSON, nullable=True)

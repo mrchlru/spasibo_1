@@ -496,11 +496,21 @@ class AndroidReleasePayload(BaseModel):
     )
 
 
+class InstallPromoPayload(BaseModel):
+    """Кампания мягкой рекламы установки приложения (управляется из админки)."""
+
+    enabled: bool = False
+    desktop: bool = True
+    ios: bool = True
+    android_browser: bool = True
+
+
 class AppSettingsResponse(OrmBase):
     id: int
     season_theme: Literal['summer', 'winter']
     theme_assets: Optional[ThemeAssetsPayload] = None
     android_release: Optional[AndroidReleasePayload] = None
+    install_promo: Optional[InstallPromoPayload] = None
     frontend_build_id: Optional[str] = None
 
 
@@ -508,6 +518,7 @@ class AppSettingsUpdate(BaseModel):
     season_theme: Optional[Literal['summer', 'winter']] = None
     theme_assets: Optional[ThemeAssetsPayload] = None
     android_release: Optional[AndroidReleasePayload] = None
+    install_promo: Optional[InstallPromoPayload] = None
 
 class TotalBalanceStats(BaseModel):
     total_balance: int

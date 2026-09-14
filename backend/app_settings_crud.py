@@ -13,12 +13,16 @@ def app_settings_to_response(row: models.AppSettings) -> schemas.AppSettingsResp
     android_release = None
     if row.android_release is not None:
         android_release = schemas.AndroidReleasePayload.model_validate(row.android_release)
+    install_promo = None
+    if row.install_promo is not None:
+        install_promo = schemas.InstallPromoPayload.model_validate(row.install_promo)
     st = row.season_theme if row.season_theme in ("summer", "winter") else "summer"
     return schemas.AppSettingsResponse(
         id=row.id,
         season_theme=st,
         theme_assets=theme_assets,
         android_release=android_release,
+        install_promo=install_promo,
     )
 
 
@@ -55,6 +59,13 @@ async def update_app_settings(db: AsyncSession, settings_data: schemas.AppSettin
                 payload = schemas.AndroidReleasePayload.model_validate(value)
                 dumped = payload.model_dump(exclude_none=True)
                 setattr(settings_row, "android_release", dumped if dumped else None)
+        elif key == "install_promo":
+            if value is None:
+                setattr(settings_row, "install_promo", None)
+            else:
+                payload = schemas.InstallPromoPayload.model_validate(value)
+                dumped = payload.model_dump()
+                setattr(settings_row, "install_promo", dumped)
         else:
             setattr(settings_row, key, value)
 

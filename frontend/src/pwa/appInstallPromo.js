@@ -181,12 +181,19 @@ export function markAppInstallPromoDone(reason = 'done') {
  * Нужно ли показать мягкое промо (без учёта welcome / loading).
  *
  * @param {AppInstallPromoPlatform | null} [platform]
+ * @param {object | null | undefined} [campaign] настройки из админки (install_promo)
  */
-export function shouldShowAppInstallPromo(platform = getAppInstallPromoPlatform()) {
+export function shouldShowAppInstallPromo(
+  platform = getAppInstallPromoPlatform(),
+  campaign = null,
+) {
   if (!platform) {
     return false;
   }
   if (platform === 'android-browser') {
+    return false;
+  }
+  if (!isInstallPromoCampaignActive(campaign, platform)) {
     return false;
   }
   if (isAppInstallPromoGoalMet(platform)) {
@@ -196,6 +203,53 @@ export function shouldShowAppInstallPromo(platform = getAppInstallPromoPlatform(
     return false;
   }
   return true;
+}
+
+export const DEFAULT_INSTALL_PROMO = {
+  enabled: false,
+  desktop: true,
+  ios: true,
+  android_browser: true,
+};
+
+/**
+ * Нормализует настройки кампании из app-settings.
+ *
+ * @param {object | null | undefined} raw
+ */
+export function normalizeInstallPromo(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return { ...DEFAULT_INSTALL_PROMO };
+  }
+  return {
+    enabled: Boolean(raw.enabled),
+    desktop: raw.desktop !== false,
+    ios: raw.ios !== false,
+    android_browser: raw.android_browser !== false,
+  };
+}
+
+/**
+ * Кампания включена в админке для данной платформы.
+ *
+ * @param {object | null | undefined} campaign
+ * @param {AppInstallPromoPlatform | 'android-browser' | null} platform
+ */
+export function isInstallPromoCampaignActive(campaign, platform) {
+  const normalized = normalizeInstallPromo(campaign);
+  if (!normalized.enabled) {
+    return false;
+  }
+  if (platform === 'desktop') {
+    return normalized.desktop;
+  }
+  if (platform === 'ios-browser') {
+    return normalized.ios;
+  }
+  if (platform === 'android-browser') {
+    return normalized.android_browser;
+  }
+  return false;
 }
 
 /**

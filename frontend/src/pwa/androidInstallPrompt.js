@@ -5,6 +5,7 @@
 import { getSpasiboAndroidVersionCode, isSpasiboAndroidApp } from './androidNativePush.js';
 import {
   isAppInstallPromoSnoozed,
+  isInstallPromoCampaignActive,
   snoozeAppInstallPromo,
 } from './appInstallPromo.js';
 import { isAndroidMobileBrowser } from './mobileWelcomeGuide.js';
@@ -70,14 +71,26 @@ export function isAndroidInstallPromptDismissed(release) {
  * Нужно ли показывать промпт для текущего релиза.
  *
  * @param {object | null | undefined} release
- * @param {{ isPrimaryAdmin?: boolean, isAdmin?: boolean }} [options]
+ * @param {{
+ *   isPrimaryAdmin?: boolean,
+ *   isAdmin?: boolean,
+ *   installPromo?: object | null,
+ * }} [options]
  */
 export function shouldShowAndroidInstallPrompt(release, options = {}) {
-  const { isPrimaryAdmin = false, isAdmin = false } = options;
+  const { isPrimaryAdmin = false, isAdmin = false, installPromo = null } = options;
   const canTestBeforeRollout = isPrimaryAdmin || isAdmin;
   const mode = getAndroidInstallPromptMode();
   if (!mode) {
     return false;
+  }
+
+  // Установка в браузере — только при включённой кампании в админке.
+  // Обновление уже установленного APK — по android_release, без кампании.
+  if (mode === 'install' && !isInstallPromoCampaignActive(installPromo, 'android-browser')) {
+    if (!(canTestBeforeRollout && normalizeAndroidRelease(release).apk_url)) {
+      return false;
+    }
   }
 
   const normalized = normalizeAndroidRelease(release);
