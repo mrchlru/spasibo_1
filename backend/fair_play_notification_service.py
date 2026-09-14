@@ -90,7 +90,7 @@ def _build_suspicious_email(payload: dict[str, Any]) -> tuple[str, str, str]:
         f"Fair Play: подозрительная активность\n\n"
         f"Дата (МСК): {trigger_date}\n"
         f"Получатель: {_user_display_name(receiver)}, {receiver.get('position') or '—'}\n"
-        f"Разных отправителей: {distinct}\n\n"
+        f"Разных отправителей (по 3+ спасибки каждый): {distinct}\n\n"
         f"Участники:\n" + "\n".join(text_lines) + "\n\n"
         f"Санкции не применены. Смотрите раздел Fair Play в админке."
     )
@@ -154,7 +154,7 @@ def _build_sanctions_email(payload: dict[str, Any]) -> tuple[str, str, str]:
     text_body = (
         f"Fair Play: применены санкции\n\n"
         f"Дата (МСК): {trigger_date}\n"
-        f"Разных отправителей: {distinct}\n\n"
+        f"Разных отправителей (по 3+ спасибки каждый): {distinct}\n\n"
     )
     if banned_text:
         text_body += "Заблокированные:\n" + "\n".join(banned_text) + "\n\n"
