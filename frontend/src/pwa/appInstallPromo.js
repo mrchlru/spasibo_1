@@ -183,7 +183,7 @@ export function markAppInstallPromoDone(reason = 'done') {
  *
  * @param {AppInstallPromoPlatform | null} [platform]
  * @param {object | null | undefined} [campaign] настройки из админки (install_promo)
- * @param {{ isAdmin?: boolean }} [options]
+ * @param {{ isAdmin?: boolean, userId?: number | null }} [options]
  */
 export function shouldShowAppInstallPromo(
   platform = getAppInstallPromoPlatform(),
@@ -199,12 +199,11 @@ export function shouldShowAppInstallPromo(
   if (!isInstallPromoCampaignActive(campaign, platform)) {
     return false;
   }
-  const normalized = normalizeInstallPromo(campaign);
-  if (normalized.admins_only && !options.isAdmin) {
+  if (!isInstallPromoAudienceAllowed(campaign, options)) {
     return false;
   }
-  // Режим «только админам» — превью: показываем даже при достигнутой цели / snooze.
-  if (normalized.admins_only && options.isAdmin) {
+  // Ограниченная аудитория (админы / выбранные) — превью без goal/snooze.
+  if (isInstallPromoRestrictedAudience(campaign)) {
     return true;
   }
   if (isAppInstallPromoGoalMet(platform)) {
@@ -222,9 +221,33 @@ export const DEFAULT_INSTALL_PROMO = {
   ios: true,
   android_browser: true,
   admins_only: false,
+  allowed_user_ids: [],
   started_at: null,
   ends_at: null,
 };
+
+/**
+ * Нормализует список id пользователей из настроек.
+ *
+ * @param {unknown} raw
+ * @returns {number[]}
+ */
+export function normalizeInstallPromoUserIds(raw) {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const ids = [];
+  const seen = new Set();
+  raw.forEach((value) => {
+    const id = Number.parseInt(String(value), 10);
+    if (!Number.isFinite(id) || id <= 0 || seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    ids.push(id);
+  });
+  return ids;
+}
 
 /**
  * Нормализует настройки кампании из app-settings.
@@ -233,7 +256,7 @@ export const DEFAULT_INSTALL_PROMO = {
  */
 export function normalizeInstallPromo(raw) {
   if (!raw || typeof raw !== 'object') {
-    return { ...DEFAULT_INSTALL_PROMO };
+    return { ...DEFAULT_INSTALL_PROMO, allowed_user_ids: [] };
   }
   return {
     enabled: Boolean(raw.enabled),
@@ -241,9 +264,41 @@ export function normalizeInstallPromo(raw) {
     ios: raw.ios !== false,
     android_browser: raw.android_browser !== false,
     admins_only: Boolean(raw.admins_only),
+    allowed_user_ids: normalizeInstallPromoUserIds(raw.allowed_user_ids),
     started_at: typeof raw.started_at === 'string' ? raw.started_at : null,
     ends_at: typeof raw.ends_at === 'string' ? raw.ends_at : null,
   };
+}
+
+/**
+ * Кампания ограничена админами и/или списком пользователей.
+ *
+ * @param {object | null | undefined} campaign
+ */
+export function isInstallPromoRestrictedAudience(campaign) {
+  const normalized = normalizeInstallPromo(campaign);
+  return normalized.admins_only || normalized.allowed_user_ids.length > 0;
+}
+
+/**
+ * Текущий пользователь входит в аудиторию кампании.
+ *
+ * @param {object | null | undefined} campaign
+ * @param {{ isAdmin?: boolean, userId?: number | null }} [options]
+ */
+export function isInstallPromoAudienceAllowed(campaign, options = {}) {
+  const normalized = normalizeInstallPromo(campaign);
+  if (!isInstallPromoRestrictedAudience(normalized)) {
+    return true;
+  }
+  if (normalized.admins_only && options.isAdmin) {
+    return true;
+  }
+  const userId = Number.parseInt(String(options.userId ?? ''), 10);
+  if (Number.isFinite(userId) && normalized.allowed_user_ids.includes(userId)) {
+    return true;
+  }
+  return false;
 }
 
 /**

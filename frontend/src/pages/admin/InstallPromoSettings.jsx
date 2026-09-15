@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import styles from '../AdminPage.module.css';
-import { getAppSettings, updateAppSettings } from '../../api';
+import { adminGetAllUsers, getAppSettings, searchUsers, updateAppSettings } from '../../api';
 import { useModalAlert } from '../../contexts/ModalAlertContext';
 import { formatToMsk } from '../../utils/dateFormatter';
 import {
@@ -11,12 +11,35 @@ import {
 } from '../../pwa/appInstallPromo.js';
 
 /**
+ * Подпись пользователя для списка аудитории.
+ *
+ * @param {{ first_name?: string, last_name?: string, username?: string, id?: number }} user
+ */
+function formatAudienceUserLabel(user) {
+  const name = `${user?.first_name || ''} ${user?.last_name || ''}`.trim();
+  if (name && user?.username) {
+    return `${name} (@${user.username})`;
+  }
+  if (name) {
+    return name;
+  }
+  if (user?.username) {
+    return `@${user.username}`;
+  }
+  return `ID ${user?.id}`;
+}
+
+/**
  * Админка: запуск и остановка мягкой рекламы установки приложения.
  */
 function InstallPromoSettings({ onAppSettingsUpdated }) {
   const { showAlert } = useModalAlert();
-  const [promo, setPromo] = useState({ ...DEFAULT_INSTALL_PROMO });
+  const [promo, setPromo] = useState({ ...DEFAULT_INSTALL_PROMO, allowed_user_ids: [] });
+  const [audienceUsers, setAudienceUsers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,7 +49,24 @@ function InstallPromoSettings({ onAppSettingsUpdated }) {
         if (cancelled) {
           return;
         }
-        setPromo(normalizeInstallPromo(response?.data?.install_promo));
+        const nextPromo = normalizeInstallPromo(response?.data?.install_promo);
+        setPromo(nextPromo);
+        if (nextPromo.allowed_user_ids.length > 0) {
+          const usersResponse = await adminGetAllUsers();
+          if (cancelled) {
+            return;
+          }
+          const byId = new Map(
+            (usersResponse?.data || []).map((user) => [user.id, user]),
+          );
+          setAudienceUsers(
+            nextPromo.allowed_user_ids
+              .map((id) => byId.get(id) || { id })
+              .filter(Boolean),
+          );
+        } else {
+          setAudienceUsers([]);
+        }
       } catch {
         if (!cancelled) {
           showAlert('Не удалось загрузить настройки рекламы установки.', 'error');
@@ -38,8 +78,68 @@ function InstallPromoSettings({ onAppSettingsUpdated }) {
     };
   }, [showAlert]);
 
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchResults([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const timerId = window.setTimeout(() => {
+      void (async () => {
+        setSearching(true);
+        try {
+          const response = await searchUsers(query);
+          if (!cancelled) {
+            setSearchResults(response?.data || []);
+          }
+        } catch {
+          if (!cancelled) {
+            setSearchResults([]);
+          }
+        } finally {
+          if (!cancelled) {
+            setSearching(false);
+          }
+        }
+      })();
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, [searchQuery]);
+
+  const selectedIds = useMemo(
+    () => new Set(promo.allowed_user_ids || []),
+    [promo.allowed_user_ids],
+  );
+
   function updateField(key, value) {
     setPromo((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function addAudienceUser(user) {
+    if (!user?.id || selectedIds.has(user.id)) {
+      setSearchQuery('');
+      setSearchResults([]);
+      return;
+    }
+    setPromo((prev) => ({
+      ...prev,
+      allowed_user_ids: [...(prev.allowed_user_ids || []), user.id],
+    }));
+    setAudienceUsers((prev) => [...prev, user]);
+    setSearchQuery('');
+    setSearchResults([]);
+  }
+
+  function removeAudienceUser(userId) {
+    setPromo((prev) => ({
+      ...prev,
+      allowed_user_ids: (prev.allowed_user_ids || []).filter((id) => id !== userId),
+    }));
+    setAudienceUsers((prev) => prev.filter((user) => user.id !== userId));
   }
 
   async function persistPromo(next, successMessage) {
@@ -50,7 +150,12 @@ function InstallPromoSettings({ onAppSettingsUpdated }) {
       showAlert(successMessage, 'success');
       if (response?.data) {
         onAppSettingsUpdated?.(response.data);
-        setPromo(normalizeInstallPromo(response.data.install_promo));
+        const saved = normalizeInstallPromo(response.data.install_promo);
+        setPromo(saved);
+        setAudienceUsers((prev) => {
+          const byId = new Map(prev.map((user) => [user.id, user]));
+          return saved.allowed_user_ids.map((id) => byId.get(id) || { id });
+        });
       }
       return true;
     } catch (error) {
@@ -63,13 +168,10 @@ function InstallPromoSettings({ onAppSettingsUpdated }) {
   }
 
   async function handleSave() {
-    const ok = await persistPromo(
+    await persistPromo(
       promo,
       promo.enabled ? 'Реклама установки обновлена.' : 'Настройки сохранены.',
     );
-    if (!ok) {
-      return;
-    }
   }
 
   async function handleToggleCampaign(enabled) {
@@ -95,6 +197,7 @@ function InstallPromoSettings({ onAppSettingsUpdated }) {
   const endsLabel = promo.ends_at
     ? formatToMsk(promo.ends_at)
     : null;
+  const filteredSearchResults = searchResults.filter((user) => !selectedIds.has(user.id));
 
   return (
     <div className={styles.card}>
@@ -151,14 +254,118 @@ function InstallPromoSettings({ onAppSettingsUpdated }) {
       </div>
 
       <h3 style={{ marginBottom: '0.5rem' }}>Кому показывать</h3>
+      <p style={{ marginTop: 0, color: '#456843', fontSize: '0.92rem' }}>
+        Если ничего не отмечено и список пуст — видят все. Иначе только админы
+        и/или выбранные пользователи (удобно для превью).
+      </p>
       <label className={styles.checkboxLabel}>
         <input
           type="checkbox"
           checked={Boolean(promo.admins_only)}
           onChange={(event) => updateField('admins_only', event.target.checked)}
         />
-        Только администраторам (превью кампании)
+        Всем администраторам
       </label>
+
+      <div style={{ marginTop: '0.85rem' }}>
+        <label htmlFor="install-promo-user-search" style={{ display: 'block', marginBottom: 6 }}>
+          Добавить пользователя
+        </label>
+        <input
+          id="install-promo-user-search"
+          type="search"
+          className={styles.input}
+          placeholder="Имя, фамилия или @username…"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          autoComplete="off"
+        />
+        {searching && (
+          <p style={{ margin: '0.4rem 0 0', color: '#6E7A85', fontSize: '0.85rem' }}>
+            Поиск…
+          </p>
+        )}
+        {filteredSearchResults.length > 0 && (
+          <ul
+            style={{
+              listStyle: 'none',
+              margin: '0.5rem 0 0',
+              padding: 0,
+              border: '1px solid rgba(0,0,0,0.08)',
+              borderRadius: 10,
+              maxHeight: 220,
+              overflowY: 'auto',
+              background: '#fff',
+            }}
+          >
+            {filteredSearchResults.map((user) => (
+              <li key={user.id}>
+                <button
+                  type="button"
+                  onClick={() => addAudienceUser(user)}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    border: 'none',
+                    background: 'transparent',
+                    padding: '0.55rem 0.75rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {formatAudienceUserLabel(user)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {audienceUsers.length > 0 && (
+        <ul
+          style={{
+            listStyle: 'none',
+            margin: '0.85rem 0 0',
+            padding: 0,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '0.45rem',
+          }}
+        >
+          {audienceUsers.map((user) => (
+            <li
+              key={user.id}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                padding: '0.25rem 0.55rem',
+                borderRadius: 999,
+                background: 'rgba(92, 161, 74, 0.14)',
+                color: '#234a20',
+                fontSize: '0.88rem',
+              }}
+            >
+              <span>{formatAudienceUserLabel(user)}</span>
+              <button
+                type="button"
+                aria-label="Убрать"
+                onClick={() => removeAudienceUser(user.id)}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  fontWeight: 700,
+                  color: '#456843',
+                  padding: 0,
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <h3 style={{ marginBottom: '0.5rem', marginTop: '1rem' }}>Платформы</h3>
       <label className={styles.checkboxLabel}>

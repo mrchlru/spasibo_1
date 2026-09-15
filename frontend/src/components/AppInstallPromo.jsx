@@ -15,6 +15,8 @@ import {
   promptDeferredPwaInstall,
   shouldShowAppInstallPromo,
   snoozeAppInstallPromo,
+  isInstallPromoAudienceAllowed,
+  isInstallPromoRestrictedAudience,
 } from '../pwa/appInstallPromo.js';
 import {
   enablePushWithTestPush,
@@ -61,6 +63,7 @@ function AppInstallPromo({
       && _isWelcomeGatePassed()
       && shouldShowAppInstallPromo(platform, installPromo, {
         isAdmin: Boolean(user?.is_admin),
+        userId: user?.id ?? null,
       }),
     );
     setVisible(canShow);
@@ -99,6 +102,7 @@ function AppInstallPromo({
       || !_isWelcomeGatePassed()
       || !shouldShowAppInstallPromo(platform, installPromo, {
         isAdmin: Boolean(user?.is_admin),
+        userId: user?.id ?? null,
       })
     ) {
       setVisible(false);
@@ -145,9 +149,14 @@ function AppInstallPromo({
     if (!visible || platform !== 'desktop') {
       return undefined;
     }
-    const normalized = installPromo && typeof installPromo === 'object' ? installPromo : {};
-    // В превью «только админам» не прячем QR из‑за уже включённых уведомлений.
-    if (normalized.admins_only && user?.is_admin) {
+    // В превью ограниченной аудитории не прячем QR из‑за уже включённых уведомлений.
+    if (
+      isInstallPromoRestrictedAudience(installPromo)
+      && isInstallPromoAudienceAllowed(installPromo, {
+        isAdmin: Boolean(user?.is_admin),
+        userId: user?.id ?? null,
+      })
+    ) {
       return undefined;
     }
     let cancelled = false;

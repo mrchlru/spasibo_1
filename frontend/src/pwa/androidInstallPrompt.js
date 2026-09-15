@@ -5,8 +5,9 @@
 import { getSpasiboAndroidVersionCode, isSpasiboAndroidApp } from './androidNativePush.js';
 import {
   isAppInstallPromoSnoozed,
+  isInstallPromoAudienceAllowed,
   isInstallPromoCampaignActive,
-  normalizeInstallPromo,
+  isInstallPromoRestrictedAudience,
   snoozeAppInstallPromo,
 } from './appInstallPromo.js';
 import { isAndroidMobileBrowser } from './mobileWelcomeGuide.js';
@@ -75,24 +76,29 @@ export function isAndroidInstallPromptDismissed(release) {
  * @param {{
  *   isPrimaryAdmin?: boolean,
  *   isAdmin?: boolean,
+ *   userId?: number | null,
  *   installPromo?: object | null,
  * }} [options]
  */
 export function shouldShowAndroidInstallPrompt(release, options = {}) {
-  const { isPrimaryAdmin = false, isAdmin = false, installPromo = null } = options;
+  const {
+    isPrimaryAdmin = false,
+    isAdmin = false,
+    userId = null,
+    installPromo = null,
+  } = options;
   const canTestBeforeRollout = isPrimaryAdmin || isAdmin;
   const mode = getAndroidInstallPromptMode();
   if (!mode) {
     return false;
   }
 
-  // Установка в браузере — только при активной кампании; admins_only — только админам.
+  // Установка в браузере — только при активной кампании и для аудитории.
   if (mode === 'install') {
     if (!isInstallPromoCampaignActive(installPromo, 'android-browser')) {
       return false;
     }
-    const promo = normalizeInstallPromo(installPromo);
-    if (promo.admins_only && !canTestBeforeRollout) {
+    if (!isInstallPromoAudienceAllowed(installPromo, { isAdmin: canTestBeforeRollout, userId })) {
       return false;
     }
   }
@@ -116,11 +122,11 @@ export function shouldShowAndroidInstallPrompt(release, options = {}) {
     }
   }
 
-  // Админское превью установки: показываем sheet даже после snooze.
+  // Ограниченная аудитория кампании: превью установки даже после snooze.
   if (
     mode === 'install'
-    && normalizeInstallPromo(installPromo).admins_only
-    && canTestBeforeRollout
+    && isInstallPromoRestrictedAudience(installPromo)
+    && isInstallPromoAudienceAllowed(installPromo, { isAdmin: canTestBeforeRollout, userId })
   ) {
     return true;
   }

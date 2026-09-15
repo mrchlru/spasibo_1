@@ -58,6 +58,7 @@ export function AndroidInstallSheet({
       && shouldShowAndroidInstallPrompt(release, {
         isPrimaryAdmin,
         isAdmin,
+        userId: user?.id ?? null,
         installPromo,
       }),
     );

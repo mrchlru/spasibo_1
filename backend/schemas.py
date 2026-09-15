@@ -504,6 +504,7 @@ class InstallPromoPayload(BaseModel):
     ios: bool = True
     android_browser: bool = True
     admins_only: bool = False
+    allowed_user_ids: List[int] = Field(default_factory=list)
     started_at: Optional[str] = None
     ends_at: Optional[str] = None
 
