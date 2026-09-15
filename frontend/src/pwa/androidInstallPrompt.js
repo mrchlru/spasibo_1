@@ -101,6 +101,12 @@ export function shouldShowAndroidInstallPrompt(release, options = {}) {
     if (!isInstallPromoAudienceAllowed(installPromo, { isAdmin: canTestBeforeRollout, userId })) {
       return false;
     }
+    if (
+      !isInstallPromoRestrictedAudience(installPromo)
+      && options.accountCanShow === false
+    ) {
+      return false;
+    }
   }
 
   const normalized = normalizeAndroidRelease(release);
@@ -191,7 +197,12 @@ export function getAndroidInstallPromptCopy(release, mode) {
 export function dismissAndroidInstallPrompt(release) {
   const mode = getAndroidInstallPromptMode();
   if (mode === 'install') {
-    snoozeAppInstallPromo();
+    // fire-and-forget: локально + на аккаунт
+    import('./installPromoAccountState.js').then((mod) => {
+      void mod.snoozeInstallPromoOnAccount();
+    }).catch(() => {
+      snoozeAppInstallPromo();
+    });
     return;
   }
 

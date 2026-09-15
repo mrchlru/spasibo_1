@@ -204,6 +204,15 @@ export const pinFeedPost = (postId) =>
 export const unpinFeedPost = (postId) =>
   apiClient.post(`/feed-posts/${postId}/unpin`, {}, getAuthHeaders());
 
+export const getInstallPromoUserState = () =>
+  apiClient.get('/users/me/install-promo-state', getAuthHeaders());
+
+export const snoozeInstallPromoUserState = () =>
+  apiClient.post('/users/me/install-promo-state/snooze', {}, getAuthHeaders());
+
+export const markInstallPromoUserDone = (reason = 'done') =>
+  apiClient.post('/users/me/install-promo-state/done', { reason }, getAuthHeaders());
+
 export const registerFeedPostView = (postId) =>
   apiClient.post(`/feed-posts/${postId}/view`, {}, getAuthHeaders());
 

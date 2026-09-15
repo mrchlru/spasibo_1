@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { FaAndroid, FaDownload } from 'react-icons/fa';
 import styles from './AndroidInstallSheet.module.css';
 import { isMobileWelcomeSeen } from '../pwa/mobileWelcomeGuide.js';
@@ -11,9 +11,20 @@ import {
   normalizeAndroidRelease,
   shouldShowAndroidInstallPrompt,
 } from '../pwa/androidInstallPrompt.js';
+import { isInstallPromoRestrictedAudience } from '../pwa/appInstallPromo.js';
+import {
+  canShowInstallPromoForAccount,
+  hydrateInstallPromoAccountState,
+  snoozeInstallPromoOnAccount,
+  subscribeInstallPromoAccountState,
+} from '../pwa/installPromoAccountState.js';
 
 const SWIPE_CLOSE_THRESHOLD_PX = 56;
 const SCROLL_REOPEN_THRESHOLD_PX = 12;
+
+function _getAccountCanShowSnapshot() {
+  return canShowInstallPromoForAccount();
+}
 
 /**
  * Нижний слайдер установки (браузер) или обновления (APK) на Android.
@@ -36,6 +47,13 @@ export function AndroidInstallSheet({
   );
   const isPrimaryAdmin = isPrimaryAdminUser(user);
   const isAdmin = Boolean(user?.is_admin);
+  const accountCanShow = useSyncExternalStore(
+    subscribeInstallPromoAccountState,
+    _getAccountCanShowSnapshot,
+    () => true,
+  );
+  const [shownThisSession, setShownThisSession] = useState(false);
+  const impressionSentRef = useRef(false);
   const [eligible, setEligible] = useState(false);
   const [sheetState, setSheetState] = useState('expanded');
   const sheetStateRef = useRef(sheetState);
@@ -46,6 +64,14 @@ export function AndroidInstallSheet({
   useEffect(() => {
     sheetStateRef.current = sheetState;
   }, [sheetState]);
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+    void hydrateInstallPromoAccountState();
+    return undefined;
+  }, [user?.id]);
 
   const refreshEligibility = useCallback(() => {
     const ok = Boolean(
@@ -60,6 +86,9 @@ export function AndroidInstallSheet({
         isAdmin,
         userId: user?.id ?? null,
         installPromo,
+        accountCanShow: isInstallPromoRestrictedAudience(installPromo)
+          || shownThisSession
+          || accountCanShow,
       }),
     );
     setEligible(ok);
@@ -67,6 +96,7 @@ export function AndroidInstallSheet({
       setSheetState('hidden');
     }
   }, [
+    accountCanShow,
     bootReady,
     installPromo,
     isOnboardingVisible,
@@ -76,9 +106,8 @@ export function AndroidInstallSheet({
     release.apk_url,
     release.enabled,
     release.version_code,
-    user?.id,
-    user?.is_admin,
-    user?.status,
+    shownThisSession,
+    user,
   ]);
 
   useEffect(() => {
@@ -95,6 +124,17 @@ export function AndroidInstallSheet({
     };
   }, [refreshEligibility]);
 
+  useEffect(() => {
+    if (!eligible || promptMode !== 'install' || isInstallPromoRestrictedAudience(installPromo)) {
+      return undefined;
+    }
+    setShownThisSession(true);
+    if (!impressionSentRef.current) {
+      impressionSentRef.current = true;
+      void snoozeInstallPromoOnAccount();
+    }
+    return undefined;
+  }, [eligible, installPromo, promptMode]);
   useEffect(() => {
     if (!eligible || !promptMode) {
       return undefined;

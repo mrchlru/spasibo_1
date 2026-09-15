@@ -406,3 +406,19 @@ class AppSettings(Base):
     android_release = Column(JSON, nullable=True)
     # Мягкая реклама установки (ПК QR / iOS Home Screen / Android браузер)
     install_promo = Column(JSON, nullable=True)
+
+
+class InstallPromoUserState(Base):
+    """Snooze / done рекламы установки на аккаунт (общее для всех устройств)."""
+
+    __tablename__ = "install_promo_user_states"
+
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    snoozed_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    done_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    done_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)

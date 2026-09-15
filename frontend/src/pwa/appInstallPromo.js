@@ -161,6 +161,11 @@ export function snoozeAppInstallPromo() {
   } catch {
     /* ignore */
   }
+  import('./installPromoAccountState.js').then((mod) => {
+    void mod.snoozeInstallPromoOnAccount();
+  }).catch(() => {
+    /* ignore */
+  });
 }
 
 /**
@@ -176,6 +181,11 @@ export function markAppInstallPromoDone(reason = 'done') {
   } catch {
     /* ignore */
   }
+  import('./installPromoAccountState.js').then((mod) => {
+    void mod.markInstallPromoDoneOnAccount(reason);
+  }).catch(() => {
+    /* ignore */
+  });
 }
 
 /**
@@ -183,7 +193,11 @@ export function markAppInstallPromoDone(reason = 'done') {
  *
  * @param {AppInstallPromoPlatform | null} [platform]
  * @param {object | null | undefined} [campaign] настройки из админки (install_promo)
- * @param {{ isAdmin?: boolean, userId?: number | null }} [options]
+ * @param {{
+ *   isAdmin?: boolean,
+ *   userId?: number | null,
+ *   accountCanShow?: boolean | null,
+ * }} [options]
  */
 export function shouldShowAppInstallPromo(
   platform = getAppInstallPromoPlatform(),
@@ -209,8 +223,13 @@ export function shouldShowAppInstallPromo(
   if (isAppInstallPromoGoalMet(platform)) {
     return false;
   }
-  if (isAppInstallPromoSnoozed()) {
+  if (options.accountCanShow === false) {
     return false;
+  }
+  if (options.accountCanShow == null) {
+    if (isAppInstallPromoDone() || isAppInstallPromoSnoozed()) {
+      return false;
+    }
   }
   return true;
 }

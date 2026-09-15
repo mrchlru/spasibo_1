@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { FaBell, FaDesktop, FaDownload, FaMobileAlt } from 'react-icons/fa';
 import styles from './AppInstallPromo.module.css';
 import WelcomeVisual from './MobileWelcomeGuideVisuals.jsx';
@@ -11,13 +11,18 @@ import {
   getAppInstallPromoShareUrl,
   hasDeferredPwaInstallPrompt,
   isDesktopPushAlreadyEnabled,
-  markAppInstallPromoDone,
   promptDeferredPwaInstall,
   shouldShowAppInstallPromo,
-  snoozeAppInstallPromo,
   isInstallPromoAudienceAllowed,
   isInstallPromoRestrictedAudience,
 } from '../pwa/appInstallPromo.js';
+import {
+  canShowInstallPromoForAccount,
+  hydrateInstallPromoAccountState,
+  markInstallPromoDoneOnAccount,
+  snoozeInstallPromoOnAccount,
+  subscribeInstallPromoAccountState,
+} from '../pwa/installPromoAccountState.js';
 import {
   enablePushWithTestPush,
   formatPushEnableError,
@@ -29,6 +34,10 @@ import { pushBlockReasonMessage } from '../pwa/pushEnvironment.js';
  */
 function _isWelcomeGatePassed() {
   return isMobileWelcomeSeen() || getAppInstallPromoPlatform() === 'desktop';
+}
+
+function _getAccountCanShowSnapshot() {
+  return canShowInstallPromoForAccount();
 }
 
 /**
@@ -45,6 +54,13 @@ function AppInstallPromo({
   const platform = useMemo(() => getAppInstallPromoPlatform(), []);
   const shareUrl = useMemo(() => getAppInstallPromoShareUrl(), []);
   const qrUrl = useMemo(() => buildAppInstallQrImageUrl(shareUrl), [shareUrl]);
+  const accountCanShow = useSyncExternalStore(
+    subscribeInstallPromoAccountState,
+    _getAccountCanShowSnapshot,
+    () => true,
+  );
+  const impressionSentRef = useRef(false);
+  const [shownThisSession, setShownThisSession] = useState(false);
 
   const [visible, setVisible] = useState(false);
   const [mode, setMode] = useState('promote');
@@ -52,6 +68,14 @@ function AppInstallPromo({
   const [installLoading, setInstallLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [pwaInstallAvailable, setPwaInstallAvailable] = useState(false);
+
+  const buildShowOptions = useCallback(() => ({
+    isAdmin: Boolean(user?.is_admin),
+    userId: user?.id ?? null,
+    accountCanShow: isInstallPromoRestrictedAudience(installPromo)
+      || shownThisSession
+      || accountCanShow,
+  }), [accountCanShow, installPromo, shownThisSession, user?.id, user?.is_admin]);
 
   const refreshVisibility = useCallback(() => {
     const canShow = Boolean(
@@ -61,10 +85,7 @@ function AppInstallPromo({
       && !isOnboardingVisible
       && bootReady
       && _isWelcomeGatePassed()
-      && shouldShowAppInstallPromo(platform, installPromo, {
-        isAdmin: Boolean(user?.is_admin),
-        userId: user?.id ?? null,
-      }),
+      && shouldShowAppInstallPromo(platform, installPromo, buildShowOptions()),
     );
     setVisible(canShow);
     if (!canShow) {
@@ -73,14 +94,21 @@ function AppInstallPromo({
     }
   }, [
     bootReady,
+    buildShowOptions,
     installPromo,
     isOnboardingVisible,
     loading,
     platform,
-    user?.id,
-    user?.is_admin,
-    user?.status,
+    user,
   ]);
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+    void hydrateInstallPromoAccountState();
+    return undefined;
+  }, [user?.id]);
 
   useEffect(() => {
     bindPwaInstallPromptCapture();
@@ -100,10 +128,7 @@ function AppInstallPromo({
       || isOnboardingVisible
       || !bootReady
       || !_isWelcomeGatePassed()
-      || !shouldShowAppInstallPromo(platform, installPromo, {
-        isAdmin: Boolean(user?.is_admin),
-        userId: user?.id ?? null,
-      })
+      || !shouldShowAppInstallPromo(platform, installPromo, buildShowOptions())
     ) {
       setVisible(false);
       return undefined;
@@ -118,14 +143,13 @@ function AppInstallPromo({
     };
   }, [
     bootReady,
+    buildShowOptions,
     installPromo,
     isOnboardingVisible,
     loading,
     platform,
     refreshVisibility,
-    user?.id,
-    user?.is_admin,
-    user?.status,
+    user,
   ]);
 
   useEffect(() => {
@@ -146,10 +170,22 @@ function AppInstallPromo({
   }, [refreshVisibility]);
 
   useEffect(() => {
+    if (!visible || isInstallPromoRestrictedAudience(installPromo)) {
+      return undefined;
+    }
+    setShownThisSession(true);
+    if (impressionSentRef.current) {
+      return undefined;
+    }
+    impressionSentRef.current = true;
+    void snoozeInstallPromoOnAccount();
+    return undefined;
+  }, [installPromo, visible]);
+
+  useEffect(() => {
     if (!visible || platform !== 'desktop') {
       return undefined;
     }
-    // В превью ограниченной аудитории не прячем QR из‑за уже включённых уведомлений.
     if (
       isInstallPromoRestrictedAudience(installPromo)
       && isInstallPromoAudienceAllowed(installPromo, {
@@ -162,17 +198,17 @@ function AppInstallPromo({
     let cancelled = false;
     isDesktopPushAlreadyEnabled().then((enabled) => {
       if (!cancelled && enabled) {
-        markAppInstallPromoDone('desktop_push');
+        void markInstallPromoDoneOnAccount('desktop_push');
         setVisible(false);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [installPromo, platform, user?.is_admin, visible]);
+  }, [installPromo, platform, user?.id, user?.is_admin, visible]);
 
   const handleLater = () => {
-    snoozeAppInstallPromo();
+    void snoozeInstallPromoOnAccount();
     setVisible(false);
   };
 
@@ -195,7 +231,7 @@ function AppInstallPromo({
     try {
       const result = await enablePushWithTestPush();
       if (result.ok) {
-        markAppInstallPromoDone('desktop_push');
+        void markInstallPromoDoneOnAccount('desktop_push');
         setStatusMessage(result.detail || 'Уведомления включены!');
         window.setTimeout(() => setVisible(false), 1100);
         return;
@@ -215,6 +251,7 @@ function AppInstallPromo({
     try {
       const result = await promptDeferredPwaInstall();
       if (result.ok) {
+        void markInstallPromoDoneOnAccount('pwa_installed');
         setStatusMessage('Приложение добавлено — можно открывать с панели задач.');
         window.setTimeout(() => setVisible(false), 1100);
         return;

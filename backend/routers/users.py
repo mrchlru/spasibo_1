@@ -292,3 +292,41 @@ async def change_password_route(
     
     return schemas.user_response_for_public_api(user)
 
+
+@router.get("/me/install-promo-state", response_model=schemas.InstallPromoUserStateResponse)
+async def get_my_install_promo_state(
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Состояние показа рекламы установки для текущего аккаунта."""
+    import install_promo_user_state_service
+
+    return await install_promo_user_state_service.get_install_promo_user_state(db, user.id)
+
+
+@router.post("/me/install-promo-state/snooze", response_model=schemas.InstallPromoUserStateResponse)
+async def snooze_my_install_promo(
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Скрыть рекламу установки на 3 дня на всех устройствах аккаунта."""
+    import install_promo_user_state_service
+
+    return await install_promo_user_state_service.snooze_install_promo_for_user(db, user.id)
+
+
+@router.post("/me/install-promo-state/done", response_model=schemas.InstallPromoUserStateResponse)
+async def mark_my_install_promo_done(
+    payload: schemas.InstallPromoDoneRequest,
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Пометить цель рекламы установки выполненной на аккаунте."""
+    import install_promo_user_state_service
+
+    return await install_promo_user_state_service.mark_install_promo_done_for_user(
+        db,
+        user.id,
+        reason=payload.reason,
+    )
+

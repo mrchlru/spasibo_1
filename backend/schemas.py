@@ -509,6 +509,22 @@ class InstallPromoPayload(BaseModel):
     ends_at: Optional[str] = None
 
 
+class InstallPromoUserStateResponse(BaseModel):
+    """Состояние показа рекламы установки для текущего пользователя."""
+
+    is_done: bool = False
+    done_reason: Optional[str] = None
+    snoozed_until: Optional[datetime] = None
+    is_snoozed: bool = False
+    can_show: bool = True
+
+
+class InstallPromoDoneRequest(BaseModel):
+    """Пометить цель рекламы установки выполненной."""
+
+    reason: str = "done"
+
+
 class AppSettingsResponse(OrmBase):
     id: int
     season_theme: Literal['summer', 'winter']
