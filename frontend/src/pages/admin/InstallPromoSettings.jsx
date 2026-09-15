@@ -2,8 +2,11 @@ import React, { useEffect, useState } from 'react';
 import styles from '../AdminPage.module.css';
 import { getAppSettings, updateAppSettings } from '../../api';
 import { useModalAlert } from '../../contexts/ModalAlertContext';
+import { formatToMsk } from '../../utils/dateFormatter';
 import {
   DEFAULT_INSTALL_PROMO,
+  buildInstallPromoSchedule,
+  isInstallPromoWithinSchedule,
   normalizeInstallPromo,
 } from '../../pwa/appInstallPromo.js';
 
@@ -39,60 +42,69 @@ function InstallPromoSettings({ onAppSettingsUpdated }) {
     setPromo((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function handleSave() {
+  async function persistPromo(next, successMessage) {
     setLoading(true);
     try {
-      const payload = normalizeInstallPromo(promo);
+      const payload = normalizeInstallPromo(next);
       const response = await updateAppSettings({ install_promo: payload });
-      showAlert(
-        payload.enabled
-          ? 'Реклама установки включена.'
-          : 'Реклама установки выключена.',
-        'success',
-      );
+      showAlert(successMessage, 'success');
       if (response?.data) {
         onAppSettingsUpdated?.(response.data);
         setPromo(normalizeInstallPromo(response.data.install_promo));
       }
+      return true;
     } catch (error) {
       const detail = error.response?.data?.detail;
       showAlert(typeof detail === 'string' ? detail : 'Не удалось сохранить.', 'error');
+      return false;
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleToggleCampaign(enabled) {
-    const next = normalizeInstallPromo({ ...promo, enabled });
-    setPromo(next);
-    setLoading(true);
-    try {
-      const response = await updateAppSettings({ install_promo: next });
-      showAlert(
-        enabled ? 'Кампания запущена.' : 'Кампания остановлена.',
-        'success',
-      );
-      if (response?.data) {
-        onAppSettingsUpdated?.(response.data);
-        setPromo(normalizeInstallPromo(response.data.install_promo));
-      }
-    } catch (error) {
-      setPromo(normalizeInstallPromo(promo));
-      const detail = error.response?.data?.detail;
-      showAlert(typeof detail === 'string' ? detail : 'Не удалось изменить статус.', 'error');
-    } finally {
-      setLoading(false);
+  async function handleSave() {
+    const ok = await persistPromo(
+      promo,
+      promo.enabled ? 'Реклама установки обновлена.' : 'Настройки сохранены.',
+    );
+    if (!ok) {
+      return;
     }
   }
+
+  async function handleToggleCampaign(enabled) {
+    const previous = promo;
+    let next = normalizeInstallPromo({ ...promo, enabled });
+    if (enabled) {
+      next = {
+        ...next,
+        ...buildInstallPromoSchedule(),
+      };
+    }
+    setPromo(next);
+    const ok = await persistPromo(
+      next,
+      enabled ? 'Кампания запущена на 30 дней.' : 'Кампания остановлена.',
+    );
+    if (!ok) {
+      setPromo(normalizeInstallPromo(previous));
+    }
+  }
+
+  const scheduleActive = promo.enabled && isInstallPromoWithinSchedule(promo);
+  const endsLabel = promo.ends_at
+    ? formatToMsk(promo.ends_at)
+    : null;
 
   return (
     <div className={styles.card}>
       <h2>Реклама установки приложения</h2>
       <p style={{ marginTop: 0, color: '#456843' }}>
         Пока кампания выключена — пользователям ничего не показывается.
-        После запуска: на ПК — QR-код, на iOS — инструкция «На экран Домой»,
-        на Android в браузере — плашка скачивания APK (нужен файл в разделе
-        «Android-приложение»). Показ не чаще раза в 3 дня.
+        После запуска действует 30 дней, затем отключается автоматически.
+        На ПК — QR-код, на iOS — «На экран Домой», на Android в браузере —
+        плашка APK (нужен файл в разделе «Android-приложение»).
+        Показ не чаще раза в 3 дня.
       </p>
 
       <div
@@ -100,17 +112,29 @@ function InstallPromoSettings({ onAppSettingsUpdated }) {
           margin: '1rem 0',
           padding: '1rem',
           borderRadius: 14,
-          background: promo.enabled ? 'rgba(92, 161, 74, 0.14)' : 'rgba(0,0,0,0.04)',
+          background: scheduleActive ? 'rgba(92, 161, 74, 0.14)' : 'rgba(0,0,0,0.04)',
         }}
       >
-        <p style={{ margin: '0 0 0.75rem', fontWeight: 700, color: '#234a20' }}>
-          Статус: {promo.enabled ? 'кампания активна' : 'кампания выключена'}
+        <p style={{ margin: '0 0 0.35rem', fontWeight: 700, color: '#234a20' }}>
+          Статус: {scheduleActive ? 'кампания активна' : 'кампания выключена'}
         </p>
+        {endsLabel && (
+          <p style={{ margin: '0 0 0.75rem', color: '#456843', fontSize: '0.95rem' }}>
+            {scheduleActive
+              ? `Автоматически отключится: ${endsLabel} (МСК)`
+              : `Последнее окно кампании до: ${endsLabel} (МСК)`}
+          </p>
+        )}
+        {!endsLabel && (
+          <p style={{ margin: '0 0 0.75rem', color: '#456843', fontSize: '0.95rem' }}>
+            При запуске срок отключения будет рассчитан на 30 дней.
+          </p>
+        )}
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
           <button
             type="button"
             className={styles.buttonGreen}
-            disabled={loading || promo.enabled}
+            disabled={loading || scheduleActive}
             onClick={() => handleToggleCampaign(true)}
           >
             Запустить
@@ -126,7 +150,17 @@ function InstallPromoSettings({ onAppSettingsUpdated }) {
         </div>
       </div>
 
-      <h3 style={{ marginBottom: '0.5rem' }}>Платформы</h3>
+      <h3 style={{ marginBottom: '0.5rem' }}>Кому показывать</h3>
+      <label className={styles.checkboxLabel}>
+        <input
+          type="checkbox"
+          checked={Boolean(promo.admins_only)}
+          onChange={(event) => updateField('admins_only', event.target.checked)}
+        />
+        Только администраторам (превью кампании)
+      </label>
+
+      <h3 style={{ marginBottom: '0.5rem', marginTop: '1rem' }}>Платформы</h3>
       <label className={styles.checkboxLabel}>
         <input
           type="checkbox"
@@ -159,7 +193,7 @@ function InstallPromoSettings({ onAppSettingsUpdated }) {
         disabled={loading}
         onClick={handleSave}
       >
-        {loading ? 'Сохранение…' : 'Сохранить платформы'}
+        {loading ? 'Сохранение…' : 'Сохранить настройки'}
       </button>
     </div>
   );

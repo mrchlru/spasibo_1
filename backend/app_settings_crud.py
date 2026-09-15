@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +34,7 @@ async def get_app_settings(db: AsyncSession):
     )
     settings_row = result.scalars().first()
     if settings_row:
+        await _expire_install_promo_if_needed(db, settings_row)
         return settings_row
 
     settings_row = models.AppSettings(season_theme="summer")
@@ -72,3 +75,40 @@ async def update_app_settings(db: AsyncSession, settings_data: schemas.AppSettin
     await db.commit()
     await db.refresh(settings_row)
     return settings_row
+
+
+async def _expire_install_promo_if_needed(
+    db: AsyncSession,
+    settings_row: models.AppSettings,
+) -> None:
+    """Автоматически выключает кампанию после ends_at."""
+    raw = settings_row.install_promo
+    if not isinstance(raw, dict) or not raw.get("enabled"):
+        return
+    ends_raw = raw.get("ends_at")
+    if not ends_raw:
+        return
+    ends_at = _parse_iso_datetime(str(ends_raw))
+    if ends_at is None or ends_at > datetime.now(timezone.utc):
+        return
+    next_promo = dict(raw)
+    next_promo["enabled"] = False
+    settings_row.install_promo = next_promo
+    await db.commit()
+    await db.refresh(settings_row)
+
+
+def _parse_iso_datetime(value: str) -> datetime | None:
+    """Парсит ISO-дату; naive значения считаются UTC."""
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)

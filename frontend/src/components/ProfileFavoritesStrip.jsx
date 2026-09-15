@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   createSharedGiftInvitation,
-  getFavoriteMarketItems,
   purchaseItem,
   purchaseLocalItem,
 } from '../api';
@@ -16,8 +15,6 @@ import styles from './ProfilePurchasesStrip.module.css';
 
 /** Показывает избранные товары магазина в профиле. */
 export function ProfileFavoritesStrip({ user, onPurchaseSuccess }) {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [modalItem, setModalItem] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
   const [showColleagueSelector, setShowColleagueSelector] = useState(false);
@@ -25,70 +22,30 @@ export function ProfileFavoritesStrip({ user, onPurchaseSuccess }) {
   const { showAlert } = useModalAlert();
   const { confirm } = useConfirmation();
   const {
-    loading: favoritesLoading,
-    togglingIds,
+    favoriteItems,
+    loading,
     isFavorite,
     toggleFavorite,
   } = useMarketFavorites({ enabled: Boolean(user) });
 
-  useEffect(() => {
-    if (!user) {
-      setItems([]);
-      setLoading(false);
-      return undefined;
-    }
-
-    let cancelled = false;
-    void (async () => {
-      setLoading(true);
-      try {
-        const response = await getFavoriteMarketItems();
-        if (cancelled) {
-          return;
-        }
-        const activeItems = (response.data ?? []).filter((item) => !item.is_archived);
-        setItems(activeItems);
-      } catch {
-        if (!cancelled) {
-          setItems([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user]);
+  const items = favoriteItems.filter((item) => !item?.is_archived);
 
   const updateItemStock = useCallback((itemId) => {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === itemId ? { ...item, stock: Math.max(0, (item.stock ?? 0) - 1) } : item
-      )
-    );
+    // Остаток обновляется локально в модалке; store перечитает при следующем hydrate.
+    setModalItem((prev) => (
+      prev && prev.id === itemId
+        ? { ...prev, stock: Math.max(0, (prev.stock ?? 0) - 1) }
+        : prev
+    ));
   }, []);
 
-  const handleToggleFavorite = useCallback(async (itemId) => {
-    const toggled = await toggleFavorite(itemId);
-    if (!toggled) {
-      return;
+  const handleToggleFavorite = useCallback(async (item) => {
+    const wasFavorite = isFavorite(item.id);
+    await toggleFavorite(item.id, item);
+    if (wasFavorite && modalItem?.id === item.id) {
+      setModalItem(null);
     }
-
-    try {
-      const response = await getFavoriteMarketItems();
-      const activeItems = (response.data ?? []).filter((item) => !item.is_archived);
-      setItems(activeItems);
-      if (modalItem?.id === itemId && !activeItems.some((item) => item.id === itemId)) {
-        setModalItem(null);
-      }
-    } catch {
-      setItems([]);
-    }
-  }, [toggleFavorite, modalItem?.id]);
+  }, [toggleFavorite, modalItem?.id, isFavorite]);
 
   const handleSpecialPurchase = async (item, type) => {
     if (type === 'shared') {
@@ -114,10 +71,6 @@ export function ProfileFavoritesStrip({ user, onPurchaseSuccess }) {
 
       onPurchaseSuccess({ balance: new_balance });
       updateItemStock(item.id);
-
-      if (modalItem?.id === item.id) {
-        setModalItem((prev) => (prev ? { ...prev, stock: Math.max(0, (prev.stock ?? 0) - 1) } : prev));
-      }
 
       return { issued_code };
     } catch (error) {
@@ -191,7 +144,7 @@ export function ProfileFavoritesStrip({ user, onPurchaseSuccess }) {
     setSelectedItem(null);
   };
 
-  if (loading) {
+  if (loading && items.length === 0) {
     return (
       <section className={styles.block} aria-label="Избранные товары">
         <h2 className={styles.sectionTitle}>Избранные товары</h2>
@@ -229,8 +182,7 @@ export function ProfileFavoritesStrip({ user, onPurchaseSuccess }) {
               <div className={styles.favoriteSlot}>
                 <MarketFavoriteButton
                   active={isFavorite(item.id)}
-                  disabled={favoritesLoading || togglingIds.has(item.id)}
-                  onToggle={() => void handleToggleFavorite(item.id)}
+                  onToggle={() => void handleToggleFavorite(item)}
                 />
               </div>
             </div>

@@ -52,7 +52,9 @@ function AppInstallPromo({
       && !isOnboardingVisible
       && bootReady
       && isMobileWelcomeSeen()
-      && shouldShowAppInstallPromo(platform, installPromo),
+      && shouldShowAppInstallPromo(platform, installPromo, {
+        isAdmin: Boolean(user?.is_admin),
+      }),
     );
     setVisible(canShow);
     if (!canShow) {
@@ -66,6 +68,7 @@ function AppInstallPromo({
     loading,
     platform,
     user?.id,
+    user?.is_admin,
     user?.status,
   ]);
 

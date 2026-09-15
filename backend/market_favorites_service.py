@@ -4,10 +4,10 @@ from typing import Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-import crud
 import models
 
 MARKET_ITEM_DESCRIPTION_MAX_LENGTH = 300
@@ -32,16 +32,12 @@ async def add_market_item_favorite(db: AsyncSession, user_id: int, item_id: int)
             detail="Товар не найден",
         )
 
-    existing = await db.execute(
-        select(models.MarketItemFavorite.id).where(
-            models.MarketItemFavorite.user_id == user_id,
-            models.MarketItemFavorite.market_item_id == item_id,
-        ),
+    stmt = (
+        pg_insert(models.MarketItemFavorite)
+        .values(user_id=user_id, market_item_id=item_id)
+        .on_conflict_do_nothing(constraint="uq_market_item_favorites_user_item")
     )
-    if existing.scalar_one_or_none() is not None:
-        return
-
-    db.add(models.MarketItemFavorite(user_id=user_id, market_item_id=item_id))
+    await db.execute(stmt)
     await db.commit()
 
 
@@ -64,13 +60,35 @@ async def get_user_favorite_market_items(
     db: AsyncSession,
     user_id: int,
 ) -> list[models.MarketItem]:
-    """Возвращает активные избранные товары пользователя."""
-    favorite_ids = await get_user_favorite_item_ids(db, user_id)
-    if not favorite_ids:
-        return []
+    """Возвращает активные избранные товары пользователя (без полного каталога)."""
+    available_codes_subq = (
+        select(
+            models.ItemCode.market_item_id.label("item_id"),
+            func.count(models.ItemCode.id).label("available_count"),
+        )
+        .where(models.ItemCode.is_issued.is_(False))
+        .group_by(models.ItemCode.market_item_id)
+        .subquery()
+    )
 
-    active_items = await crud.get_active_items(db)
-    return [item for item in active_items if item.id in favorite_ids]
+    stmt = (
+        select(models.MarketItem, available_codes_subq.c.available_count)
+        .join(
+            models.MarketItemFavorite,
+            models.MarketItemFavorite.market_item_id == models.MarketItem.id,
+        )
+        .outerjoin(
+            available_codes_subq,
+            available_codes_subq.c.item_id == models.MarketItem.id,
+        )
+        .where(
+            models.MarketItemFavorite.user_id == user_id,
+            models.MarketItem.is_archived.is_(False),
+        )
+        .order_by(models.MarketItemFavorite.created_at.desc(), models.MarketItem.id.asc())
+    )
+    rows = (await db.execute(stmt)).all()
+    return [_apply_favorite_item_stock(item, available_count) for item, available_count in rows]
 
 
 async def get_favorite_items_stats(
@@ -105,3 +123,16 @@ def normalize_market_item_description(description: Optional[str]) -> Optional[st
             f"Описание не должно превышать {MARKET_ITEM_DESCRIPTION_MAX_LENGTH} символов",
         )
     return trimmed
+
+
+def _apply_favorite_item_stock(
+    item: models.MarketItem,
+    available_count: int | None,
+) -> models.MarketItem:
+    """Проставляет остаток на объекте товара так же, как в публичном каталоге."""
+    if item.is_auto_issuance:
+        item.stock = int(available_count or 0)
+    elif item.is_local_purchase:
+        if item.stock is None or item.stock <= 0:
+            item.stock = 999999
+    return item

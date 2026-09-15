@@ -6,6 +6,7 @@ import { getSpasiboAndroidVersionCode, isSpasiboAndroidApp } from './androidNati
 import {
   isAppInstallPromoSnoozed,
   isInstallPromoCampaignActive,
+  normalizeInstallPromo,
   snoozeAppInstallPromo,
 } from './appInstallPromo.js';
 import { isAndroidMobileBrowser } from './mobileWelcomeGuide.js';
@@ -85,10 +86,13 @@ export function shouldShowAndroidInstallPrompt(release, options = {}) {
     return false;
   }
 
-  // Установка в браузере — только при включённой кампании в админке.
-  // Обновление уже установленного APK — по android_release, без кампании.
-  if (mode === 'install' && !isInstallPromoCampaignActive(installPromo, 'android-browser')) {
-    if (!(canTestBeforeRollout && normalizeAndroidRelease(release).apk_url)) {
+  // Установка в браузере — только при активной кампании; admins_only — только админам.
+  if (mode === 'install') {
+    if (!isInstallPromoCampaignActive(installPromo, 'android-browser')) {
+      return false;
+    }
+    const promo = normalizeInstallPromo(installPromo);
+    if (promo.admins_only && !canTestBeforeRollout) {
       return false;
     }
   }

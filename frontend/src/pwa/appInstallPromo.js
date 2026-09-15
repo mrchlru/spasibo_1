@@ -19,6 +19,7 @@ export const APP_INSTALL_PROMO_SNOOZE_KEY = 'spasibo_app_install_promo_snooze_un
 export const APP_INSTALL_PROMO_DONE_KEY = 'spasibo_app_install_promo_done';
 export const APP_INSTALL_PROMO_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
 export const APP_INSTALL_PROMO_SHOW_DELAY_MS = 1600;
+export const INSTALL_PROMO_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** @typedef {'desktop' | 'ios-browser' | 'android-browser'} AppInstallPromoPlatform */
 
@@ -182,10 +183,12 @@ export function markAppInstallPromoDone(reason = 'done') {
  *
  * @param {AppInstallPromoPlatform | null} [platform]
  * @param {object | null | undefined} [campaign] настройки из админки (install_promo)
+ * @param {{ isAdmin?: boolean }} [options]
  */
 export function shouldShowAppInstallPromo(
   platform = getAppInstallPromoPlatform(),
   campaign = null,
+  options = {},
 ) {
   if (!platform) {
     return false;
@@ -194,6 +197,10 @@ export function shouldShowAppInstallPromo(
     return false;
   }
   if (!isInstallPromoCampaignActive(campaign, platform)) {
+    return false;
+  }
+  const normalized = normalizeInstallPromo(campaign);
+  if (normalized.admins_only && !options.isAdmin) {
     return false;
   }
   if (isAppInstallPromoGoalMet(platform)) {
@@ -210,6 +217,9 @@ export const DEFAULT_INSTALL_PROMO = {
   desktop: true,
   ios: true,
   android_browser: true,
+  admins_only: false,
+  started_at: null,
+  ends_at: null,
 };
 
 /**
@@ -226,7 +236,41 @@ export function normalizeInstallPromo(raw) {
     desktop: raw.desktop !== false,
     ios: raw.ios !== false,
     android_browser: raw.android_browser !== false,
+    admins_only: Boolean(raw.admins_only),
+    started_at: typeof raw.started_at === 'string' ? raw.started_at : null,
+    ends_at: typeof raw.ends_at === 'string' ? raw.ends_at : null,
   };
+}
+
+/**
+ * Ставит окно кампании на месяц от сейчас.
+ *
+ * @param {Date} [from]
+ */
+export function buildInstallPromoSchedule(from = new Date()) {
+  const started = new Date(from);
+  const ends = new Date(started.getTime() + INSTALL_PROMO_DURATION_MS);
+  return {
+    started_at: started.toISOString(),
+    ends_at: ends.toISOString(),
+  };
+}
+
+/**
+ * Кампания ещё не истекла по ends_at.
+ *
+ * @param {object | null | undefined} campaign
+ */
+export function isInstallPromoWithinSchedule(campaign) {
+  const normalized = normalizeInstallPromo(campaign);
+  if (!normalized.ends_at) {
+    return true;
+  }
+  const endsMs = Date.parse(normalized.ends_at);
+  if (!Number.isFinite(endsMs)) {
+    return true;
+  }
+  return endsMs > Date.now();
 }
 
 /**
@@ -238,6 +282,9 @@ export function normalizeInstallPromo(raw) {
 export function isInstallPromoCampaignActive(campaign, platform) {
   const normalized = normalizeInstallPromo(campaign);
   if (!normalized.enabled) {
+    return false;
+  }
+  if (!isInstallPromoWithinSchedule(normalized)) {
     return false;
   }
   if (platform === 'desktop') {

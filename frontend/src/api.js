@@ -270,7 +270,7 @@ export const getFavoriteMarketItems = () =>
   apiClient.get('/market/favorites', getAuthHeaders());
 
 export const addFavoriteItem = (itemId) =>
-  apiClient.post(`/market/favorites/${itemId}`, null, getAuthHeaders());
+  apiClient.post(`/market/favorites/${itemId}`, {}, getAuthHeaders());
 
 export const removeFavoriteItem = (itemId) =>
   apiClient.delete(`/market/favorites/${itemId}`, getAuthHeaders());

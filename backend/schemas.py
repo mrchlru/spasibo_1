@@ -503,6 +503,9 @@ class InstallPromoPayload(BaseModel):
     desktop: bool = True
     ios: bool = True
     android_browser: bool = True
+    admins_only: bool = False
+    started_at: Optional[str] = None
+    ends_at: Optional[str] = None
 
 
 class AppSettingsResponse(OrmBase):
