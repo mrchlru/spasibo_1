@@ -116,6 +116,15 @@ export function shouldShowAndroidInstallPrompt(release, options = {}) {
     }
   }
 
+  // Админское превью установки: показываем sheet даже после snooze.
+  if (
+    mode === 'install'
+    && normalizeInstallPromo(installPromo).admins_only
+    && canTestBeforeRollout
+  ) {
+    return true;
+  }
+
   if (canTestBeforeRollout && !rolloutEnabled) {
     return true;
   }

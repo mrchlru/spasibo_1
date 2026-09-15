@@ -203,6 +203,10 @@ export function shouldShowAppInstallPromo(
   if (normalized.admins_only && !options.isAdmin) {
     return false;
   }
+  // Режим «только админам» — превью: показываем даже при достигнутой цели / snooze.
+  if (normalized.admins_only && options.isAdmin) {
+    return true;
+  }
   if (isAppInstallPromoGoalMet(platform)) {
     return false;
   }

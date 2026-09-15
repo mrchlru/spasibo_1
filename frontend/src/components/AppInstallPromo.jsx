@@ -23,6 +23,13 @@ import {
 import { pushBlockReasonMessage } from '../pwa/pushEnvironment.js';
 
 /**
+ * На ПК приветственная карусель не показывается — для промо считаем гейт пройденным.
+ */
+function _isWelcomeGatePassed() {
+  return isMobileWelcomeSeen() || getAppInstallPromoPlatform() === 'desktop';
+}
+
+/**
  * Мягкое промо: QR на ПК, инструкция «На экран Домой» на iOS Safari.
  */
 function AppInstallPromo({
@@ -51,7 +58,7 @@ function AppInstallPromo({
       && user.status === 'approved'
       && !isOnboardingVisible
       && bootReady
-      && isMobileWelcomeSeen()
+      && _isWelcomeGatePassed()
       && shouldShowAppInstallPromo(platform, installPromo, {
         isAdmin: Boolean(user?.is_admin),
       }),
@@ -89,8 +96,10 @@ function AppInstallPromo({
       || user.status !== 'approved'
       || isOnboardingVisible
       || !bootReady
-      || !isMobileWelcomeSeen()
-      || !shouldShowAppInstallPromo(platform, installPromo)
+      || !_isWelcomeGatePassed()
+      || !shouldShowAppInstallPromo(platform, installPromo, {
+        isAdmin: Boolean(user?.is_admin),
+      })
     ) {
       setVisible(false);
       return undefined;
@@ -111,6 +120,7 @@ function AppInstallPromo({
     platform,
     refreshVisibility,
     user?.id,
+    user?.is_admin,
     user?.status,
   ]);
 
@@ -135,6 +145,11 @@ function AppInstallPromo({
     if (!visible || platform !== 'desktop') {
       return undefined;
     }
+    const normalized = installPromo && typeof installPromo === 'object' ? installPromo : {};
+    // В превью «только админам» не прячем QR из‑за уже включённых уведомлений.
+    if (normalized.admins_only && user?.is_admin) {
+      return undefined;
+    }
     let cancelled = false;
     isDesktopPushAlreadyEnabled().then((enabled) => {
       if (!cancelled && enabled) {
@@ -145,7 +160,7 @@ function AppInstallPromo({
     return () => {
       cancelled = true;
     };
-  }, [platform, visible]);
+  }, [installPromo, platform, user?.is_admin, visible]);
 
   const handleLater = () => {
     snoozeAppInstallPromo();
