@@ -1,6 +1,6 @@
 /** Константы реакций новостей ленты «Спасибо». */
 
-export const FEED_REACTION_EMOJIS = ['❤️', '👍', '😁', '🔥'];
+export const FEED_REACTION_EMOJIS = ['❤️', '👎', '😁', '🔥'];
 
 /**
  * Нормализует счётчики реакций.

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import models
 import schemas
 
-ALLOWED_FEED_REACTIONS: tuple[str, ...] = ("❤️", "👍", "😁", "🔥")
+ALLOWED_FEED_REACTIONS: tuple[str, ...] = ("❤️", "👎", "😁", "🔥")
 
 
 def empty_reaction_counts() -> dict[str, int]:
