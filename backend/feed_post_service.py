@@ -51,8 +51,19 @@ def _user_to_feed_author(user: models.User | None) -> schemas.FeedPostAuthor | N
     )
 
 
-def feed_post_to_response(post: models.FeedPost) -> schemas.FeedPostResponse:
+def feed_post_to_response(
+    post: models.FeedPost,
+    *,
+    engagement: schemas.FeedPostEngagement | None = None,
+) -> schemas.FeedPostResponse:
     """Преобразует модель новости в DTO."""
+    import feed_engagement_service
+
+    stats = engagement or schemas.FeedPostEngagement(
+        view_count=0,
+        reaction_counts=feed_engagement_service.empty_reaction_counts(),
+        my_reaction=None,
+    )
     return schemas.FeedPostResponse(
         id=post.id,
         title=post.title,
@@ -69,6 +80,9 @@ def feed_post_to_response(post: models.FeedPost) -> schemas.FeedPostResponse:
             schemas.FeedPostAttachmentResponse.model_validate(item)
             for item in post.attachments
         ],
+        view_count=stats.view_count,
+        reaction_counts=feed_engagement_service.normalize_reaction_counts(stats.reaction_counts),
+        my_reaction=stats.my_reaction,
     )
 
 

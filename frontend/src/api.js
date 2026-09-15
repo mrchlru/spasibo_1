@@ -204,6 +204,12 @@ export const pinFeedPost = (postId) =>
 export const unpinFeedPost = (postId) =>
   apiClient.post(`/feed-posts/${postId}/unpin`, {}, getAuthHeaders());
 
+export const registerFeedPostView = (postId) =>
+  apiClient.post(`/feed-posts/${postId}/view`, {}, getAuthHeaders());
+
+export const toggleFeedPostReaction = (postId, emoji) =>
+  apiClient.post(`/feed-posts/${postId}/reactions`, { emoji }, getAuthHeaders());
+
 export const getAdminFeedPosts = () =>
   apiClient.get('/admin/feed-posts', getAuthHeaders());
 

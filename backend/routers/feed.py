@@ -141,6 +141,50 @@ async def unpin_publisher_feed_post_route(
     return feed_post_service.feed_post_to_response(post)
 
 
+@router.post("/feed-posts/{post_id}/view", response_model=schemas.FeedPostViewResponse)
+async def register_feed_post_view_route(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Регистрирует уникальный просмотр новости текущим пользователем."""
+    import feed_engagement_service
+
+    post = await feed_post_service.get_feed_post_by_id(db, post_id)
+    if post is None or post.is_deleted or not post.is_published:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Новость не найдена")
+    view_count = await feed_engagement_service.register_feed_post_view(
+        db,
+        post=post,
+        user=current_user,
+    )
+    return schemas.FeedPostViewResponse(view_count=view_count)
+
+
+@router.post("/feed-posts/{post_id}/reactions", response_model=schemas.FeedPostEngagement)
+async def toggle_feed_post_reaction_route(
+    post_id: int,
+    payload: schemas.FeedPostReactionRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ставит или снимает реакцию на новость."""
+    import feed_engagement_service
+
+    post = await feed_post_service.get_feed_post_by_id(db, post_id)
+    if post is None or post.is_deleted or not post.is_published:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Новость не найдена")
+    try:
+        return await feed_engagement_service.toggle_feed_post_reaction(
+            db,
+            post=post,
+            user=current_user,
+            emoji=payload.emoji,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
 @router.post("/feed-posts/media/upload", response_model=schemas.AdminMediaUploadResponse)
 async def upload_publisher_feed_image_route(
     current_user: User = Depends(get_current_user),

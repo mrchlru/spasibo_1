@@ -1027,6 +1027,26 @@ class FeedPostAuthor(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FeedPostEngagement(BaseModel):
+    """Просмотры и реакции новости."""
+
+    view_count: int = 0
+    reaction_counts: dict[str, int] = Field(default_factory=dict)
+    my_reaction: Optional[str] = None
+
+
+class FeedPostReactionRequest(BaseModel):
+    """Запрос на установку/снятие реакции."""
+
+    emoji: str = Field(..., min_length=1, max_length=16)
+
+
+class FeedPostViewResponse(BaseModel):
+    """Ответ после регистрации просмотра."""
+
+    view_count: int
+
+
 class FeedPostResponse(BaseModel):
     id: int
     title: str
@@ -1040,6 +1060,9 @@ class FeedPostResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     attachments: list[FeedPostAttachmentResponse] = Field(default_factory=list)
+    view_count: int = 0
+    reaction_counts: dict[str, int] = Field(default_factory=dict)
+    my_reaction: Optional[str] = None
 
 
 class UnifiedFeedEntry(BaseModel):

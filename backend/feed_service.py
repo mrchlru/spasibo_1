@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import crud
+import feed_engagement_service
 import feed_post_service
 import models
 import schemas
@@ -22,8 +23,11 @@ async def _build_sorted_stream(
     *,
     user: models.User | None,
     days: int,
-) -> list[schemas.UnifiedFeedEntry]:
-    """Собирает отсортированный поток без закреплённых новостей."""
+) -> list[tuple[datetime, models.FeedPost | models.Transaction | models.User, str]]:
+    """Собирает отсортированный поток без закреплённых новостей.
+
+    Элементы: (timestamp, payload, kind) — kind: post|transaction|birthday.
+    """
     import birthday_service
 
     regular_posts = await feed_post_service.list_visible_feed_posts(
@@ -39,16 +43,45 @@ async def _build_sorted_stream(
     birthday_users = await birthday_service.list_today_birthday_users(db)
     birthday_timestamp = birthday_service.birthday_stream_timestamp()
 
-    stream_items: list[tuple[datetime, schemas.UnifiedFeedEntry]] = []
+    stream_items: list[tuple[datetime, object, str]] = []
     for post in regular_posts:
-        stream_items.append((post.published_at, _post_entry(post)))
+        stream_items.append((post.published_at, post, "post"))
     for transaction in transactions:
-        stream_items.append((transaction.timestamp, _transaction_entry(transaction)))
+        stream_items.append((transaction.timestamp, transaction, "transaction"))
     for birthday_user in birthday_users:
-        stream_items.append((birthday_timestamp, _birthday_entry(birthday_user)))
+        stream_items.append((birthday_timestamp, birthday_user, "birthday"))
 
     stream_items.sort(key=lambda item: item[0], reverse=True)
-    return [entry for _, entry in stream_items]
+    return stream_items
+
+
+async def _entries_from_raw(
+    db: AsyncSession,
+    raw_items: list[tuple[datetime, object, str]],
+    viewer: models.User | None,
+) -> list[schemas.UnifiedFeedEntry]:
+    """Превращает сырые элементы в DTO с engagement для новостей."""
+    post_ids = [item.id for _, item, kind in raw_items if kind == "post"]
+    engagement_map = await feed_engagement_service.load_engagement_for_posts(
+        db,
+        post_ids,
+        viewer.id if viewer else None,
+    )
+    entries: list[schemas.UnifiedFeedEntry] = []
+    for timestamp, payload, kind in raw_items:
+        if kind == "post":
+            post = payload  # type: ignore[assignment]
+            entries.append(
+                _post_entry(
+                    post,
+                    engagement=engagement_map.get(post.id),
+                )
+            )
+        elif kind == "transaction":
+            entries.append(_transaction_entry(payload))  # type: ignore[arg-type]
+        else:
+            entries.append(_birthday_entry(payload))  # type: ignore[arg-type]
+    return entries
 
 
 async def get_unified_feed_page(
@@ -68,15 +101,16 @@ async def get_unified_feed_page(
     has_more = len(stream) > safe_offset + safe_limit
 
     if safe_offset > 0:
-        return page_slice, has_more
+        return await _entries_from_raw(db, page_slice, user), has_more
 
     pinned_posts = await feed_post_service.list_visible_feed_posts(
         db,
         viewer=user,
         pinned_only=True,
     )
-    pinned_entries = [_post_entry(post) for post in pinned_posts]
-    return pinned_entries + page_slice, has_more
+    pinned_raw = [(post.published_at, post, "post") for post in pinned_posts]
+    combined = await _entries_from_raw(db, pinned_raw + page_slice, user)
+    return combined, has_more
 
 
 async def get_unified_feed(
@@ -107,12 +141,16 @@ def collect_visible_post_ids(entries: list[schemas.UnifiedFeedEntry]) -> set[int
     return visible
 
 
-def _post_entry(post: models.FeedPost) -> schemas.UnifiedFeedEntry:
+def _post_entry(
+    post: models.FeedPost,
+    *,
+    engagement: schemas.FeedPostEngagement | None = None,
+) -> schemas.UnifiedFeedEntry:
     """Собирает элемент ленты из новости."""
     return schemas.UnifiedFeedEntry(
         kind="post",
         timestamp=post.published_at,
-        post=feed_post_service.feed_post_to_response(post),
+        post=feed_post_service.feed_post_to_response(post, engagement=engagement),
         transaction=None,
         birthday=None,
     )

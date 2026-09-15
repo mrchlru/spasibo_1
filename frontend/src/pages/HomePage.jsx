@@ -2,7 +2,16 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { FaPen, FaThumbtack, FaEye, FaPencil, FaBullhorn, FaCakeCandles } from 'react-icons/fa6';
-import { getFeed, getBanners, publishFeedPost, pinFeedPost, unpinFeedPost, resolveAvatarUrl } from '../api';
+import {
+  getFeed,
+  getBanners,
+  publishFeedPost,
+  pinFeedPost,
+  unpinFeedPost,
+  registerFeedPostView,
+  toggleFeedPostReaction,
+  resolveAvatarUrl,
+} from '../api';
 import styles from './HomePage.module.css';
 import { getCachedData, setCachedData } from '../storage';
 import { formatToMsk, formatFeedDate } from '../utils/dateFormatter';
@@ -24,6 +33,11 @@ import {
   normalizeFeedEntries,
   mergeFeedEntries,
 } from '../utils/feedPage';
+import {
+  FEED_REACTION_EMOJIS,
+  normalizeReactionCounts,
+  applyOptimisticReaction,
+} from '../utils/feedReactions';
 import { syncBannersCache, warmCachedBannerAssets } from '../pwa/bannerAssetCache';
 
 function canManageFeedPosts(user) {
@@ -68,6 +82,20 @@ function HomePage({
   const [feedModalOpen, setFeedModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
   const autoSlideTimerRef = useRef(null);
+  const viewedPostIdsRef = useRef(new Set());
+  const reactionBusyRef = useRef(new Set());
+
+  const patchFeedPost = useCallback((postId, patcher) => {
+    setFeedEntries((prev) =>
+      (prev || []).map((entry) => {
+        if (entry.kind !== 'post' || entry.post?.id !== postId) return entry;
+        return {
+          ...entry,
+          post: patcher(entry.post),
+        };
+      }),
+    );
+  }, []);
 
   const applyFeedPage = useCallback((rawData, append = false) => {
     const page = unwrapFeedPage(rawData);
@@ -113,6 +141,45 @@ function HomePage({
     isLoading: isFeedLoading || isLoadingMore,
     onLoadMore: loadMoreFeed,
   });
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+    const nodes = document.querySelectorAll('[data-feed-post-id]');
+    if (!nodes.length || typeof IntersectionObserver === 'undefined') {
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) {
+            return;
+          }
+          const postId = Number.parseInt(entry.target.getAttribute('data-feed-post-id') || '', 10);
+          if (!Number.isFinite(postId) || viewedPostIdsRef.current.has(postId)) {
+            return;
+          }
+          viewedPostIdsRef.current.add(postId);
+          void registerFeedPostView(postId)
+            .then((response) => {
+              const viewCount = response?.data?.view_count;
+              if (typeof viewCount === 'number') {
+                patchFeedPost(postId, (post) => ({ ...post, view_count: viewCount }));
+              }
+            })
+            .catch(() => {
+              viewedPostIdsRef.current.delete(postId);
+            });
+        });
+      },
+      { threshold: 0.55 },
+    );
+
+    nodes.forEach((node) => observer.observe(node));
+    return () => observer.disconnect();
+  }, [feedEntries, patchFeedPost, user]);
 
   useEffect(() => {
     warmCachedBannerAssets(initialBanners);
@@ -285,6 +352,34 @@ function HomePage({
     }
   }
 
+  async function handleReaction(postId, emoji) {
+    if (!user || reactionBusyRef.current.has(postId)) {
+      return;
+    }
+    reactionBusyRef.current.add(postId);
+    let snapshot = null;
+    patchFeedPost(postId, (post) => {
+      snapshot = post;
+      return applyOptimisticReaction(post, emoji);
+    });
+    try {
+      const response = await toggleFeedPostReaction(postId, emoji);
+      const data = response?.data || {};
+      patchFeedPost(postId, (post) => ({
+        ...post,
+        reaction_counts: normalizeReactionCounts(data.reaction_counts),
+        my_reaction: data.my_reaction || null,
+        view_count: typeof data.view_count === 'number' ? data.view_count : post.view_count,
+      }));
+    } catch {
+      if (snapshot) {
+        patchFeedPost(postId, () => snapshot);
+      }
+    } finally {
+      reactionBusyRef.current.delete(postId);
+    }
+  }
+
   async function handlePublishPost(postId) {
     try {
       await publishFeedPost(postId);
@@ -317,6 +412,7 @@ function HomePage({
       <div
         key={`post-${post.id}`}
         id={`feed-post-${post.id}`}
+        data-feed-post-id={post.is_published ? String(post.id) : undefined}
         className={`${styles.feedItem} ${styles.feedItemNews} ${post.is_pinned ? styles.feedItemPinned : ''} ${!post.is_published ? styles.feedItemDraft : ''}`}
       >
         <div className={styles.feedPostActions}>
@@ -394,7 +490,38 @@ function HomePage({
           </div>
         )}
 
-        <div className={styles.feedTimestamp}>{formatToMsk(writtenAt, { year: undefined, month: undefined, day: undefined })}</div>
+        {post.is_published ? (
+          <div className={styles.feedReactions}>
+            {FEED_REACTION_EMOJIS.map((emoji) => {
+              const count = normalizeReactionCounts(post.reaction_counts)[emoji] || 0;
+              const active = post.my_reaction === emoji;
+              return (
+                <button
+                  key={emoji}
+                  type="button"
+                  className={`${styles.feedReactionBtn} ${active ? styles.feedReactionBtnActive : ''}`}
+                  aria-label={`Реакция ${emoji}`}
+                  aria-pressed={active}
+                  disabled={!user}
+                  onClick={() => handleReaction(post.id, emoji)}
+                >
+                  <span aria-hidden="true">{emoji}</span>
+                  {count > 0 ? <span className={styles.feedReactionCount}>{count}</span> : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <div className={styles.feedMeta}>
+          <div className={styles.feedMetaViews} title="Просмотры">
+            <FaEye size={12} aria-hidden="true" />
+            <span>{Number(post.view_count) || 0}</span>
+          </div>
+          <div className={styles.feedMetaTime}>
+            {formatToMsk(writtenAt, { year: undefined, month: undefined, day: undefined })}
+          </div>
+        </div>
       </div>
     );
   }

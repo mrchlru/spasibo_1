@@ -332,6 +332,41 @@ class FeedPostAttachment(Base):
     post = relationship("FeedPost", back_populates="attachments")
 
 
+class FeedPostView(Base):
+    """Уникальный просмотр новости пользователем."""
+
+    __tablename__ = "feed_post_views"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    feed_post_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("feed_posts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    viewed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("feed_post_id", "user_id", name="uq_feed_post_view_user"),)
+
+
+class FeedPostReaction(Base):
+    """Одна реакция пользователя на новость (emoji из фиксированного набора)."""
+
+    __tablename__ = "feed_post_reactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    feed_post_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("feed_posts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    emoji: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("feed_post_id", "user_id", name="uq_feed_post_reaction_user"),)
+
+
 class FairPlayReceiverEvent(Base):
     """Зафиксированное нарушение «карусели» у получателя за календарный день МСК."""
 
