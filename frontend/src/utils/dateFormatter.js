@@ -101,13 +101,18 @@ export function formatDateForApi(date) {
 }
 
 /**
- * Конвертирует Date в YYYY-MM-DD для API.
- * @param {Date | string | null} date - Дата.
+ * Конвертирует Date в YYYY-MM-DD для API по локальному календарю.
+ * Не использует toISOString — иначе в MSK «15.09 00:00» уезжает в «14.09» UTC.
+ *
+ * @param {Date | string | null} date
  * @returns {string | null}
  */
 export function formatDateForApiFromDate(date) {
   if (!date) return null;
   const d = date instanceof Date ? date : new Date(date);
   if (isNaN(d.getTime())) return null;
-  return d.toISOString().split('T')[0];
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }

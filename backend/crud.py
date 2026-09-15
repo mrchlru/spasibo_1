@@ -3145,18 +3145,41 @@ async def get_leaderboards_status(db: AsyncSession):
 # --- НАЧАЛО: НОВЫЕ ФУНКЦИИ ДЛЯ СТАТИСТИКИ ---
 
 # Вспомогательная функция, чтобы не дублировать код
-def _prepare_dates(start_date: Optional[date], end_date: Optional[date]):
+def _prepare_dates(
+    start_date: Optional[date],
+    end_date: Optional[date],
+) -> tuple[datetime, datetime]:
+    """Календарные даты админки → полуинтервал [start, end) в naive UTC.
+
+    День «15.09» считается по Europe/Moscow (00:00–24:00 МСК), потому что
+    timestamps в БД хранятся как UTC, а бизнес-день у команды — московский.
+    """
+    msk = _TRANSFER_LIMIT_TZ
     if end_date is None:
-        end_date = datetime.utcnow().date()
+        end_date = datetime.now(msk).date()
     if start_date is None:
         start_date = end_date - timedelta(days=30)
-    
-    # --- ГЛАВНОЕ ИСПРАВЛЕНИЕ: Добавляем 1 день к конечной дате ---
-    # Это включает весь последний день в диапазон (до 23:59:59)
-    end_date_inclusive = end_date + timedelta(days=1)
-    
-    return start_date, end_date_inclusive
 
+    start_msk = datetime(
+        start_date.year,
+        start_date.month,
+        start_date.day,
+        tzinfo=msk,
+    )
+    end_msk = datetime(
+        end_date.year,
+        end_date.month,
+        end_date.day,
+        tzinfo=msk,
+    ) + timedelta(days=1)
+    start_utc = start_msk.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    end_utc = end_msk.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    return start_utc, end_utc
+
+
+def _timestamp_in_range(column, start_utc: datetime, end_utc: datetime):
+    """Фильтр timestamp в полуинтервале [start_utc, end_utc)."""
+    return and_(column >= start_utc, column < end_utc)
 
 def _statistics_user_status_filter():
     """
@@ -3228,7 +3251,7 @@ async def get_dashboard_statistics(
     end_date: Optional[date] = None,
 ) -> dict:
     """Метрики для вкладки «Дашборд» в админке."""
-    start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
+    start_utc, end_utc = _prepare_dates(start_date, end_date)
 
     total_users = (await db.execute(
         select(func.count(models.User.id)).where(_statistics_user_status_filter())
@@ -3238,7 +3261,7 @@ async def get_dashboard_statistics(
         select(models.Transaction.sender_id)
         .join(models.User, models.User.id == models.Transaction.sender_id)
         .where(
-            models.Transaction.timestamp.between(start_date, end_date_inclusive),
+            _timestamp_in_range(models.Transaction.timestamp, start_utc, end_utc),
             _statistics_user_status_filter(),
         )
         .distinct()
@@ -3246,9 +3269,13 @@ async def get_dashboard_statistics(
     active_senders_ids = (await db.execute(active_senders_q)).scalars().all()
     active_users_count = len(set(active_senders_ids))
 
+    # Только переводы «спасибо» от одобренных сотрудников за московский период.
     transactions_count = (await db.execute(
-        select(func.count(models.Transaction.id)).where(
-            models.Transaction.timestamp.between(start_date, end_date_inclusive)
+        select(func.count(models.Transaction.id))
+        .join(models.User, models.User.id == models.Transaction.sender_id)
+        .where(
+            _timestamp_in_range(models.Transaction.timestamp, start_utc, end_utc),
+            _statistics_user_status_filter(),
         )
     )).scalar_one()
 
@@ -3290,7 +3317,6 @@ async def get_dashboard_statistics(
         **fair_play_counts,
     }
 
-
 async def get_general_statistics(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
     """Сводные метрики (совместимость со сводным Excel-отчётом)."""
     dashboard = await get_dashboard_statistics(db, start_date, end_date)
@@ -3304,10 +3330,10 @@ async def get_general_statistics(db: AsyncSession, start_date: Optional[date] = 
     }
 
 async def get_hourly_activity_stats(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
-    start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
-    
+    start_utc, end_utc = _prepare_dates(start_date, end_date)
+
     moscow_time = models.Transaction.timestamp.op("AT TIME ZONE")('UTC').op("AT TIME ZONE")('Europe/Moscow')
-    
+
     query = (
         select(
             extract('hour', moscow_time).label('hour'),
@@ -3315,7 +3341,7 @@ async def get_hourly_activity_stats(db: AsyncSession, start_date: Optional[date]
         )
         .join(models.User, models.User.id == models.Transaction.sender_id)
         .filter(
-            models.Transaction.timestamp.between(start_date, end_date_inclusive),
+            _timestamp_in_range(models.Transaction.timestamp, start_utc, end_utc),
             _statistics_user_status_filter(),
         )
         .group_by(extract('hour', moscow_time))
@@ -3328,8 +3354,8 @@ async def get_hourly_activity_stats(db: AsyncSession, start_date: Optional[date]
     return hourly_stats
 
 async def get_login_activity_stats(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
-    start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
-    
+    start_utc, end_utc = _prepare_dates(start_date, end_date)
+
     moscow_time = models.User.last_login_date.op("AT TIME ZONE")('UTC').op("AT TIME ZONE")('Europe/Moscow')
 
     query = (
@@ -3339,7 +3365,7 @@ async def get_login_activity_stats(db: AsyncSession, start_date: Optional[date] 
         )
         .filter(
             models.User.last_login_date.isnot(None),  # Исключаем пользователей без логина
-            models.User.last_login_date.between(start_date, end_date_inclusive),
+            _timestamp_in_range(models.User.last_login_date, start_utc, end_utc),
             _statistics_user_status_filter(),
         )
         .group_by(extract('hour', moscow_time))
@@ -3352,15 +3378,16 @@ async def get_login_activity_stats(db: AsyncSession, start_date: Optional[date] 
     return hourly_stats
     
 async def get_user_engagement_stats(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None, limit: int = 5):
-    if end_date is None: end_date = datetime.utcnow().date()
-    if start_date is None: start_date = end_date - timedelta(days=365*5)
-    end_date_inclusive = end_date + timedelta(days=1)
+    if end_date is None and start_date is None:
+        end_date = datetime.now(_TRANSFER_LIMIT_TZ).date()
+        start_date = end_date - timedelta(days=365 * 5)
+    start_utc, end_utc = _prepare_dates(start_date, end_date)
 
     query_senders = (
         select(models.User, func.count(models.Transaction.id).label('sent_count'))
         .join(models.Transaction, models.User.id == models.Transaction.sender_id)
         .filter(
-            models.Transaction.timestamp.between(start_date, end_date_inclusive),
+            _timestamp_in_range(models.Transaction.timestamp, start_utc, end_utc),
             _statistics_user_status_filter(),
         )
         .group_by(models.User.id)
@@ -3372,7 +3399,7 @@ async def get_user_engagement_stats(db: AsyncSession, start_date: Optional[date]
         select(models.User, func.count(models.Transaction.id).label('received_count'))
         .join(models.Transaction, models.User.id == models.Transaction.receiver_id)
         .filter(
-            models.Transaction.timestamp.between(start_date, end_date_inclusive),
+            _timestamp_in_range(models.Transaction.timestamp, start_utc, end_utc),
             _statistics_user_status_filter(),
         )
         .group_by(models.User.id)
@@ -3383,20 +3410,19 @@ async def get_user_engagement_stats(db: AsyncSession, start_date: Optional[date]
     return {"top_senders": top_senders, "top_receivers": top_receivers}
 
 async def get_popular_items_stats(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None, limit: int = 10):
-    # Используем твою логику обработки дат
-    if end_date is None: end_date = datetime.utcnow().date()
-    if start_date is None: start_date = end_date - timedelta(days=365*5)
-    end_date_inclusive = end_date + timedelta(days=1)
+    if end_date is None and start_date is None:
+        end_date = datetime.now(_TRANSFER_LIMIT_TZ).date()
+        start_date = end_date - timedelta(days=365 * 5)
+    start_utc, end_utc = _prepare_dates(start_date, end_date)
 
-    # --- ИСПРАВЛЕНИЕ: Используем INNER JOIN вместо LEFT JOIN, чтобы показывать только товары с покупками в периоде
-    # Фильтр по дате применяем в условии JOIN для корректной работы
+    # INNER JOIN — только товары с покупками в периоде
     query = (
         select(models.MarketItem, func.count(models.Purchase.id).label('purchase_count'))
         .join(
-            models.Purchase, 
+            models.Purchase,
             and_(
                 models.MarketItem.id == models.Purchase.item_id,
-                models.Purchase.timestamp.between(start_date, end_date_inclusive)
+                _timestamp_in_range(models.Purchase.timestamp, start_utc, end_utc),
             )
         )
         .options(selectinload(models.MarketItem.codes))
@@ -3404,7 +3430,6 @@ async def get_popular_items_stats(db: AsyncSession, start_date: Optional[date] =
         .order_by(func.count(models.Purchase.id).desc())
         .limit(limit)
     )
-    # Возвращаем результат как есть, FastAPI/Pydantic сами преобразуют его
     return (await db.execute(query)).all()
 
 async def get_inactive_users(
@@ -3415,15 +3440,15 @@ async def get_inactive_users(
 ):
     if period_days is not None:
         period_days = max(1, min(int(period_days), 365))
-        end_date = datetime.utcnow().date()
+        end_date = datetime.now(_TRANSFER_LIMIT_TZ).date()
         start_date = end_date - timedelta(days=period_days)
-    start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
+    start_utc, end_utc = _prepare_dates(start_date, end_date)
 
     active_senders_q = (
         select(models.Transaction.sender_id)
         .join(models.User, models.User.id == models.Transaction.sender_id)
         .filter(
-            models.Transaction.timestamp.between(start_date, end_date_inclusive),
+            _timestamp_in_range(models.Transaction.timestamp, start_utc, end_utc),
             _statistics_user_status_filter(),
         )
         .distinct()
@@ -3474,22 +3499,22 @@ async def get_active_user_ratio(db: AsyncSession, period_days: int = 30):
     }
 
 async def get_average_session_duration(db: AsyncSession, start_date: Optional[date] = None, end_date: Optional[date] = None):
-    start_date, end_date_inclusive = _prepare_dates(start_date, end_date)
+    start_utc, end_utc = _prepare_dates(start_date, end_date)
 
     session_duration = func.extract('epoch', models.UserSession.last_seen - models.UserSession.session_start)
-    
+
     query = (
         select(func.avg(session_duration))
         .join(models.User, models.User.id == models.UserSession.user_id)
         .filter(
-            models.UserSession.session_start.between(start_date, end_date_inclusive),
+            _timestamp_in_range(models.UserSession.session_start, start_utc, end_utc),
             _statistics_user_status_filter(),
         )
     )
-    
+
     average_seconds = (await db.execute(query)).scalar_one_or_none() or 0
     average_minutes = round(average_seconds / 60, 2)
-    
+
     return {"average_duration_minutes": average_minutes}
 
 # --- НОВАЯ ФУНКЦИЯ ДЛЯ ОБУЧЕНИЯ ---
