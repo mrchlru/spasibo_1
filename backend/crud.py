@@ -267,6 +267,19 @@ async def create_user(db: AsyncSession, user: schemas.RegisterRequest):
     await db.commit()
     await db.refresh(db_user)
 
+    try:
+        import referral_service
+
+        await referral_service.attribute_new_registration(
+            db,
+            invitee=db_user,
+            referral_code=getattr(user, "referral_code", None),
+        )
+        await db.commit()
+        await db.refresh(db_user)
+    except Exception as e:
+        logger.exception("Реферальная привязка при регистрации не удалась: %s", e)
+
     if db_user.telegram_id is None:
         try:
             await preassign_web_pending_credentials(db, db_user)
@@ -409,6 +422,12 @@ async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
     )
     db.add(notification)
     fair_play_admin_payload = await fair_play_service.analyze_transfer(db, sender, receiver)
+    try:
+        import referral_service
+
+        await referral_service.track_send_for_reactivation(db, sender)
+    except Exception as e:
+        logger.exception("Реферальный трекинг отправки user_id=%s: %s", sender.id, e)
     await db.commit()
     if fair_play_admin_payload:
         from fair_play_notification_service import schedule_fair_play_admin_notification
@@ -1311,6 +1330,15 @@ async def update_user_status(db: AsyncSession, user_id: int, status: str):
     user.status = "approved"
     await db.commit()
     await db.refresh(user)
+
+    try:
+        import referral_service
+
+        await referral_service.reward_new_user_on_approval(db, user)
+        await db.commit()
+        await db.refresh(user)
+    except Exception as e:
+        logger.exception("Реферальное начисление при одобрении user_id=%s: %s", user.id, e)
 
     login_name = user.login
     login_plain = user.password_plain

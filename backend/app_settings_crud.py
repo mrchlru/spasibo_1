@@ -18,6 +18,9 @@ def app_settings_to_response(row: models.AppSettings) -> schemas.AppSettingsResp
     install_promo = None
     if row.install_promo is not None:
         install_promo = schemas.InstallPromoPayload.model_validate(row.install_promo)
+    referral = None
+    if row.referral is not None:
+        referral = schemas.ReferralCampaignPayload.model_validate(row.referral)
     st = row.season_theme if row.season_theme in ("summer", "winter") else "summer"
     return schemas.AppSettingsResponse(
         id=row.id,
@@ -25,6 +28,7 @@ def app_settings_to_response(row: models.AppSettings) -> schemas.AppSettingsResp
         theme_assets=theme_assets,
         android_release=android_release,
         install_promo=install_promo,
+        referral=referral,
     )
 
 
@@ -35,6 +39,7 @@ async def get_app_settings(db: AsyncSession):
     settings_row = result.scalars().first()
     if settings_row:
         await _expire_install_promo_if_needed(db, settings_row)
+        await _expire_referral_if_needed(db, settings_row)
         return settings_row
 
     settings_row = models.AppSettings(season_theme="summer")
@@ -69,6 +74,13 @@ async def update_app_settings(db: AsyncSession, settings_data: schemas.AppSettin
                 payload = schemas.InstallPromoPayload.model_validate(value)
                 dumped = payload.model_dump()
                 setattr(settings_row, "install_promo", dumped)
+        elif key == "referral":
+            if value is None:
+                setattr(settings_row, "referral", None)
+            else:
+                payload = schemas.ReferralCampaignPayload.model_validate(value)
+                dumped = payload.model_dump()
+                setattr(settings_row, "referral", dumped)
         else:
             setattr(settings_row, key, value)
 
@@ -94,6 +106,27 @@ async def _expire_install_promo_if_needed(
     next_promo = dict(raw)
     next_promo["enabled"] = False
     settings_row.install_promo = next_promo
+    await db.commit()
+    await db.refresh(settings_row)
+
+
+async def _expire_referral_if_needed(
+    db: AsyncSession,
+    settings_row: models.AppSettings,
+) -> None:
+    """Автоматически выключает реферальную кампанию после ends_at."""
+    raw = settings_row.referral
+    if not isinstance(raw, dict) or not raw.get("enabled"):
+        return
+    ends_raw = raw.get("ends_at")
+    if not ends_raw:
+        return
+    ends_at = _parse_iso_datetime(str(ends_raw))
+    if ends_at is None or ends_at > datetime.now(timezone.utc):
+        return
+    next_referral = dict(raw)
+    next_referral["enabled"] = False
+    settings_row.referral = next_referral
     await db.commit()
     await db.refresh(settings_row)
 

@@ -18,6 +18,7 @@ import ApprovalsManager from './admin/ApprovalsManager';
 import AppearanceSettings from './admin/AppearanceSettings';
 import AndroidReleaseSettings from './admin/AndroidReleaseSettings';
 import InstallPromoSettings from './admin/InstallPromoSettings';
+import ReferralSettings from './admin/ReferralSettings';
 import EmailBroadcast from './admin/EmailBroadcast';
 import FeedPostManager from './admin/FeedPostManager';
 import FairPlayManager from './admin/FairPlayManager';
@@ -215,6 +216,9 @@ function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppS
           <button onClick={() => setActiveSection('install-promo')} className={styles.gridButton}>
             Реклама установки
           </button>
+          <button onClick={() => setActiveSection('referral')} className={styles.gridButton}>
+            Реферальная акция
+          </button>
           {isPrimaryAdmin ? (
             <button onClick={() => setActiveSection('android-release')} className={styles.gridButton}>
               Android-приложение
@@ -267,6 +271,8 @@ function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppS
       case 'appearance': return <AppearanceSettings seasonTheme={seasonTheme} themeAssets={themeAssets} onAppearanceUpdated={onAppearanceUpdated} />;
       case 'install-promo':
         return <InstallPromoSettings onAppSettingsUpdated={onAppSettingsUpdated} />;
+      case 'referral':
+        return <ReferralSettings onAppSettingsUpdated={onAppSettingsUpdated} />;
       case 'android-release':
         if (!isPrimaryAdmin) {
           return null;

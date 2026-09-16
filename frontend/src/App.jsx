@@ -17,6 +17,7 @@ import {
   updateMe,
   getTelegramPhotoProxyUrl,
   resolveAvatarUrl,
+  claimReferral,
 } from './api';
 import { initializeCache, clearCache, setCachedData } from './storage';
 import { preloadAppContent } from './boot/preloadAppContent';
@@ -59,6 +60,7 @@ const BlockedPage = lazy(() => import('./pages/BlockedPage'));
 const FairPlayBlockedPage = lazy(() => import('./pages/FairPlayBlockedPage'));
 const TransferPage = lazy(() => import('./pages/TransferPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
+const ReferralPage = lazy(() => import('./pages/ReferralPage'));
 const OnboardingStories = lazy(() => import('./components/OnboardingStories'));
 import EmailPromptModal from './components/EmailPromptModal';
 import AndroidNativeSessionBridge from './pwa/AndroidNativeSessionBridge.jsx';
@@ -66,8 +68,16 @@ import MobileWelcomeGuide from './components/MobileWelcomeGuide.jsx';
 import PushEnablePrompt from './components/PushEnablePrompt.jsx';
 import AndroidInstallSheet from './components/AndroidInstallSheet.jsx';
 import AppInstallPromo from './components/AppInstallPromo.jsx';
+import ReferralPromo from './components/ReferralPromo.jsx';
 import { DEFAULT_ANDROID_RELEASE, normalizeAndroidRelease } from './pwa/androidInstallPrompt.js';
 import { DEFAULT_INSTALL_PROMO, normalizeInstallPromo } from './pwa/appInstallPromo.js';
+import {
+  DEFAULT_REFERRAL,
+  normalizeReferral,
+  captureReferralCodeFromLocation,
+  getPendingReferralCode,
+  clearPendingReferralCode,
+} from './pwa/referralCampaign.js';
 
 import { useSessionTracking } from './hooks/useSessionTracking';
 
@@ -101,6 +111,7 @@ function App() {
   });
   const [androidRelease, setAndroidRelease] = useState({ ...DEFAULT_ANDROID_RELEASE });
   const [installPromo, setInstallPromo] = useState({ ...DEFAULT_INSTALL_PROMO });
+  const [referral, setReferral] = useState({ ...DEFAULT_REFERRAL });
   const [pendingFeedPostId, setPendingFeedPostId] = useState(null);
   const seasonThemeRef = useRef('summer');
   // Инициализация windowWidth с проверкой доступности window
@@ -188,6 +199,7 @@ function App() {
         setThemeAssets(response?.data?.theme_assets ?? null);
         setAndroidRelease(normalizeAndroidRelease(response?.data?.android_release));
         setInstallPromo(normalizeInstallPromo(response?.data?.install_promo));
+        setReferral(normalizeReferral(response?.data?.referral));
         applyFrontendBuildUpdate(response?.data?.frontend_build_id);
         void warmShellAssetsForTheme(response?.data?.theme_assets ?? null);
       } catch (error) {
@@ -223,7 +235,38 @@ function App() {
     if (data && Object.prototype.hasOwnProperty.call(data, 'install_promo')) {
       setInstallPromo(normalizeInstallPromo(data.install_promo));
     }
+    if (data && Object.prototype.hasOwnProperty.call(data, 'referral')) {
+      setReferral(normalizeReferral(data.referral));
+    }
   }, [handleAppearanceUpdated]);
+
+  useEffect(() => {
+    captureReferralCodeFromLocation();
+  }, []);
+
+  useEffect(() => {
+    if (!user || user.status !== 'approved') {
+      return undefined;
+    }
+    const pendingRef = getPendingReferralCode();
+    if (!pendingRef) {
+      return undefined;
+    }
+    let cancelled = false;
+    void claimReferral(pendingRef)
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        if (response?.data?.ok) {
+          clearPendingReferralCode();
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.status]);
 
   useEffect(() => {
     seasonThemeRef.current = seasonTheme;
@@ -435,6 +478,16 @@ function App() {
       if (!hasEmail) {
         setShowEmailPromptModal(true);
       }
+    }
+    const pendingRef = getPendingReferralCode();
+    if (pendingRef && userData.status === 'approved') {
+      void claimReferral(pendingRef)
+        .then((response) => {
+          if (response?.data?.ok) {
+            clearPendingReferralCode();
+          }
+        })
+        .catch(() => {});
     }
   };
   
@@ -756,6 +809,7 @@ function App() {
         case 'roulette': return <RoulettePage user={user} onUpdateUser={updateUser} />;
         case 'marketplace': return <MarketplacePage user={user} onPurchaseSuccess={handlePurchaseAndUpdate} />;
         case 'profile': return <ProfilePage user={user} telegramPhotoUrl={effectiveTelegramPhotoUrl} onNavigate={navigate} onPurchaseSuccess={handlePurchaseAndUpdate} />;
+        case 'referral': return <ReferralPage onBack={() => navigate('profile')} />;
         case 'bonus_card': return <BonusCardPage user={user} onBack={() => navigate('profile')} onUpdateUser={updateUser} />;
         case 'edit_profile': return <EditProfilePage user={user} onBack={() => navigate('profile')} onSaveSuccess={handleProfileSaveSuccess} />;
         case 'notifications': return <NotificationsPage user={user} onBack={() => navigate('profile')} />;
@@ -916,6 +970,15 @@ function App() {
         isOnboardingVisible={isOnboardingVisible}
         installPromo={installPromo}
         hasBottomNav={Boolean(shouldShowBottomNav)}
+      />
+      <ReferralPromo
+        user={user}
+        bootReady={bootReady}
+        loading={loading}
+        isOnboardingVisible={isOnboardingVisible}
+        referral={referral}
+        hasBottomNav={Boolean(shouldShowBottomNav)}
+        onOpenReferral={() => navigate('referral')}
       />
       {/* Теперь меню показываются на основе новых, правильных переменных */}
       {shouldShowSideNav && <SideNav user={user} activePage={page} onNavigate={navigate} />}

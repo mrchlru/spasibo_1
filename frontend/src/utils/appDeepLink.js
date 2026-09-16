@@ -10,6 +10,7 @@ const PANEL_ROUTES = {
   marketplace: { page: 'marketplace' },
   market: { page: 'marketplace' },
   profile: { page: 'profile' },
+  referral: { page: 'referral' },
   roulette: { page: 'roulette' },
   leaderboard: { page: 'leaderboard' },
   rating: { page: 'leaderboard' },
@@ -21,6 +22,7 @@ const PATH_ROUTES = {
   '/notifications': { page: 'notifications' },
   '/marketplace': { page: 'marketplace' },
   '/profile': { page: 'profile' },
+  '/referral': { page: 'referral' },
   '/roulette': { page: 'roulette' },
 };
 

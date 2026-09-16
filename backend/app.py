@@ -29,6 +29,7 @@ from routers import (
     media_raster,
     notifications,
     push,
+    referral,
     roulette,
     scheduler,
     sessions,
@@ -227,6 +228,7 @@ app.include_router(shared_gifts.router)
 app.include_router(cache.router)
 app.include_router(app_settings.router)
 app.include_router(notifications.router)
+app.include_router(referral.router)
 app.include_router(push.router)
 app.include_router(media_upload.router)
 app.include_router(media_raster.router)

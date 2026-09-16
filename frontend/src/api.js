@@ -213,6 +213,21 @@ export const snoozeInstallPromoUserState = () =>
 export const markInstallPromoUserDone = (reason = 'done') =>
   apiClient.post('/users/me/install-promo-state/done', { reason }, getAuthHeaders());
 
+export const getMyReferral = () =>
+  apiClient.get('/referral/me', getAuthHeaders());
+
+export const claimReferral = (code) =>
+  apiClient.post('/referral/claim', { code }, getAuthHeaders());
+
+export const getReferralPromoState = () =>
+  apiClient.get('/referral/promo-state', getAuthHeaders());
+
+export const snoozeReferralPromo = () =>
+  apiClient.post('/referral/promo-state/snooze', {}, getAuthHeaders());
+
+export const markReferralPromoDone = (reason = 'done') =>
+  apiClient.post('/referral/promo-state/done', { reason }, getAuthHeaders());
+
 export const registerFeedPostView = (postId) =>
   apiClient.post(`/feed-posts/${postId}/view`, {}, getAuthHeaders());
 

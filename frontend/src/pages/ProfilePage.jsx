@@ -55,7 +55,18 @@ function ProfilePage({ user, telegramPhotoUrl, onNavigate, onPurchaseSuccess }) 
             </button>
         </div>
         <div className={styles.profilePosition}>{user.position}</div>
-      </div>
+      </div>
+
+      <button
+        type="button"
+        className={styles.referralBanner}
+        onClick={() => onNavigate('referral')}
+      >
+        <span className={styles.referralBannerTitle}>Получи бонусы за коллегу</span>
+        <span className={styles.referralBannerText}>
+          Пригласи по ссылке — и вы оба получите спасибки
+        </span>
+      </button>
 
       {/* --- 2. ИСПРАВЛЕНИЕ ВЕРСТКИ: Все <p> теперь внутри .card --- */}
       {hasLimit && (

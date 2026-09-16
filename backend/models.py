@@ -61,6 +61,7 @@ class User(Base):
     fair_play_suspicious_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     fair_play_weekly_sent_count: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
     fair_play_weekly_sent_for_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    referral_code: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     sent_transactions = relationship(
         "Transaction",
         back_populates="sender",
@@ -406,12 +407,52 @@ class AppSettings(Base):
     android_release = Column(JSON, nullable=True)
     # Мягкая реклама установки (ПК QR / iOS Home Screen / Android браузер)
     install_promo = Column(JSON, nullable=True)
+    # Реферальная кампания (бонусы, сроки, аудитория рекламы)
+    referral = Column(JSON, nullable=True)
 
 
 class InstallPromoUserState(Base):
     """Snooze / done рекламы установки на аккаунт (общее для всех устройств)."""
 
     __tablename__ = "install_promo_user_states"
+
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    snoozed_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    done_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    done_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class ReferralAttribution(Base):
+    """Приглашение по реферальной ссылке в рамках кампании."""
+
+    __tablename__ = "referral_attributions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    campaign_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    inviter_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    invitee_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
+    attributed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+    send_days = Column(JSON, nullable=False, default=list)
+    rewarded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    inviter_bonus: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    invitee_bonus: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class ReferralPromoUserState(Base):
+    """Snooze / done рекламы реферальной акции на аккаунт."""
+
+    __tablename__ = "referral_promo_user_states"
 
     user_id: Mapped[int] = mapped_column(
         Integer,

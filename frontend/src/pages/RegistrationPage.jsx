@@ -8,6 +8,7 @@ import PageLayout from '../components/PageLayout';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 
 import { formatDateForApi } from '../utils/dateFormatter';
+import { getPendingReferralCode } from '../pwa/referralCampaign.js';
 
 function RegistrationPage({ telegramUser, onRegistrationSuccess, isWebBrowser = false, onBackToLogin }) {
   const { showAlert } = useModalAlert();
@@ -94,6 +95,7 @@ function RegistrationPage({ telegramUser, onRegistrationSuccess, isWebBrowser = 
         phone_number: formData.phoneNumber,
         date_of_birth: apiDate,
         email: formData.email.trim() || null,  // Email опционален для Telegram, обязателен для веб
+        referral_code: getPendingReferralCode(),
       };
 
       await registerUser(telegramId || '', userData);

@@ -245,6 +245,7 @@ class RegisterRequest(BaseModel):
     phone_number: str
     date_of_birth: Optional[str] = None
     email: Optional[str] = None
+    referral_code: Optional[str] = None
 
 class FeedItem(OrmBase):
     id: int
@@ -525,12 +526,88 @@ class InstallPromoDoneRequest(BaseModel):
     reason: str = "done"
 
 
+class ReferralCampaignPayload(BaseModel):
+    """Настройки реферальной акции (бонусы, сроки, аудитория рекламы)."""
+
+    enabled: bool = False
+    started_at: Optional[str] = None
+    ends_at: Optional[str] = None
+    inactive_months: int = 3
+    reactivation_min_days: int = 3
+    reactivation_window_days: int = 7
+    bonus_new_inviter: int = 15
+    bonus_new_invitee: int = 15
+    bonus_reactivate_inviter: int = 15
+    bonus_reactivate_invitee: int = 15
+    promo_admins_only: bool = False
+    promo_allowed_user_ids: List[int] = Field(default_factory=list)
+
+
+class ReferralInviteItem(BaseModel):
+    """Одна запись о приглашённом в списке рефералов."""
+
+    id: int
+    invitee_id: int
+    invitee_name: str
+    kind: str
+    kind_label: str
+    status: str
+    status_label: str
+    attributed_at: Optional[datetime] = None
+    rewarded_at: Optional[datetime] = None
+    send_days_count: int = 0
+    inviter_bonus: int = 0
+    invitee_bonus: int = 0
+
+
+class ReferralSummaryResponse(BaseModel):
+    """Сводка рефералки для экрана профиля."""
+
+    code: str
+    share_path: str
+    campaign_active: bool
+    campaign: ReferralCampaignPayload
+    invites: List[ReferralInviteItem] = Field(default_factory=list)
+    rules: str = ""
+
+
+class ReferralClaimRequest(BaseModel):
+    """Привязка по реферальному коду для существующего пользователя."""
+
+    code: str
+
+
+class ReferralClaimResponse(BaseModel):
+    """Результат claim реферальной ссылки."""
+
+    ok: bool
+    message: str
+    attribution: Optional[ReferralInviteItem] = None
+
+
+class ReferralPromoUserStateResponse(BaseModel):
+    """Состояние показа рекламы рефералки."""
+
+    is_done: bool = False
+    done_reason: Optional[str] = None
+    snoozed_until: Optional[datetime] = None
+    is_snoozed: bool = False
+    can_show: bool = True
+
+
+class ReferralPromoDoneRequest(BaseModel):
+    """Пометить рекламу рефералки просмотренной."""
+
+    reason: str = "done"
+
+
 class AppSettingsResponse(OrmBase):
     id: int
     season_theme: Literal['summer', 'winter']
     theme_assets: Optional[ThemeAssetsPayload] = None
     android_release: Optional[AndroidReleasePayload] = None
     install_promo: Optional[InstallPromoPayload] = None
+    referral: Optional[ReferralCampaignPayload] = None
     frontend_build_id: Optional[str] = None
 
 
@@ -539,6 +616,7 @@ class AppSettingsUpdate(BaseModel):
     theme_assets: Optional[ThemeAssetsPayload] = None
     android_release: Optional[AndroidReleasePayload] = None
     install_promo: Optional[InstallPromoPayload] = None
+    referral: Optional[ReferralCampaignPayload] = None
 
 class TotalBalanceStats(BaseModel):
     total_balance: int

@@ -1,0 +1,189 @@
+.hero {
+  margin-bottom: 1.25rem;
+  padding: 1.1rem 1.15rem 1.2rem;
+  border-radius: 18px;
+  background: linear-gradient(160deg, #eef8ec 0%, #f7fbf6 55%, #e8f3e5 100%);
+}
+
+.heroEyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #3d7a38;
+}
+
+.heroTitle {
+  margin: 0 0 0.45rem;
+  font-size: 1.35rem;
+  line-height: 1.25;
+  color: #1f3d1c;
+}
+
+.heroText {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: #456843;
+}
+
+.linkBox {
+  padding: 0.85rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(61, 122, 56, 0.14);
+}
+
+.linkCode {
+  display: block;
+  margin-bottom: 0.75rem;
+  word-break: break-all;
+  font-size: 0.82rem;
+  color: #234a20;
+}
+
+.linkActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.primaryBtn,
+.secondaryBtn {
+  border: none;
+  border-radius: 12px;
+  padding: 0.65rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryBtn {
+  background: #3d7a38;
+  color: #fff;
+}
+
+.secondaryBtn {
+  background: rgba(61, 122, 56, 0.12);
+  color: #234a20;
+}
+
+.rulesToggle {
+  margin-top: 0.85rem;
+  border: none;
+  background: transparent;
+  color: #3d7a38;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.rules {
+  margin: 0.65rem 0 0;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.65);
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #456843;
+}
+
+.listSection {
+  margin-top: 0.5rem;
+}
+
+.listTitle {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  color: #1f3d1c;
+}
+
+.inviteList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.inviteItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid rgba(35, 74, 32, 0.08);
+}
+
+.inviteName {
+  margin: 0;
+  font-weight: 600;
+  color: #1f3d1c;
+}
+
+.inviteMeta {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  color: #6a7f68;
+}
+
+.inviteStatus {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.statusPill {
+  display: inline-block;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.06);
+  color: #456843;
+}
+
+.statusPill[data-status='rewarded'] {
+  background: rgba(61, 122, 56, 0.16);
+  color: #234a20;
+}
+
+.statusPill[data-status='in_progress'] {
+  background: rgba(230, 168, 42, 0.18);
+  color: #7a5a10;
+}
+
+.statusPill[data-status='pending'] {
+  background: rgba(80, 120, 180, 0.16);
+  color: #2f4f7a;
+}
+
+.progressHint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: #6a7f68;
+}
+
+.muted {
+  color: #6a7f68;
+  font-size: 0.92rem;
+}
+
+.backButton {
+  border: none;
+  background: transparent;
+  color: #3d7a38;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  margin: 0 0 0.85rem;
+}
