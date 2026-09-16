@@ -68,7 +68,7 @@ import MobileWelcomeGuide from './components/MobileWelcomeGuide.jsx';
 import PushEnablePrompt from './components/PushEnablePrompt.jsx';
 import AndroidInstallSheet from './components/AndroidInstallSheet.jsx';
 import AppInstallPromo from './components/AppInstallPromo.jsx';
-import ReferralPromo from './components/ReferralPromo.jsx';
+import ReferralStories from './components/ReferralStories.jsx';
 import { DEFAULT_ANDROID_RELEASE, normalizeAndroidRelease } from './pwa/androidInstallPrompt.js';
 import { DEFAULT_INSTALL_PROMO, normalizeInstallPromo } from './pwa/appInstallPromo.js';
 import {
@@ -808,7 +808,15 @@ function App() {
           return <LeaderboardPage user={user} seasonTheme={seasonTheme} themeAssets={themeAssets} />;
         case 'roulette': return <RoulettePage user={user} onUpdateUser={updateUser} />;
         case 'marketplace': return <MarketplacePage user={user} onPurchaseSuccess={handlePurchaseAndUpdate} />;
-        case 'profile': return <ProfilePage user={user} telegramPhotoUrl={effectiveTelegramPhotoUrl} onNavigate={navigate} onPurchaseSuccess={handlePurchaseAndUpdate} />;
+        case 'profile': return (
+          <ProfilePage
+            user={user}
+            telegramPhotoUrl={effectiveTelegramPhotoUrl}
+            onNavigate={navigate}
+            onPurchaseSuccess={handlePurchaseAndUpdate}
+            referral={referral}
+          />
+        );
         case 'referral': return <ReferralPage onBack={() => navigate('profile')} />;
         case 'bonus_card': return <BonusCardPage user={user} onBack={() => navigate('profile')} onUpdateUser={updateUser} />;
         case 'edit_profile': return <EditProfilePage user={user} onBack={() => navigate('profile')} onSaveSuccess={handleProfileSaveSuccess} />;
@@ -971,13 +979,12 @@ function App() {
         installPromo={installPromo}
         hasBottomNav={Boolean(shouldShowBottomNav)}
       />
-      <ReferralPromo
+      <ReferralStories
         user={user}
         bootReady={bootReady}
         loading={loading}
         isOnboardingVisible={isOnboardingVisible}
         referral={referral}
-        hasBottomNav={Boolean(shouldShowBottomNav)}
         onOpenReferral={() => navigate('referral')}
       />
       {/* Теперь меню показываются на основе новых, правильных переменных */}

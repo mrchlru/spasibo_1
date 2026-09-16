@@ -140,6 +140,20 @@ export function isReferralPromoAudienceAllowed(campaign, options = {}) {
 }
 
 /**
+ * Показывать ли вход в рефералку (плашка / история).
+ *
+ * @param {unknown} campaign
+ * @param {{ isAdmin?: boolean, userId?: number | null }} [options]
+ * @returns {boolean}
+ */
+export function canShowReferralEntry(campaign, options = {}) {
+  if (!isReferralWithinSchedule(campaign)) {
+    return false;
+  }
+  return isReferralPromoAudienceAllowed(campaign, options);
+}
+
+/**
  * Сохраняет ref из URL в localStorage.
  *
  * @param {string | null | undefined} code

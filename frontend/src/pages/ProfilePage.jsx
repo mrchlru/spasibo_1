@@ -1,6 +1,6 @@
 // frontend/src/pages/ProfilePage.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import styles from './ProfilePage.module.css';
 import { FaCog, FaCreditCard, FaPencilAlt, FaBell } from 'react-icons/fa';
 import PageLayout from '../components/PageLayout';
@@ -8,9 +8,17 @@ import { ProfileFavoritesStrip } from '../components/ProfileFavoritesStrip';
 import { ProfilePurchasesStrip } from '../components/ProfilePurchasesStrip';
 import { formatDateForDisplay } from '../utils/dateFormatter';
 import { getUnreadNotificationCount } from '../api';
+import { canShowReferralEntry } from '../pwa/referralCampaign.js';
 
-function ProfilePage({ user, telegramPhotoUrl, onNavigate, onPurchaseSuccess }) {
+function ProfilePage({ user, telegramPhotoUrl, onNavigate, onPurchaseSuccess, referral = null }) {
   const [unreadCount, setUnreadCount] = useState(0);
+  const showReferralBanner = useMemo(
+    () => canShowReferralEntry(referral, {
+      isAdmin: Boolean(user?.is_admin),
+      userId: user?.id,
+    }),
+    [referral, user?.id, user?.is_admin],
+  );
 
   useEffect(() => {
     if (!user) return;
@@ -57,16 +65,18 @@ function ProfilePage({ user, telegramPhotoUrl, onNavigate, onPurchaseSuccess }) 
         <div className={styles.profilePosition}>{user.position}</div>
       </div>
 
-      <button
-        type="button"
-        className={styles.referralBanner}
-        onClick={() => onNavigate('referral')}
-      >
-        <span className={styles.referralBannerTitle}>Получи бонусы за коллегу</span>
-        <span className={styles.referralBannerText}>
-          Пригласи по ссылке — и вы оба получите спасибки
-        </span>
-      </button>
+      {showReferralBanner && (
+        <button
+          type="button"
+          className={styles.referralBanner}
+          onClick={() => onNavigate('referral')}
+        >
+          <span className={styles.referralBannerTitle}>Получи бонусы за коллегу</span>
+          <span className={styles.referralBannerText}>
+            Пригласи по ссылке — и вы оба получите спасибки
+          </span>
+        </button>
+      )}
 
       {/* --- 2. ИСПРАВЛЕНИЕ ВЕРСТКИ: Все <p> теперь внутри .card --- */}
       {hasLimit && (
