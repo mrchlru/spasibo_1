@@ -5,11 +5,12 @@ import { useModalAlert } from '../contexts/ModalAlertContext';
 import {
   clearPendingReferralCode,
   getPendingReferralCode,
+  buildReferralQrImageUrl,
 } from '../pwa/referralCampaign.js';
 import styles from './ReferralPage.module.css';
 
 /**
- * Экран реферальной системы: ссылка, приглашённые, правила.
+ * Экран реферальной системы: ссылка, QR, приглашённые, правила.
  */
 function ReferralPage({ onBack }) {
   const { showAlert } = useModalAlert();
@@ -66,6 +67,11 @@ function ReferralPage({ onBack }) {
     }
     return `${window.location.origin}${summary.share_path}`;
   }, [summary]);
+
+  const qrImageUrl = useMemo(
+    () => (shareUrl ? buildReferralQrImageUrl(shareUrl, 220) : ''),
+    [shareUrl],
+  );
 
   async function handleCopy() {
     if (!shareUrl) {

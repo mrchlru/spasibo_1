@@ -154,6 +154,19 @@ export function canShowReferralEntry(campaign, options = {}) {
 }
 
 /**
+ * URL картинки QR для реферальной ссылки.
+ *
+ * @param {string} shareUrl
+ * @param {number} [size]
+ * @returns {string}
+ */
+export function buildReferralQrImageUrl(shareUrl, size = 220) {
+  const data = encodeURIComponent(shareUrl || '');
+  const px = Math.max(120, Math.min(400, Number(size) || 220));
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${px}x${px}&ecc=M&margin=10&data=${data}`;
+}
+
+/**
  * Сохраняет ref из URL в localStorage.
  *
  * @param {string | null | undefined} code
