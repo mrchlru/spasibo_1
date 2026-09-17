@@ -13,7 +13,11 @@ from database import get_db
 from dependencies import get_current_user, get_optional_current_user
 from feed_post_service import user_can_publish_feed_posts
 from models import User
-from routers.media_upload import store_uploaded_document_file, store_uploaded_image_file
+from routers.media_upload import (
+    store_uploaded_document_file,
+    store_uploaded_image_file,
+    store_uploaded_video_file,
+)
 
 router = APIRouter()
 
@@ -214,3 +218,18 @@ async def upload_publisher_feed_document_route(
             detail="Нет прав на публикацию новостей",
         )
     return await store_uploaded_document_file(db, file, key_prefix="feed-posts/documents")
+
+
+@router.post("/feed-posts/videos/upload", response_model=schemas.AdminDocumentUploadResponse)
+async def upload_publisher_feed_video_route(
+    current_user: User = Depends(get_current_user),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Загружает видео для новости ленты."""
+    if not user_can_publish_feed_posts(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет прав на публикацию новостей",
+        )
+    return await store_uploaded_video_file(db, file, key_prefix="feed-posts/videos")

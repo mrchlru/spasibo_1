@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FaFileArrowUp, FaImage, FaTrashCan, FaXmark } from 'react-icons/fa6';
+import { FaFileArrowUp, FaImage, FaTrashCan, FaVideo, FaXmark } from 'react-icons/fa6';
 import {
   createFeedPost,
   updateFeedPost,
   uploadFeedPostDocument,
   uploadFeedPostImage,
+  uploadFeedPostVideo,
 } from '../api';
 import styles from './FeedPostModal.module.css';
 
@@ -12,9 +13,28 @@ const MIN_TITLE_LENGTH = 3;
 const MAX_TITLE_LENGTH = 255;
 const MAX_BODY_LENGTH = 5000;
 const MAX_ATTACHMENTS = 10;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 
 const DOCUMENT_ACCEPT =
   '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+const VIDEO_ACCEPT = 'video/mp4,video/webm,.mp4,.webm';
+
+/**
+ * Подпись вида вложения для списка.
+ *
+ * @param {string} kind
+ * @returns {string}
+ */
+function attachmentKindLabel(kind) {
+  if (kind === 'image') {
+    return 'Фото';
+  }
+  if (kind === 'video') {
+    return 'Видео';
+  }
+  return 'Документ';
+}
 
 function revokePreviewUrl(attachment) {
   if (attachment.previewUrl?.startsWith('blob:')) {
@@ -50,6 +70,7 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
   const [error, setError] = useState('');
   const imageInputRef = useRef(null);
   const documentInputRef = useRef(null);
+  const videoInputRef = useRef(null);
   const isEditMode = Boolean(editPost?.id);
 
   useEffect(() => {
@@ -177,6 +198,52 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
     }
   }
 
+  async function handleVideoSelect(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || attachments.length >= MAX_ATTACHMENTS) {
+      return;
+    }
+    if (file.size > MAX_VIDEO_BYTES) {
+      setError('Видео слишком большое (максимум 50 МБ)');
+      return;
+    }
+
+    const clientId = `video-${Date.now()}`;
+    setAttachments((prev) => [
+      ...prev,
+      {
+        clientId,
+        kind: 'video',
+        url: '',
+        filename: file.name,
+        content_type: file.type || 'video/mp4',
+        uploading: true,
+      },
+    ]);
+
+    try {
+      const response = await uploadFeedPostVideo(file);
+      setAttachments((prev) =>
+        prev.map((item) =>
+          item.clientId === clientId
+            ? {
+                ...item,
+                url: response.data.url,
+                filename: response.data.filename,
+                content_type: response.data.content_type,
+                uploading: false,
+              }
+            : item,
+        ),
+      );
+    } catch (err) {
+      setAttachments((prev) => prev.filter((item) => item.clientId !== clientId));
+      const detail = err?.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : 'Не удалось загрузить видео');
+    }
+  }
+
   function removeAttachment(clientId) {
     setAttachments((prev) => {
       const target = prev.find((item) => item.clientId === clientId);
@@ -274,12 +341,16 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
             <button type="button" className={styles.attachBtn} onClick={() => imageInputRef.current?.click()}>
               <FaImage size={14} /> Фото
             </button>
+            <button type="button" className={styles.attachBtn} onClick={() => videoInputRef.current?.click()}>
+              <FaVideo size={14} /> Видео
+            </button>
             <button type="button" className={styles.attachBtn} onClick={() => documentInputRef.current?.click()}>
               <FaFileArrowUp size={14} /> Файл
             </button>
           </div>
 
           <input ref={imageInputRef} type="file" accept="image/*" className={styles.hiddenInput} onChange={handleImageSelect} />
+          <input ref={videoInputRef} type="file" accept={VIDEO_ACCEPT} className={styles.hiddenInput} onChange={handleVideoSelect} />
           <input ref={documentInputRef} type="file" accept={DOCUMENT_ACCEPT} className={styles.hiddenInput} onChange={handleDocumentSelect} />
 
           {attachments.length > 0 && (
@@ -287,7 +358,7 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
               {attachments.map((attachment) => (
                 <li key={attachment.clientId} className={styles.attachmentItem}>
                   <span>
-                    {attachment.filename || (attachment.kind === 'image' ? 'Фото' : 'Документ')}
+                    {attachment.filename || attachmentKindLabel(attachment.kind)}
                     {attachment.uploading ? ' (загрузка…)' : ''}
                   </span>
                   <button type="button" onClick={() => removeAttachment(attachment.clientId)} aria-label="Удалить">

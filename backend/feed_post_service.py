@@ -22,7 +22,7 @@ async def _invalidate_feed_cache(reason: str) -> None:
     """Сбрасывает клиентский Redis-кэш ленты у всех пользователей."""
     await crud._invalidate_feed_and_leaderboard(reason)
 
-_FEED_OBJECT_PREFIXES = ("feed-posts/images/", "feed-posts/documents/")
+_FEED_OBJECT_PREFIXES = ("feed-posts/images/", "feed-posts/documents/", "feed-posts/videos/")
 
 
 def user_can_publish_feed_posts(user: models.User) -> bool:
@@ -153,13 +153,16 @@ async def soft_delete_feed_post(
     user: models.User,
     post_id: int,
 ) -> None:
-    """Помечает новость удалённой (скрывает из ленты и админ-списка активных)."""
+    """Помечает новость удалённой и удаляет файлы вложений из хранилища."""
     if not user_can_publish_feed_posts(user):
         raise ValueError("Нет прав на удаление новостей")
 
     post = await get_feed_post_by_id(db, post_id)
     if post is None or post.is_deleted:
         raise ValueError("Новость не найдена")
+
+    for attachment in list(post.attachments):
+        await _delete_attachment_url(attachment.url)
 
     post.is_deleted = True
     post.is_pinned = False

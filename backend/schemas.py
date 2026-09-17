@@ -1084,7 +1084,7 @@ class PushTestResponse(BaseModel):
     fcm_tokens: int
 
 
-FeedPostAttachmentKind = Literal["image", "document"]
+FeedPostAttachmentKind = Literal["image", "document", "video"]
 
 
 class FeedPostAttachmentInput(BaseModel):

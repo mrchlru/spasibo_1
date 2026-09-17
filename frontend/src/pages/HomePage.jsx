@@ -182,6 +182,68 @@ function HomePage({
   }, [feedEntries, patchFeedPost, user]);
 
   useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') {
+      return undefined;
+    }
+    const nodes = document.querySelectorAll('[data-feed-video]');
+    if (!nodes.length) {
+      return undefined;
+    }
+
+    /**
+     * Запускает видео в видимой зоне.
+     *
+     * @param {HTMLVideoElement} video
+     */
+    function playFeedVideo(video) {
+      const src = video.getAttribute('data-src');
+      if (!src) {
+        return;
+      }
+      if (video.getAttribute('src') !== src) {
+        video.setAttribute('src', src);
+        video.load();
+      }
+      video.muted = true;
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {});
+      }
+    }
+
+    /**
+     * Останавливает и выгружает видео вне экрана.
+     *
+     * @param {HTMLVideoElement} video
+     */
+    function unloadFeedVideo(video) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const video = /** @type {HTMLVideoElement} */ (entry.target);
+          if (entry.isIntersecting) {
+            playFeedVideo(video);
+          } else {
+            unloadFeedVideo(video);
+          }
+        });
+      },
+      { threshold: 0.55 },
+    );
+
+    nodes.forEach((node) => observer.observe(node));
+    return () => {
+      nodes.forEach((node) => unloadFeedVideo(/** @type {HTMLVideoElement} */ (node)));
+      observer.disconnect();
+    };
+  }, [feedEntries]);
+
+  useEffect(() => {
     warmCachedBannerAssets(initialBanners);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -405,6 +467,7 @@ function HomePage({
     const canPublish = canManageFeedPosts(user) && !post.is_published;
     const author = post.author;
     const images = (post.attachments || []).filter((item) => item.kind === 'image');
+    const videos = (post.attachments || []).filter((item) => item.kind === 'video');
     const documents = (post.attachments || []).filter((item) => item.kind === 'document');
     const writtenAt = post.published_at || post.created_at;
 
@@ -476,6 +539,28 @@ function HomePage({
               <a key={image.id || image.url} href={image.url} target="_blank" rel="noopener noreferrer">
                 <img src={image.url} alt={image.filename || post.title} className={styles.feedNewsImage} loading="lazy" />
               </a>
+            ))}
+          </div>
+        )}
+
+        {videos.length > 0 && (
+          <div className={styles.feedNewsMedia}>
+            {videos.map((video) => (
+              <video
+                key={video.id || video.url}
+                className={styles.feedNewsVideo}
+                data-feed-video="1"
+                data-src={video.url}
+                muted
+                playsInline
+                loop
+                preload="none"
+                controls={false}
+                onClick={(event) => {
+                  const el = event.currentTarget;
+                  el.muted = !el.muted;
+                }}
+              />
             ))}
           </div>
         )}

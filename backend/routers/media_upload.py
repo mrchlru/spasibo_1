@@ -26,6 +26,7 @@ router = APIRouter()
 
 MAX_DOCUMENT_BYTES = 15 * 1024 * 1024
 MAX_APK_BYTES = 100 * 1024 * 1024
+MAX_VIDEO_BYTES = 50 * 1024 * 1024
 
 _ALLOWED_DOCUMENT_EXTENSIONS: dict[str, str] = {
     ".pdf": "application/pdf",
@@ -35,6 +36,11 @@ _ALLOWED_DOCUMENT_EXTENSIONS: dict[str, str] = {
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".ppt": "application/vnd.ms-powerpoint",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+
+_ALLOWED_VIDEO_EXTENSIONS: dict[str, str] = {
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
 }
 
 
@@ -63,6 +69,25 @@ def _resolve_document_content_type(filename: str, content_type: str) -> str:
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Поддерживаются PDF, Word, Excel и PowerPoint",
+    )
+
+
+def _resolve_video_content_type(filename: str, content_type: str) -> str:
+    """Определяет MIME видео по расширению или заголовку."""
+    extension = Path(filename or "").suffix.lower()
+    if extension in _ALLOWED_VIDEO_EXTENSIONS:
+        return _ALLOWED_VIDEO_EXTENSIONS[extension]
+
+    normalized = (content_type or "").split(";")[0].strip().lower()
+    allowed_types = set(_ALLOWED_VIDEO_EXTENSIONS.values())
+    if normalized in allowed_types:
+        return normalized
+    if normalized in ("application/octet-stream", "") and extension in _ALLOWED_VIDEO_EXTENSIONS:
+        return _ALLOWED_VIDEO_EXTENSIONS[extension]
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Поддерживаются видео MP4 и WebM",
     )
 
 
@@ -135,6 +160,45 @@ async def store_uploaded_document_file(
         url = await asyncio.to_thread(upload_bytes, key, raw, content_type)
     except RuntimeError as exc:
         logger.exception("S3 document upload failed")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return schemas.AdminDocumentUploadResponse(
+        url=url,
+        filename=filename,
+        content_type=content_type,
+    )
+
+
+async def store_uploaded_video_file(
+    db: AsyncSession,
+    file: UploadFile,
+    *,
+    key_prefix: str = "feed-posts/videos",
+) -> schemas.AdminDocumentUploadResponse:
+    """Загружает видео для ленты и возвращает публичный URL."""
+    if not is_object_storage_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Объектное хранилище не настроено (S3_BUCKET, ключи доступа).",
+        )
+    filename = Path(file.filename or "video.mp4").name.strip() or "video.mp4"
+    content_type = _resolve_video_content_type(filename, file.content_type or "")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл пустой")
+    if len(raw) > MAX_VIDEO_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Видео слишком большое (максимум 50 МБ)",
+        )
+
+    extension = Path(filename).suffix.lower() or ".mp4"
+    if extension not in _ALLOWED_VIDEO_EXTENSIONS:
+        extension = ".mp4" if content_type == "video/mp4" else ".webm"
+    key = generate_media_object_key(prefix=key_prefix, extension=extension.lstrip("."))
+    try:
+        url = await asyncio.to_thread(upload_bytes, key, raw, content_type)
+    except RuntimeError as exc:
+        logger.exception("S3 video upload failed")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return schemas.AdminDocumentUploadResponse(
         url=url,

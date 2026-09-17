@@ -256,6 +256,14 @@ export const uploadFeedPostDocument = (file) => {
   });
 };
 
+export const uploadFeedPostVideo = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post('/feed-posts/videos/upload', formData, {
+    headers: { ...getAuthHeaders().headers },
+  });
+};
+
 export const getLeaderboard = ({ period, type, offset = 0, limit = 20 }) =>
   apiClient.get('/leaderboard/', {
     ...getAuthHeaders(),
