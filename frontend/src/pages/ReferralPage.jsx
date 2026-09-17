@@ -8,6 +8,7 @@ import {
   getPendingReferralCode,
 } from '../pwa/referralCampaign.js';
 import { copyTextReliable, shareTextReliable } from '../pwa/shareClipboard.js';
+import { isSpasiboAndroidApp } from '../pwa/androidNativePush.js';
 import styles from './ReferralPage.module.css';
 
 /**
@@ -141,16 +142,12 @@ function ReferralPage({ onBack }) {
     }
     setBusy(true);
     try {
-      const result = await shareTextReliable({
+      // После «Поделиться» не показываем тосты: успех и закрытие sheet — без уведомлений.
+      await shareTextReliable({
         title: 'Спасибо — приглашение',
         text: `Присоединяйся к «Спасибо»: ${shareUrl}`,
         url: shareUrl,
       });
-      if (result === 'copied') {
-        showAlert('Ссылка скопирована', 'success');
-      } else if (result === 'failed') {
-        showAlert('Не удалось поделиться ссылкой', 'error');
-      }
     } finally {
       setBusy(false);
     }
@@ -158,6 +155,7 @@ function ReferralPage({ onBack }) {
 
   const earned = Number(summary?.earned_spasibki) || 0;
   const registered = Number(summary?.registered_count) || 0;
+  const showShareButton = !isSpasiboAndroidApp();
 
   return (
     <PageLayout title="Бонусы за коллег">
@@ -205,10 +203,17 @@ function ReferralPage({ onBack }) {
               )}
               <code className={styles.linkCode}>{shareUrl}</code>
               <div className={styles.linkActions}>
-                <button type="button" className={styles.primaryBtn} onClick={handleShare} disabled={busy}>
-                  Поделиться
-                </button>
-                <button type="button" className={styles.secondaryBtn} onClick={handleCopy} disabled={busy}>
+                {showShareButton && (
+                  <button type="button" className={styles.primaryBtn} onClick={handleShare} disabled={busy}>
+                    Поделиться
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={showShareButton ? styles.secondaryBtn : styles.primaryBtn}
+                  onClick={handleCopy}
+                  disabled={busy}
+                >
                   Копировать
                 </button>
               </div>
