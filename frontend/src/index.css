@@ -121,7 +121,11 @@ body {
   }
 }
 
-/* Глобальные стили для кнопок - убираем синее подсвечивание и делаем прозрачными при нажатии */
+/* Убираем синее tap-highlight на интерактивных элементах (в т.ч. video/img в WebView) */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
 button,
 button:focus,
 button:focus-visible,
@@ -131,6 +135,12 @@ button:hover:active {
   -webkit-tap-highlight-color: transparent !important;
   -webkit-tap-highlight-color: rgba(0, 0, 0, 0) !important;
   box-shadow: none !important;
+}
+
+video,
+img,
+a {
+  -webkit-tap-highlight-color: transparent !important;
 }
 
 /* Убираем синее подсвечивание при фокусе */

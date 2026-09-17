@@ -118,8 +118,31 @@
 .thankYouButton {
   max-height: 50px;
   width: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
   cursor: pointer;
   flex-shrink: 0;
+  line-height: 0;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.thankYouButton:focus,
+.thankYouButton:focus-visible,
+.thankYouButton:active {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: none;
+}
+
+.thankYouButtonImg {
+  display: block;
+  max-height: 50px;
+  width: auto;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .banner {
@@ -577,6 +600,11 @@
     margin-top: 0.85rem;
     font-size: 0.78rem;
     color: #6E7A85;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 2;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
 }
 
 .feedMetaViews {
@@ -594,6 +622,12 @@
     flex-wrap: wrap;
     gap: 0.35rem;
     margin-top: 0.75rem;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 2;
+    /* Android WebView: нативный слой <video> иначе перекрывает HTML ниже */
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
 }
 
 .feedReactionBtn {
@@ -739,6 +773,7 @@ button:active {
 }
 
 .feedItemNews {
+  display: flex;
   position: relative;
   flex-direction: column;
   align-items: stretch;
@@ -832,6 +867,10 @@ button:active {
   flex-direction: column;
   gap: 8px;
   width: 100%;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
 }
 
 .feedNewsMedia a {
@@ -847,6 +886,15 @@ button:active {
   object-fit: contain;
 }
 
+.feedNewsVideoWrap {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0f1a0f;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .feedNewsVideo {
   width: 100%;
   max-height: min(70vh, 520px);
@@ -855,7 +903,46 @@ button:active {
   border-radius: 12px;
   background: #0f1a0f;
   object-fit: contain;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  /* Держим видео в своём композитном слое, чтобы не накрывало реакции */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+}
+
+.feedNewsVideo:focus,
+.feedNewsVideo:focus-visible,
+.feedNewsVideo:active {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.feedNewsVideoMuteBtn {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 3;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.feedNewsVideoMuteBtn:focus,
+.feedNewsVideoMuteBtn:focus-visible,
+.feedNewsVideoMuteBtn:active {
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: none;
 }
 
 .feedNewsDocs {

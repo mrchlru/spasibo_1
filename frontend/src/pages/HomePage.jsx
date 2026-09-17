@@ -461,6 +461,21 @@ function HomePage({
     setFeedModalOpen(true);
   }
 
+  /**
+   * Переключает звук у видео в ленте и обновляет подпись кнопки.
+   *
+   * @param {React.MouseEvent<HTMLButtonElement>} event
+   */
+  function toggleFeedVideoMute(event) {
+    const wrap = event.currentTarget.parentElement;
+    const el = wrap?.querySelector('video');
+    if (!el) {
+      return;
+    }
+    el.muted = !el.muted;
+    event.currentTarget.textContent = el.muted ? '🔇' : '🔊';
+  }
+
   function renderPostCard(post) {
     const canPin = canAuthorPinPost(post, user);
     const canEdit = canManageFeedPosts(user);
@@ -546,21 +561,26 @@ function HomePage({
         {videos.length > 0 && (
           <div className={styles.feedNewsMedia}>
             {videos.map((video) => (
-              <video
-                key={video.id || video.url}
-                className={styles.feedNewsVideo}
-                data-feed-video="1"
-                data-src={video.url}
-                muted
-                playsInline
-                loop
-                preload="none"
-                controls={false}
-                onClick={(event) => {
-                  const el = event.currentTarget;
-                  el.muted = !el.muted;
-                }}
-              />
+              <div key={video.id || video.url} className={styles.feedNewsVideoWrap}>
+                <video
+                  className={styles.feedNewsVideo}
+                  data-feed-video="1"
+                  data-src={video.url}
+                  muted
+                  playsInline
+                  loop
+                  preload="none"
+                  controls={false}
+                />
+                <button
+                  type="button"
+                  className={styles.feedNewsVideoMuteBtn}
+                  aria-label="Включить или выключить звук"
+                  onClick={toggleFeedVideoMute}
+                >
+                  🔇
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -575,28 +595,27 @@ function HomePage({
           </div>
         )}
 
-        {post.is_published ? (
-          <div className={styles.feedReactions}>
-            {FEED_REACTION_EMOJIS.map((emoji) => {
-              const count = normalizeReactionCounts(post.reaction_counts)[emoji] || 0;
-              const active = post.my_reaction === emoji;
-              return (
-                <button
-                  key={emoji}
-                  type="button"
-                  className={`${styles.feedReactionBtn} ${active ? styles.feedReactionBtnActive : ''}`}
-                  aria-label={`Реакция ${emoji}`}
-                  aria-pressed={active}
-                  disabled={!user}
-                  onClick={() => handleReaction(post.id, emoji)}
-                >
-                  <span aria-hidden="true">{emoji}</span>
-                  {count > 0 ? <span className={styles.feedReactionCount}>{count}</span> : null}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
+        <div className={styles.feedReactions}>
+          {FEED_REACTION_EMOJIS.map((emoji) => {
+            const count = normalizeReactionCounts(post.reaction_counts)[emoji] || 0;
+            const active = post.my_reaction === emoji;
+            const canReact = Boolean(user) && Boolean(post.is_published);
+            return (
+              <button
+                key={emoji}
+                type="button"
+                className={`${styles.feedReactionBtn} ${active ? styles.feedReactionBtnActive : ''}`}
+                aria-label={`Реакция ${emoji}`}
+                aria-pressed={active}
+                disabled={!canReact}
+                onClick={() => handleReaction(post.id, emoji)}
+              >
+                <span aria-hidden="true">{emoji}</span>
+                {count > 0 ? <span className={styles.feedReactionCount}>{count}</span> : null}
+              </button>
+            );
+          })}
+        </div>
 
         <div className={styles.feedMeta}>
           <div className={styles.feedMetaViews} title="Просмотры">
@@ -673,15 +692,22 @@ function HomePage({
           {isWinterTheme && <Garland />}
           <img src={telegramPhotoUrl || 'placeholder.png'} alt="User" className={styles.userAvatar} />
           <span className={styles.userName}>{user.first_name}</span>
-          <img
-            src={sendThanksImage}
-            alt="Отправить спасибки"
+          <button
+            type="button"
             className={styles.thankYouButton}
+            aria-label="Отправить спасибки"
             onClick={() => onNavigate('transfer')}
-            loading="eager"
-            fetchPriority="high"
-            decoding="async"
-          />
+          >
+            <img
+              src={sendThanksImage}
+              alt=""
+              className={styles.thankYouButtonImg}
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
+              draggable={false}
+            />
+          </button>
         </div>
 
         {!isDesktop && (
