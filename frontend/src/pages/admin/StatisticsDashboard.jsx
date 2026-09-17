@@ -5,6 +5,7 @@ import styles from './StatisticsDashboard.module.css';
 import { FaChartBar, FaHourglassHalf, FaStar, FaChartLine, FaUsersSlash, FaCoins, FaChartPie, FaFileExcel, FaClock, FaHeart, FaMobileAlt, FaPaperPlane } from 'react-icons/fa';
 import DateRangePicker from '../../components/DateRangePicker';
 import { exportConsolidatedReport } from '../../api';
+import { downloadExcelBlob } from '../../utils/downloadBlob';
 
 // Импорты всех компонентов-отчётов
 import GeneralStats from './stats/GeneralStats';
@@ -34,17 +35,10 @@ const StatisticsDashboard = () => {
             const formattedEndDate = formatDateForApiFromDate(endDate);
             
             const response = await exportConsolidatedReport(formattedStartDate, formattedEndDate);
-            
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `consolidated_report.xlsx`);
-            document.body.appendChild(link);
-            link.click();
-            link.parentNode.removeChild(link);
+            await downloadExcelBlob(response, 'consolidated_report.xlsx');
         } catch (err) {
             console.error('Ошибка при экспорте сводного отчета:', err);
-            alert('Не удалось скачать сводный отчет.');
+            alert(err.message || 'Не удалось скачать сводный отчет.');
         } finally {
             setIsExporting(false);
         }

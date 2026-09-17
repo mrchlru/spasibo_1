@@ -19,6 +19,7 @@ import {
   broadcastEmail,
   exportBroadcastReport,
 } from '../../api';
+import { downloadExcelBlob } from '../../utils/downloadBlob';
 import styles from '../AdminPage.module.css';
 import { useModalAlert } from '../../contexts/ModalAlertContext';
 import { useConfirmation } from '../../contexts/ConfirmationContext';
@@ -892,21 +893,11 @@ function BroadcastReport({ report }) {
         recipient_count_email: report.recipient_count_email || 0,
         recipient_count_telegram: report.recipient_count_telegram || 0,
       });
-      const blob = new Blob([response.data], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
       const stamp = new Date()
         .toISOString()
         .replace(/[-:]/g, '')
         .slice(0, 13);
-      a.href = url;
-      a.download = `broadcast_report_${stamp}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      await downloadExcelBlob(response, `broadcast_report_${stamp}.xlsx`);
     } catch (e) {
       console.error('Не удалось скачать Excel-отчёт', e);
     } finally {

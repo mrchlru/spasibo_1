@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { FaFileExcel } from 'react-icons/fa';
 import { exportActiveSenders, getActiveSendersStats } from '../../../api';
+import { downloadExcelBlob } from '../../../utils/downloadBlob';
 import { formatToMsk } from '../../../utils/dateFormatter';
 import UserAvatar from '../../../components/UserAvatar';
 import styles from './InactiveUsersPage.module.css';
@@ -11,16 +12,6 @@ const PERIOD_OPTIONS = [
   { days: 30, label: '1 месяц' },
   { days: 90, label: '3 месяца' },
 ];
-
-function downloadBlob(response, filename) {
-  const url = window.URL.createObjectURL(new Blob([response.data]));
-  const link = document.createElement('a');
-  link.href = url;
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  link.parentNode.removeChild(link);
-}
 
 function ActiveSendersPage() {
   const [periodDays, setPeriodDays] = useState(30);
@@ -53,10 +44,10 @@ function ActiveSendersPage() {
     setExporting(true);
     try {
       const response = await exportActiveSenders(periodDays);
-      downloadBlob(response, `active_senders_${periodDays}d.xlsx`);
+      await downloadExcelBlob(response, `active_senders_${periodDays}d.xlsx`);
     } catch (err) {
       console.error(err);
-      alert('Не удалось выгрузить Excel.');
+      alert(err.message || 'Не удалось выгрузить Excel.');
     } finally {
       setExporting(false);
     }

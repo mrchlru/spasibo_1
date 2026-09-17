@@ -3211,12 +3211,18 @@ def _timestamp_in_range(column, start_utc: datetime, end_utc: datetime):
 
 def _statistics_user_status_filter():
     """
-    Пользователи, учитываемые в статистике: только одобренные.
+    Пользователи, учитываемые в статистике: только живые одобренные.
 
-    Совпадает с вкладкой «Активные» в управлении пользователями.
-    Исключает pending, rejected, deleted и заблокированных.
+    Исключает pending, rejected, deleted, blocked и анонимизированные записи
+    (у удалённых telegram_id отрицательный).
     """
-    return models.User.status == 'approved'
+    return and_(
+        models.User.status == "approved",
+        or_(
+            models.User.telegram_id.is_(None),
+            models.User.telegram_id > 0,
+        ),
+    )
 
 
 async def _count_active_senders_between(

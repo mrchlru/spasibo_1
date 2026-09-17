@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { FaFileExcel } from 'react-icons/fa';
 import { exportInactiveUsers, getActiveUserRatio } from '../../../api';
+import { downloadExcelBlob } from '../../../utils/downloadBlob';
 import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import dashboardStyles from '../StatisticsDashboard.module.css';
@@ -12,16 +13,6 @@ const PERIOD_OPTIONS = [
   { days: 30, label: '1 месяц' },
   { days: 90, label: '3 месяца' },
 ];
-
-function downloadBlob(response, filename) {
-  const url = window.URL.createObjectURL(new Blob([response.data]));
-  const link = document.createElement('a');
-  link.href = url;
-  link.setAttribute('download', filename);
-  document.body.appendChild(link);
-  link.click();
-  link.parentNode.removeChild(link);
-}
 
 function ActiveUserRatioPage() {
   const [periodDays, setPeriodDays] = useState(30);
@@ -35,7 +26,7 @@ function ActiveUserRatioPage() {
     try {
       setLoading(true);
       const response = await getActiveUserRatio(periodDays);
-      const { active_users, inactive_users, total_users } = response.data;
+      const { active_users, inactive_users } = response.data;
       setSummary(response.data);
       setChartData({
         labels: ['Активные (отправляли)', 'Неактивные'],
@@ -63,10 +54,10 @@ function ActiveUserRatioPage() {
     setExporting(true);
     try {
       const response = await exportInactiveUsers(periodDays);
-      downloadBlob(response, `inactive_senders_${periodDays}d.xlsx`);
+      await downloadExcelBlob(response, `inactive_senders_${periodDays}d.xlsx`);
     } catch (err) {
       console.error(err);
-      alert('Не удалось выгрузить Excel.');
+      alert(err.message || 'Не удалось выгрузить Excel.');
     } finally {
       setExporting(false);
     }

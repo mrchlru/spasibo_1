@@ -1,7 +1,6 @@
-// frontend/src/pages/admin/stats/UserEngagementPage.jsx
-
 import React, { useState, useEffect } from 'react';
 import { getUserEngagementStats, exportUserEngagement } from '../../../api';
+import { downloadExcelBlob } from '../../../utils/downloadBlob';
 import styles from './UserEngagementPage.module.css';
 import UserAvatar from '../../../components/UserAvatar';
 import { FaDownload } from 'react-icons/fa';
@@ -57,16 +56,10 @@ const UserEngagementPage = () => {
         setIsExporting(true);
         try {
             const response = await exportUserEngagement();
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', 'leaders_report.xlsx');
-            document.body.appendChild(link);
-            link.click();
-            link.parentNode.removeChild(link);
+            await downloadExcelBlob(response, 'leaders_report.xlsx');
         } catch (err) {
             console.error('Ошибка при экспорте:', err);
-            alert('Не удалось скачать отчет.');
+            alert(err.message || 'Не удалось скачать отчет.');
         } finally {
             setIsExporting(false);
         }
