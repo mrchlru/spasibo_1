@@ -998,7 +998,7 @@ class UnifiedPurchaseListResponse(BaseModel):
 
 
 class AdminMediaUploadResponse(BaseModel):
-    """Ответ после загрузки изображения в объектное хранилище (конвертация в AVIF)."""
+    """Ответ после загрузки изображения в объектное хранилище (AVIF или GIF)."""
 
     url: str
     content_type: str = "image/avif"

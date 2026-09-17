@@ -27,6 +27,7 @@ router = APIRouter()
 MAX_DOCUMENT_BYTES = 15 * 1024 * 1024
 MAX_APK_BYTES = 100 * 1024 * 1024
 MAX_VIDEO_BYTES = 50 * 1024 * 1024
+MAX_GIF_BYTES = 15 * 1024 * 1024
 
 _ALLOWED_DOCUMENT_EXTENSIONS: dict[str, str] = {
     ".pdf": "application/pdf",
@@ -91,6 +92,16 @@ def _resolve_video_content_type(filename: str, content_type: str) -> str:
     )
 
 
+def _is_gif_payload(raw: bytes, filename: str, content_type: str) -> bool:
+    """Определяет GIF по сигнатуре файла, MIME или расширению."""
+    if len(raw) >= 6 and raw[:6] in (b"GIF87a", b"GIF89a"):
+        return True
+    normalized = (content_type or "").split(";")[0].strip().lower()
+    if normalized == "image/gif":
+        return True
+    return Path(filename or "").suffix.lower() == ".gif"
+
+
 async def store_uploaded_image_file(
     db: AsyncSession,
     file: UploadFile,
@@ -98,8 +109,13 @@ async def store_uploaded_image_file(
     key_prefix: str = "media",
     max_side: int | None = None,
     quality: int | None = None,
-) -> str:
-    """Читает UploadFile, конвертирует в AVIF, сохраняет и возвращает публичный URL."""
+) -> schemas.AdminMediaUploadResponse:
+    """
+    Читает UploadFile и сохраняет в S3.
+
+    Обычные изображения конвертируются в AVIF.
+    GIF сохраняется как есть, чтобы не потерять анимацию.
+    """
     if not is_object_storage_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -114,6 +130,22 @@ async def store_uploaded_image_file(
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл пустой")
+
+    filename = Path(file.filename or "image").name
+    if _is_gif_payload(raw, filename, content_type):
+        if len(raw) > MAX_GIF_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="GIF слишком большой (максимум 15 МБ)",
+            )
+        key = generate_media_object_key(prefix=key_prefix, extension="gif")
+        try:
+            url = await asyncio.to_thread(upload_bytes, key, raw, "image/gif")
+        except RuntimeError as exc:
+            logger.exception("S3 GIF upload failed")
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        return schemas.AdminMediaUploadResponse(url=url, content_type="image/gif")
+
     try:
         avif_bytes = await asyncio.to_thread(
             encode_image_bytes_to_avif,
@@ -125,10 +157,11 @@ async def store_uploaded_image_file(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     key = generate_media_object_key(prefix=key_prefix, extension="avif")
     try:
-        return await asyncio.to_thread(upload_bytes, key, avif_bytes, "image/avif")
+        url = await asyncio.to_thread(upload_bytes, key, avif_bytes, "image/avif")
     except RuntimeError as exc:
         logger.exception("S3 upload failed")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return schemas.AdminMediaUploadResponse(url=url, content_type="image/avif")
 
 
 async def store_uploaded_document_file(
@@ -222,8 +255,7 @@ async def upload_admin_image(
     db: AsyncSession = Depends(get_db),
 ) -> schemas.AdminMediaUploadResponse:
     """Принимает изображение, конвертирует в AVIF и загружает в S3 (Timeweb / совместимое API)."""
-    url = await store_uploaded_image_file(db, file, key_prefix="media")
-    return schemas.AdminMediaUploadResponse(url=url, content_type="image/avif")
+    return await store_uploaded_image_file(db, file, key_prefix="media")
 
 
 @router.post("/admin/media/upload-prize-image", response_model=schemas.AdminPrizeImageUploadResponse)

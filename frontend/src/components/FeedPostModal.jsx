@@ -14,11 +14,25 @@ const MAX_TITLE_LENGTH = 255;
 const MAX_BODY_LENGTH = 5000;
 const MAX_ATTACHMENTS = 10;
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const MAX_GIF_BYTES = 15 * 1024 * 1024;
 
 const DOCUMENT_ACCEPT =
   '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
 const VIDEO_ACCEPT = 'video/mp4,video/webm,.mp4,.webm';
+const IMAGE_ACCEPT = 'image/*,.gif,image/gif';
+
+/**
+ * Файл является GIF (по типу или расширению).
+ *
+ * @param {File} file
+ * @returns {boolean}
+ */
+function isGifFile(file) {
+  const type = (file?.type || '').toLowerCase();
+  const name = (file?.name || '').toLowerCase();
+  return type === 'image/gif' || name.endsWith('.gif');
+}
 
 /**
  * Подпись вида вложения для списка.
@@ -28,7 +42,7 @@ const VIDEO_ACCEPT = 'video/mp4,video/webm,.mp4,.webm';
  */
 function attachmentKindLabel(kind) {
   if (kind === 'image') {
-    return 'Фото';
+    return 'Фото / GIF';
   }
   if (kind === 'video') {
     return 'Видео';
@@ -118,6 +132,10 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file || attachments.length >= MAX_ATTACHMENTS) return;
+    if (isGifFile(file) && file.size > MAX_GIF_BYTES) {
+      setError('GIF слишком большой (максимум 15 МБ)');
+      return;
+    }
 
     const clientId = `image-${Date.now()}`;
     const previewUrl = URL.createObjectURL(file);
@@ -129,7 +147,7 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
         url: previewUrl,
         previewUrl,
         filename: file.name,
-        content_type: file.type || 'image/jpeg',
+        content_type: file.type || (isGifFile(file) ? 'image/gif' : 'image/jpeg'),
         uploading: true,
       },
     ]);
@@ -144,18 +162,19 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
             ...item,
             url: response.data.url,
             previewUrl: undefined,
-            content_type: response.data.content_type,
+            content_type: response.data.content_type || item.content_type,
             uploading: false,
           };
         }),
       );
-    } catch {
+    } catch (err) {
       setAttachments((prev) => {
         const target = prev.find((item) => item.clientId === clientId);
         if (target) revokePreviewUrl(target);
         return prev.filter((item) => item.clientId !== clientId);
       });
-      setError('Не удалось загрузить изображение');
+      const detail = err?.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : 'Не удалось загрузить изображение');
     }
   }
 
@@ -339,7 +358,7 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
 
           <div className={styles.attachActions}>
             <button type="button" className={styles.attachBtn} onClick={() => imageInputRef.current?.click()}>
-              <FaImage size={14} /> Фото
+              <FaImage size={14} /> Фото / GIF
             </button>
             <button type="button" className={styles.attachBtn} onClick={() => videoInputRef.current?.click()}>
               <FaVideo size={14} /> Видео
@@ -349,7 +368,7 @@ function FeedPostModal({ isOpen, editPost, onClose, onSuccess }) {
             </button>
           </div>
 
-          <input ref={imageInputRef} type="file" accept="image/*" className={styles.hiddenInput} onChange={handleImageSelect} />
+          <input ref={imageInputRef} type="file" accept={IMAGE_ACCEPT} className={styles.hiddenInput} onChange={handleImageSelect} />
           <input ref={videoInputRef} type="file" accept={VIDEO_ACCEPT} className={styles.hiddenInput} onChange={handleVideoSelect} />
           <input ref={documentInputRef} type="file" accept={DOCUMENT_ACCEPT} className={styles.hiddenInput} onChange={handleDocumentSelect} />
 

@@ -550,11 +550,21 @@ function HomePage({
 
         {images.length > 0 && (
           <div className={styles.feedNewsMedia}>
-            {images.map((image) => (
-              <a key={image.id || image.url} href={image.url} target="_blank" rel="noopener noreferrer">
-                <img src={image.url} alt={image.filename || post.title} className={styles.feedNewsImage} loading="lazy" />
-              </a>
-            ))}
+            {images.map((image) => {
+              const isGif = (image.content_type || '').includes('gif')
+                || String(image.url || '').toLowerCase().includes('.gif');
+              return (
+                <a key={image.id || image.url} href={image.url} target="_blank" rel="noopener noreferrer">
+                  <img
+                    src={image.url}
+                    alt={image.filename || post.title}
+                    className={styles.feedNewsImage}
+                    loading={isGif ? 'eager' : 'lazy'}
+                    decoding="async"
+                  />
+                </a>
+              );
+            })}
           </div>
         )}
 

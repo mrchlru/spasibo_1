@@ -201,8 +201,7 @@ async def upload_publisher_feed_image_route(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Нет прав на публикацию новостей",
         )
-    url = await store_uploaded_image_file(db, file, key_prefix="feed-posts/images")
-    return schemas.AdminMediaUploadResponse(url=url, content_type="image/avif")
+    return await store_uploaded_image_file(db, file, key_prefix="feed-posts/images")
 
 
 @router.post("/feed-posts/documents/upload", response_model=schemas.AdminDocumentUploadResponse)
