@@ -1,23 +1,46 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import QRCode from 'qrcode';
 import PageLayout from '../components/PageLayout';
 import { getMyReferral, claimReferral } from '../api';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 import {
   clearPendingReferralCode,
   getPendingReferralCode,
-  buildReferralQrImageUrl,
 } from '../pwa/referralCampaign.js';
+import { copyTextReliable, shareTextReliable } from '../pwa/shareClipboard.js';
 import styles from './ReferralPage.module.css';
 
 /**
- * Экран реферальной системы: ссылка, QR, приглашённые, правила.
+ * Склонение «человек» / «человека» / «человек».
+ *
+ * @param {number} count
+ * @returns {string}
+ */
+function peopleWord(count) {
+  const n = Math.abs(Number(count) || 0) % 100;
+  const n1 = n % 10;
+  if (n > 10 && n < 20) {
+    return 'человек';
+  }
+  if (n1 === 1) {
+    return 'человек';
+  }
+  if (n1 >= 2 && n1 <= 4) {
+    return 'человека';
+  }
+  return 'человек';
+}
+
+/**
+ * Экран реферальной системы: QR, ссылка, статистика, приглашённые.
  */
 function ReferralPage({ onBack }) {
   const { showAlert } = useModalAlert();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [copying, setCopying] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -68,53 +91,73 @@ function ReferralPage({ onBack }) {
     return `${window.location.origin}${summary.share_path}`;
   }, [summary]);
 
-  const qrImageUrl = useMemo(
-    () => (shareUrl ? buildReferralQrImageUrl(shareUrl, 220) : ''),
-    [shareUrl],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    if (!shareUrl) {
+      setQrDataUrl('');
+      return undefined;
+    }
+    void QRCode.toDataURL(shareUrl, {
+      width: 240,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#1f3d1c', light: '#ffffff' },
+    })
+      .then((url) => {
+        if (!cancelled) {
+          setQrDataUrl(url);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setQrDataUrl('');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shareUrl]);
 
   async function handleCopy() {
-    if (!shareUrl) {
+    if (!shareUrl || busy) {
       return;
     }
-    setCopying(true);
+    setBusy(true);
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareUrl);
+      const ok = await copyTextReliable(shareUrl);
+      if (ok) {
+        showAlert('Ссылка скопирована', 'success');
       } else {
-        const input = document.createElement('textarea');
-        input.value = shareUrl;
-        document.body.appendChild(input);
-        input.select();
-        document.execCommand('copy');
-        document.body.removeChild(input);
+        showAlert('Не удалось скопировать ссылку', 'error');
       }
-      showAlert('Ссылка скопирована', 'success');
-    } catch {
-      showAlert('Не удалось скопировать ссылку', 'error');
     } finally {
-      setCopying(false);
+      setBusy(false);
     }
   }
 
   async function handleShare() {
-    if (!shareUrl) {
+    if (!shareUrl || busy) {
       return;
     }
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'Спасибо — приглашение',
-          text: 'Присоединяйся к «Спасибо» — получи бонусные спасибки!',
-          url: shareUrl,
-        });
-        return;
-      } catch {
-        /* fall through to copy */
+    setBusy(true);
+    try {
+      const result = await shareTextReliable({
+        title: 'Спасибо — приглашение',
+        text: `Присоединяйся к «Спасибо»: ${shareUrl}`,
+        url: shareUrl,
+      });
+      if (result === 'copied') {
+        showAlert('Ссылка скопирована', 'success');
+      } else if (result === 'failed') {
+        showAlert('Не удалось поделиться ссылкой', 'error');
       }
+    } finally {
+      setBusy(false);
     }
-    await handleCopy();
   }
+
+  const earned = Number(summary?.earned_spasibki) || 0;
+  const registered = Number(summary?.registered_count) || 0;
 
   return (
     <PageLayout title="Бонусы за коллег">
@@ -131,17 +174,41 @@ function ReferralPage({ onBack }) {
               {summary.campaign_active ? 'Акция активна' : 'Новые приглашения недоступны'}
             </p>
             <h2 className={styles.heroTitle}>Пригласи коллегу — получи спасибки</h2>
-            <p className={styles.heroText}>
-              Новым — бонус сразу после входа. Вернувшимся после долгого перерыва —
-              после нескольких дней с отправкой спасибок.
-            </p>
+
+            <div className={styles.statsRow}>
+              <div className={styles.statCard}>
+                <span className={styles.statValue}>{earned}</span>
+                <span className={styles.statLabel}>заработано спасибок</span>
+              </div>
+              <div className={styles.statCard}>
+                <span className={styles.statValue}>{registered}</span>
+                <span className={styles.statLabel}>
+                  зарегистрировано {peopleWord(registered)}
+                </span>
+              </div>
+            </div>
+
             <div className={styles.linkBox}>
+              {qrDataUrl ? (
+                <div className={styles.qrWrap}>
+                  <img
+                    className={styles.qrImage}
+                    src={qrDataUrl}
+                    alt="QR-код приглашения в Спасибо"
+                    width={220}
+                    height={220}
+                  />
+                  <p className={styles.qrHint}>Покажите QR коллеге или отправьте ссылку</p>
+                </div>
+              ) : (
+                <p className={styles.qrHint}>Готовим QR-код…</p>
+              )}
               <code className={styles.linkCode}>{shareUrl}</code>
               <div className={styles.linkActions}>
-                <button type="button" className={styles.primaryBtn} onClick={handleShare} disabled={copying}>
+                <button type="button" className={styles.primaryBtn} onClick={handleShare} disabled={busy}>
                   Поделиться
                 </button>
-                <button type="button" className={styles.secondaryBtn} onClick={handleCopy} disabled={copying}>
+                <button type="button" className={styles.secondaryBtn} onClick={handleCopy} disabled={busy}>
                   Копировать
                 </button>
               </div>

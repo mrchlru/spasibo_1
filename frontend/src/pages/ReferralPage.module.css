@@ -15,16 +15,39 @@
 }
 
 .heroTitle {
-  margin: 0 0 0.45rem;
+  margin: 0 0 0.85rem;
   font-size: 1.35rem;
   line-height: 1.25;
   color: #1f3d1c;
 }
 
-.heroText {
-  margin: 0 0 1rem;
-  font-size: 0.95rem;
-  line-height: 1.45;
+.statsRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+  margin-bottom: 0.95rem;
+}
+
+.statCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.75rem 0.8rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(61, 122, 56, 0.12);
+}
+
+.statValue {
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #1f3d1c;
+}
+
+.statLabel {
+  font-size: 0.78rem;
+  line-height: 1.3;
   color: #456843;
 }
 

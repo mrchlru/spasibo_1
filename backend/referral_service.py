@@ -506,6 +506,12 @@ async def get_my_referral_summary(
         _attribution_to_item(attr, invitee)
         for attr, invitee in result.all()
     ]
+    earned_spasibki = sum(
+        int(item.inviter_bonus or 0)
+        for item in invites
+        if item.status == STATUS_REWARDED
+    )
+    registered_count = sum(1 for item in invites if item.kind == KIND_NEW)
     return schemas.ReferralSummaryResponse(
         code=code,
         share_path=f"/?ref={code}",
@@ -513,6 +519,9 @@ async def get_my_referral_summary(
         campaign=payload,
         invites=invites,
         rules=_build_rules_text(payload),
+        earned_spasibki=earned_spasibki,
+        registered_count=registered_count,
+        invitees_count=len(invites),
     )
 
 

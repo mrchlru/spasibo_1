@@ -569,6 +569,9 @@ class ReferralSummaryResponse(BaseModel):
     campaign: ReferralCampaignPayload
     invites: List[ReferralInviteItem] = Field(default_factory=list)
     rules: str = ""
+    earned_spasibki: int = 0
+    registered_count: int = 0
+    invitees_count: int = 0
 
 
 class ReferralClaimRequest(BaseModel):

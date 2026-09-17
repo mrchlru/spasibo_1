@@ -1,5 +1,8 @@
 package ru.spasibo.app.web
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.webkit.JavascriptInterface
@@ -117,6 +120,49 @@ class SpasiboWebAppBridge(
         }
         activity.runOnUiThread {
             activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(trimmed)))
+        }
+    }
+
+    /**
+     * Копирует текст в системный буфер (для WebView, где clipboard API часто недоступен).
+     */
+    @JavascriptInterface
+    fun copyText(text: String): Boolean {
+        val value = text.trim()
+        if (value.isBlank()) {
+            return false
+        }
+        return try {
+            val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("spasibo", value))
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Открывает системный шаринг текста/ссылки.
+     */
+    @JavascriptInterface
+    fun shareText(text: String, title: String?): Boolean {
+        val value = text.trim()
+        if (value.isBlank()) {
+            return false
+        }
+        val shareTitle = title?.trim().orEmpty().ifBlank { "Спасибо" }
+        return try {
+            activity.runOnUiThread {
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, value)
+                    putExtra(Intent.EXTRA_SUBJECT, shareTitle)
+                }
+                activity.startActivity(Intent.createChooser(intent, shareTitle))
+            }
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 
