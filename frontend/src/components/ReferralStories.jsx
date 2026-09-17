@@ -11,12 +11,31 @@ import {
   isReferralPromoRestricted,
   normalizeReferral,
 } from '../pwa/referralCampaign.js';
+import {
+  getEntryPromoRotationSnapshot,
+  markEntryPromoPresented,
+  reportReferralPromoStatus,
+  subscribeEntryPromoRotation,
+} from '../pwa/entryPromoRotation.js';
+import {
+  isMobileWelcomePlatform,
+  isMobileWelcomeSeen,
+} from '../pwa/mobileWelcomeGuide.js';
 import sticker1 from '../assets/AnimatedSticker1.json';
 import sticker2 from '../assets/AnimatedSticker3.json';
 import sticker3 from '../assets/AnimatedSticker2.json';
 import sticker4 from '../assets/TgDuckX_AgADaFEAAtd-MEs.json';
 
 const SESSION_KEY = 'spasibo_referral_stories_shown';
+
+/**
+ * Прошла ли мобильная welcome-карусель (на десктопе гейт не нужен).
+ *
+ * @returns {boolean}
+ */
+function _isWelcomeGatePassed() {
+  return !isMobileWelcomePlatform() || isMobileWelcomeSeen();
+}
 
 /**
  * Собирает слайды истории рефералки с актуальными бонусами.
@@ -73,6 +92,7 @@ function ReferralStories({
   const [visible, setVisible] = useState(false);
   const [accountCanShow, setAccountCanShow] = useState(true);
   const [hydrated, setHydrated] = useState(false);
+  const [welcomePassed, setWelcomePassed] = useState(() => _isWelcomeGatePassed());
 
   const shownThisSession = useSyncExternalStore(
     () => () => {},
@@ -86,10 +106,20 @@ function ReferralStories({
     () => false,
   );
 
+  const rotation = useSyncExternalStore(
+    subscribeEntryPromoRotation,
+    getEntryPromoRotationSnapshot,
+    () => ({ slot: null, isReady: false }),
+  );
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       if (!user?.id || user.status !== 'approved') {
+        if (!cancelled) {
+          setAccountCanShow(false);
+          setHydrated(true);
+        }
         return;
       }
       try {
@@ -110,32 +140,26 @@ function ReferralStories({
     };
   }, [user?.id, user?.status]);
 
-  useEffect(() => {
+  const baseEligible = useMemo(() => {
     if (!bootReady || loading || isOnboardingVisible || !hydrated) {
-      setVisible(false);
-      return;
+      return false;
     }
     if (!user || user.status !== 'approved') {
-      setVisible(false);
-      return;
+      return false;
+    }
+    if (!welcomePassed) {
+      return false;
     }
     if (!canShowReferralEntry(campaign, {
       isAdmin: Boolean(user.is_admin),
       userId: user.id,
     })) {
-      setVisible(false);
-      return;
-    }
-    if (isReferralPromoRestricted(campaign) && !accountCanShow) {
-      setVisible(false);
-      return;
+      return false;
     }
     if (!accountCanShow || shownThisSession) {
-      setVisible(false);
-      return;
+      return false;
     }
-    setVisible(true);
-    setCurrentStep(0);
+    return true;
   }, [
     accountCanShow,
     bootReady,
@@ -145,7 +169,38 @@ function ReferralStories({
     loading,
     shownThisSession,
     user,
+    welcomePassed,
   ]);
+
+  useEffect(() => {
+    reportReferralPromoStatus({
+      ready: hydrated && bootReady && !loading,
+      eligible: baseEligible,
+    });
+  }, [baseEligible, bootReady, hydrated, loading]);
+
+  useEffect(() => {
+    const onWelcomeSeen = () => {
+      setWelcomePassed(true);
+    };
+    window.addEventListener('spasibo:mobile-welcome-seen', onWelcomeSeen);
+    return () => {
+      window.removeEventListener('spasibo:mobile-welcome-seen', onWelcomeSeen);
+    };
+  }, []);
+
+  useEffect(() => {
+    const canShow = Boolean(
+      rotation.isReady
+      && rotation.slot === 'referral'
+      && baseEligible,
+    );
+    setVisible(canShow);
+    if (canShow) {
+      setCurrentStep(0);
+      markEntryPromoPresented('referral');
+    }
+  }, [baseEligible, rotation.isReady, rotation.slot]);
 
   function markSessionShown() {
     try {

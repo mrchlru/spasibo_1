@@ -24,6 +24,12 @@ import {
   subscribeInstallPromoAccountState,
 } from '../pwa/installPromoAccountState.js';
 import {
+  getEntryPromoRotationSnapshot,
+  markEntryPromoPresented,
+  reportInstallSoftPromoStatus,
+  subscribeEntryPromoRotation,
+} from '../pwa/entryPromoRotation.js';
+import {
   enablePushWithTestPush,
   formatPushEnableError,
 } from '../pwa/pushUserControls.js';
@@ -59,8 +65,14 @@ function AppInstallPromo({
     _getAccountCanShowSnapshot,
     () => true,
   );
+  const rotation = useSyncExternalStore(
+    subscribeEntryPromoRotation,
+    getEntryPromoRotationSnapshot,
+    () => ({ slot: null, isReady: false }),
+  );
   const impressionSentRef = useRef(false);
   const [shownThisSession, setShownThisSession] = useState(false);
+  const [welcomePassed, setWelcomePassed] = useState(() => _isWelcomeGatePassed());
 
   const [visible, setVisible] = useState(false);
   const [mode, setMode] = useState('promote');
@@ -77,22 +89,15 @@ function AppInstallPromo({
       || accountCanShow,
   }), [accountCanShow, installPromo, shownThisSession, user?.id, user?.is_admin]);
 
-  const refreshVisibility = useCallback(() => {
-    const canShow = Boolean(
-      !loading
-      && user
-      && user.status === 'approved'
-      && !isOnboardingVisible
-      && bootReady
-      && _isWelcomeGatePassed()
-      && shouldShowAppInstallPromo(platform, installPromo, buildShowOptions()),
-    );
-    setVisible(canShow);
-    if (!canShow) {
-      setMode('promote');
-      setStatusMessage('');
-    }
-  }, [
+  const baseEligible = useMemo(() => Boolean(
+    !loading
+    && user
+    && user.status === 'approved'
+    && !isOnboardingVisible
+    && bootReady
+    && welcomePassed
+    && shouldShowAppInstallPromo(platform, installPromo, buildShowOptions()),
+  ), [
     bootReady,
     buildShowOptions,
     installPromo,
@@ -100,7 +105,30 @@ function AppInstallPromo({
     loading,
     platform,
     user,
+    welcomePassed,
   ]);
+
+  const softReady = Boolean(bootReady && !loading);
+
+  useEffect(() => {
+    reportInstallSoftPromoStatus({
+      ready: softReady,
+      eligible: baseEligible,
+    });
+  }, [baseEligible, softReady]);
+
+  const refreshVisibility = useCallback(() => {
+    const canShow = Boolean(
+      baseEligible
+      && rotation.isReady
+      && rotation.slot === 'install',
+    );
+    setVisible(canShow);
+    if (!canShow) {
+      setMode('promote');
+      setStatusMessage('');
+    }
+  }, [baseEligible, rotation.isReady, rotation.slot]);
 
   useEffect(() => {
     if (!user) {
@@ -122,13 +150,9 @@ function AppInstallPromo({
 
   useEffect(() => {
     if (
-      loading
-      || !user
-      || user.status !== 'approved'
-      || isOnboardingVisible
-      || !bootReady
-      || !_isWelcomeGatePassed()
-      || !shouldShowAppInstallPromo(platform, installPromo, buildShowOptions())
+      !baseEligible
+      || !rotation.isReady
+      || rotation.slot !== 'install'
     ) {
       setVisible(false);
       return undefined;
@@ -142,18 +166,15 @@ function AppInstallPromo({
       window.clearTimeout(timerId);
     };
   }, [
-    bootReady,
-    buildShowOptions,
-    installPromo,
-    isOnboardingVisible,
-    loading,
-    platform,
+    baseEligible,
     refreshVisibility,
-    user,
+    rotation.isReady,
+    rotation.slot,
   ]);
 
   useEffect(() => {
     const onWelcomeSeen = () => {
+      setWelcomePassed(true);
       window.setTimeout(() => refreshVisibility(), APP_INSTALL_PROMO_SHOW_DELAY_MS);
     };
     const onPromoDone = () => refreshVisibility();
@@ -174,6 +195,7 @@ function AppInstallPromo({
       return undefined;
     }
     setShownThisSession(true);
+    markEntryPromoPresented('install');
     if (impressionSentRef.current) {
       return undefined;
     }

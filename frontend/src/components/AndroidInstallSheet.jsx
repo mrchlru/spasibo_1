@@ -18,6 +18,12 @@ import {
   snoozeInstallPromoOnAccount,
   subscribeInstallPromoAccountState,
 } from '../pwa/installPromoAccountState.js';
+import {
+  getEntryPromoRotationSnapshot,
+  markEntryPromoPresented,
+  reportInstallAndroidPromoStatus,
+  subscribeEntryPromoRotation,
+} from '../pwa/entryPromoRotation.js';
 
 const SWIPE_CLOSE_THRESHOLD_PX = 56;
 const SCROLL_REOPEN_THRESHOLD_PX = 12;
@@ -52,9 +58,15 @@ export function AndroidInstallSheet({
     _getAccountCanShowSnapshot,
     () => true,
   );
+  const rotation = useSyncExternalStore(
+    subscribeEntryPromoRotation,
+    getEntryPromoRotationSnapshot,
+    () => ({ slot: null, isReady: false }),
+  );
   const [shownThisSession, setShownThisSession] = useState(false);
   const impressionSentRef = useRef(false);
   const [eligible, setEligible] = useState(false);
+  const [welcomePassed, setWelcomePassed] = useState(() => isMobileWelcomeSeen());
   const [sheetState, setSheetState] = useState('expanded');
   const sheetStateRef = useRef(sheetState);
   const dragStartYRef = useRef(0);
@@ -73,14 +85,17 @@ export function AndroidInstallSheet({
     return undefined;
   }, [user?.id]);
 
-  const refreshEligibility = useCallback(() => {
-    const ok = Boolean(
+  const baseInstallEligible = useMemo(() => {
+    if (promptMode !== 'install') {
+      return false;
+    }
+    return Boolean(
       !loading
       && user
       && user.status === 'approved'
       && !isOnboardingVisible
       && bootReady
-      && isMobileWelcomeSeen()
+      && welcomePassed
       && shouldShowAndroidInstallPrompt(release, {
         isPrimaryAdmin,
         isAdmin,
@@ -91,10 +106,6 @@ export function AndroidInstallSheet({
           || accountCanShow,
       }),
     );
-    setEligible(ok);
-    if (!ok) {
-      setSheetState('hidden');
-    }
   }, [
     accountCanShow,
     bootReady,
@@ -103,12 +114,64 @@ export function AndroidInstallSheet({
     isPrimaryAdmin,
     isAdmin,
     loading,
-    release.apk_url,
-    release.enabled,
-    release.version_code,
+    promptMode,
+    release,
     shownThisSession,
     user,
+    welcomePassed,
   ]);
+
+  const updateEligible = useMemo(() => {
+    if (promptMode !== 'update') {
+      return false;
+    }
+    return Boolean(
+      !loading
+      && user
+      && user.status === 'approved'
+      && !isOnboardingVisible
+      && bootReady
+      && welcomePassed
+      && shouldShowAndroidInstallPrompt(release, {
+        isPrimaryAdmin,
+        isAdmin,
+        userId: user?.id ?? null,
+        installPromo,
+        accountCanShow: true,
+      }),
+    );
+  }, [
+    bootReady,
+    installPromo,
+    isOnboardingVisible,
+    isPrimaryAdmin,
+    isAdmin,
+    loading,
+    promptMode,
+    release,
+    user,
+    welcomePassed,
+  ]);
+
+  useEffect(() => {
+    reportInstallAndroidPromoStatus({
+      ready: Boolean(bootReady && !loading),
+      eligible: baseInstallEligible,
+    });
+  }, [baseInstallEligible, bootReady, loading]);
+
+  const refreshEligibility = useCallback(() => {
+    const installOk = Boolean(
+      baseInstallEligible
+      && rotation.isReady
+      && rotation.slot === 'install',
+    );
+    const ok = installOk || updateEligible;
+    setEligible(ok);
+    if (!ok) {
+      setSheetState('hidden');
+    }
+  }, [baseInstallEligible, rotation.isReady, rotation.slot, updateEligible]);
 
   useEffect(() => {
     refreshEligibility();
@@ -116,19 +179,20 @@ export function AndroidInstallSheet({
 
   useEffect(() => {
     const onWelcomeSeen = () => {
-      refreshEligibility();
+      setWelcomePassed(true);
     };
     window.addEventListener('spasibo:mobile-welcome-seen', onWelcomeSeen);
     return () => {
       window.removeEventListener('spasibo:mobile-welcome-seen', onWelcomeSeen);
     };
-  }, [refreshEligibility]);
+  }, []);
 
   useEffect(() => {
     if (!eligible || promptMode !== 'install' || isInstallPromoRestrictedAudience(installPromo)) {
       return undefined;
     }
     setShownThisSession(true);
+    markEntryPromoPresented('install');
     if (!impressionSentRef.current) {
       impressionSentRef.current = true;
       void snoozeInstallPromoOnAccount();
