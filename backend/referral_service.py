@@ -428,27 +428,94 @@ async def _pay_rewards(
     row.invitee_bonus = invitee_bonus
 
     import crud
+    from bot import send_telegram_message, escape_html
+
+    invitee_name = f"{invitee.first_name or ''} {invitee.last_name or ''}".strip() or "коллега"
+    is_new = force_new or row.kind == KIND_NEW
 
     if inviter_bonus:
+        if is_new:
+            inviter_title = "Коллега зарегистрировался"
+            inviter_message = (
+                f"{invitee_name} пришёл в «Спасибо» по вашей ссылке. "
+                f"Вам начислено {inviter_bonus} спасибок."
+            )
+            inviter_tg = (
+                f"🎉 <b>Коллега зарегистрировался</b>\n\n"
+                f"{escape_html(invitee_name)} пришёл в «Спасибо» по вашей ссылке.\n"
+                f"Вам начислено <b>{inviter_bonus}</b> спасибок."
+            )
+        else:
+            inviter_title = "Коллега снова в «Спасибо»"
+            inviter_message = (
+                f"{invitee_name} выполнил условия возвращения. "
+                f"Вам начислено {inviter_bonus} спасибок."
+            )
+            inviter_tg = (
+                f"🎉 <b>Коллега снова в «Спасибо»</b>\n\n"
+                f"{escape_html(invitee_name)} выполнил условия возвращения.\n"
+                f"Вам начислено <b>{inviter_bonus}</b> спасибок."
+            )
         await crud._create_notification(
             db,
             inviter.id,
             "referral",
-            "Бонус за приглашение",
-            f"Вам начислено {inviter_bonus} спасибок за приглашение коллеги.",
+            inviter_title,
+            inviter_message,
             click_url="/?panel=referral",
             push_tag=f"referral-inviter-{row.id}",
         )
+        if inviter.telegram_id and inviter.telegram_id >= 0:
+            try:
+                await send_telegram_message(inviter.telegram_id, inviter_tg)
+            except Exception as exc:
+                logger.warning(
+                    "Telegram реферал inviter_id=%s: %s",
+                    inviter.id,
+                    exc,
+                )
+
     if invitee_bonus:
+        if is_new:
+            invitee_title = "Бонус за регистрацию"
+            invitee_message = (
+                f"Добро пожаловать в «Спасибо»! "
+                f"Вам начислено {invitee_bonus} спасибок по реферальной акции."
+            )
+            invitee_tg = (
+                f"🎁 <b>Бонус за регистрацию</b>\n\n"
+                f"Добро пожаловать в «Спасибо»!\n"
+                f"Вам начислено <b>{invitee_bonus}</b> спасибок по реферальной акции."
+            )
+        else:
+            invitee_title = "Бонус за возвращение"
+            invitee_message = (
+                f"Условия акции выполнены. "
+                f"Вам начислено {invitee_bonus} спасибок."
+            )
+            invitee_tg = (
+                f"🎁 <b>Бонус за возвращение</b>\n\n"
+                f"Условия акции выполнены.\n"
+                f"Вам начислено <b>{invitee_bonus}</b> спасибок."
+            )
         await crud._create_notification(
             db,
             invitee.id,
             "referral",
-            "Бонус за реферальную акцию",
-            f"Вам начислено {invitee_bonus} спасибок по реферальной акции.",
+            invitee_title,
+            invitee_message,
             click_url="/?panel=referral",
             push_tag=f"referral-invitee-{row.id}",
         )
+        if invitee.telegram_id and invitee.telegram_id >= 0:
+            try:
+                await send_telegram_message(invitee.telegram_id, invitee_tg)
+            except Exception as exc:
+                logger.warning(
+                    "Telegram реферал invitee_id=%s: %s",
+                    invitee.id,
+                    exc,
+                )
     await db.flush()
     logger.info(
         "Реферал rewarded id=%s kind=%s inviter=%s(+%s) invitee=%s(+%s)",
