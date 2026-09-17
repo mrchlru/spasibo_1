@@ -439,13 +439,6 @@ fun WebAppScreen(
                         }
 
                         setDownloadListener { url, _, contentDisposition, mimeType, _ ->
-                            if (
-                                url.startsWith("blob:", ignoreCase = true)
-                                || url.startsWith("data:", ignoreCase = true)
-                            ) {
-                                // Excel из PWA сохраняется через SpasiboAndroid.saveBase64 / binary download.
-                                return@setDownloadListener
-                            }
                             enqueueDownload(
                                 context = activity,
                                 url = url,
