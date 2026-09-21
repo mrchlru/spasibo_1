@@ -270,10 +270,16 @@ async def create_user(db: AsyncSession, user: schemas.RegisterRequest):
     try:
         import referral_service
 
+        raw_ref = getattr(user, "referral_code", None)
+        logger.info(
+            "Реферал register attempt invitee=%s referral_code_present=%s",
+            db_user.id,
+            bool((raw_ref or "").strip()),
+        )
         await referral_service.attribute_new_registration(
             db,
             invitee=db_user,
-            referral_code=getattr(user, "referral_code", None),
+            referral_code=raw_ref,
         )
         await db.commit()
         await db.refresh(db_user)
@@ -378,13 +384,19 @@ async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
     if not sender:
         raise ValueError("Отправитель не найден")
 
-    fair_play_service.assert_sender_may_send(db, sender)
+    fair_play_on = await fair_play_service.is_fair_play_enabled(db)
+    if fair_play_on:
+        fair_play_service.assert_sender_may_send(db, sender)
 
     if sender.daily_transfer_count_for_date is None or sender.daily_transfer_count_for_date != today:
         sender.daily_transfer_count = 0
 
     fixed_amount = 1
-    daily_limit = fair_play_service.get_effective_daily_limit(sender)
+    daily_limit = (
+        fair_play_service.get_effective_daily_limit(sender)
+        if fair_play_on
+        else 3
+    )
     if daily_limit <= 0:
         raise ValueError("Отправка спасибок временно недоступна.")
     if sender.daily_transfer_count >= daily_limit:
@@ -396,10 +408,12 @@ async def create_transaction(db: AsyncSession, tr: schemas.TransferRequest):
     if not receiver:
         raise ValueError("Получатель не найден")
 
-    fair_play_service.assert_receiver_may_receive(receiver)
+    if fair_play_on:
+        fair_play_service.assert_receiver_may_receive(receiver)
     
     sender.daily_transfer_count += 1
-    fair_play_service.record_sender_weekly_usage(sender)
+    if fair_play_on:
+        fair_play_service.record_sender_weekly_usage(sender)
     sender.daily_transfer_count_for_date = today
     receiver.balance += fixed_amount
     sender.ticket_parts += 1

@@ -97,6 +97,34 @@
   padding-left: 4px;
 }
 
+.hint {
+  margin: -8px 0 16px;
+  color: #666;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.recoveryPanel {
+  margin-bottom: 24px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #f4f8f4;
+  border: 1px solid #d7e8d7;
+}
+
+.recoveryTitle {
+  margin: 0 0 8px;
+  font-size: 18px;
+  color: #1f3d1c;
+}
+
+.recoveryText {
+  margin: 0 0 16px;
+  color: #333;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 /* Кнопка "Назад" */
 .backButton {
   margin-bottom: 20px;

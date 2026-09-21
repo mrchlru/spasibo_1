@@ -1354,6 +1354,27 @@ async def list_fair_play_users_route(
     return result
 
 
+@router.get("/fair-play/settings", response_model=schemas.FairPlaySettingsPayload)
+async def get_fair_play_settings_route(db: AsyncSession = Depends(get_db)):
+    """Глобальный переключатель Fair Play."""
+    import fair_play_service
+
+    data = await fair_play_service.get_fair_play_settings(db)
+    return schemas.FairPlaySettingsPayload(**data)
+
+
+@router.put("/fair-play/settings", response_model=schemas.FairPlaySettingsPayload)
+async def update_fair_play_settings_route(
+    payload: schemas.FairPlaySettingsUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Включает/выключает Fair Play. При выключении — амнистия всех санкций."""
+    import fair_play_service
+
+    result = await fair_play_service.set_fair_play_enabled(db, enabled=payload.enabled)
+    return schemas.FairPlaySettingsPayload(enabled=bool(result["enabled"]))
+
+
 @router.post("/fair-play/users/{user_id}/lift-ban")
 async def fair_play_lift_ban_route(
     user_id: int,

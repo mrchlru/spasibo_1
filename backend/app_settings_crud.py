@@ -7,6 +7,16 @@ import models
 import schemas
 
 
+def _normalize_fair_play_settings(raw: object) -> schemas.FairPlaySettingsPayload:
+    """Нормализует JSON Fair Play; по умолчанию система включена."""
+    if isinstance(raw, dict):
+        try:
+            return schemas.FairPlaySettingsPayload.model_validate(raw)
+        except Exception:
+            pass
+    return schemas.FairPlaySettingsPayload(enabled=True)
+
+
 def app_settings_to_response(row: models.AppSettings) -> schemas.AppSettingsResponse:
     """Преобразует строку БД в ответ API с вложенными JSON-полями."""
     theme_assets = None
@@ -21,6 +31,7 @@ def app_settings_to_response(row: models.AppSettings) -> schemas.AppSettingsResp
     referral = None
     if row.referral is not None:
         referral = schemas.ReferralCampaignPayload.model_validate(row.referral)
+    fair_play = _normalize_fair_play_settings(row.fair_play)
     st = row.season_theme if row.season_theme in ("summer", "winter") else "summer"
     return schemas.AppSettingsResponse(
         id=row.id,
@@ -29,6 +40,7 @@ def app_settings_to_response(row: models.AppSettings) -> schemas.AppSettingsResp
         android_release=android_release,
         install_promo=install_promo,
         referral=referral,
+        fair_play=fair_play,
     )
 
 
@@ -81,6 +93,12 @@ async def update_app_settings(db: AsyncSession, settings_data: schemas.AppSettin
                 payload = schemas.ReferralCampaignPayload.model_validate(value)
                 dumped = payload.model_dump()
                 setattr(settings_row, "referral", dumped)
+        elif key == "fair_play":
+            if value is None:
+                setattr(settings_row, "fair_play", {"enabled": True})
+            else:
+                payload = schemas.FairPlaySettingsPayload.model_validate(value)
+                setattr(settings_row, "fair_play", payload.model_dump())
         else:
             setattr(settings_row, key, value)
 

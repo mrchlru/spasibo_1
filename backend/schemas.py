@@ -247,6 +247,49 @@ class RegisterRequest(BaseModel):
     email: Optional[str] = None
     referral_code: Optional[str] = None
 
+
+class ExistingAccountMatchResponse(BaseModel):
+    """Найден существующий аккаунт при попытке повторной регистрации."""
+
+    code: str = "existing_account_match"
+    recovery_token: str
+    has_email: bool
+    email: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    message: str
+
+
+class AccountRecoverySendCodeRequest(BaseModel):
+    """Запрос кода восстановления на email аккаунта."""
+
+    recovery_token: str
+
+
+class AccountRecoverySendCodeResponse(BaseModel):
+    """Результат отправки кода восстановления."""
+
+    ok: bool
+    message: str
+    email: Optional[str] = None
+
+
+class AccountRecoveryConfirmRequest(BaseModel):
+    """Подтверждение кода и установка нового пароля."""
+
+    recovery_token: str
+    code: str
+    new_password: str
+
+
+class AccountRecoveryConfirmResponse(BaseModel):
+    """Результат смены пароля через восстановление."""
+
+    ok: bool
+    message: str
+    login: Optional[str] = None
+    email: Optional[str] = None
+
 class FeedItem(OrmBase):
     id: int
     amount: int
@@ -604,6 +647,18 @@ class ReferralPromoDoneRequest(BaseModel):
     reason: str = "done"
 
 
+class FairPlaySettingsPayload(BaseModel):
+    """Глобальные настройки Fair Play."""
+
+    enabled: bool = True
+
+
+class FairPlaySettingsUpdate(BaseModel):
+    """Обновление глобального переключателя Fair Play."""
+
+    enabled: bool
+
+
 class AppSettingsResponse(OrmBase):
     id: int
     season_theme: Literal['summer', 'winter']
@@ -611,6 +666,7 @@ class AppSettingsResponse(OrmBase):
     android_release: Optional[AndroidReleasePayload] = None
     install_promo: Optional[InstallPromoPayload] = None
     referral: Optional[ReferralCampaignPayload] = None
+    fair_play: Optional[FairPlaySettingsPayload] = None
     frontend_build_id: Optional[str] = None
 
 
@@ -620,6 +676,7 @@ class AppSettingsUpdate(BaseModel):
     android_release: Optional[AndroidReleasePayload] = None
     install_promo: Optional[InstallPromoPayload] = None
     referral: Optional[ReferralCampaignPayload] = None
+    fair_play: Optional[FairPlaySettingsPayload] = None
 
 class TotalBalanceStats(BaseModel):
     total_balance: int

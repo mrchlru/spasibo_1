@@ -77,6 +77,7 @@ import {
   captureReferralCodeFromLocation,
   getPendingReferralCode,
   clearPendingReferralCode,
+  storePendingReferralCode,
 } from './pwa/referralCampaign.js';
 
 import { useSessionTracking } from './hooks/useSessionTracking';
@@ -639,14 +640,24 @@ function App() {
   }, [user?.id, user?.status, isOnboardingVisible, bootReady, applyDeepLink]);
 
   useEffect(() => {
-    if (!user || user.status !== 'approved') {
-      return undefined;
-    }
     function onOpenUrl(event) {
       const rawUrl = event?.detail?.url;
-      if (rawUrl) {
-        applyDeepLink(rawUrl);
+      if (!rawUrl) {
+        return;
       }
+      try {
+        const url = new URL(String(rawUrl), window.location.origin);
+        const ref = url.searchParams.get('ref');
+        if (ref) {
+          storePendingReferralCode(ref);
+        }
+      } catch {
+        /* ignore malformed deep link */
+      }
+      if (!user || user.status !== 'approved') {
+        return;
+      }
+      applyDeepLink(rawUrl);
     }
     window.addEventListener('spasibo:open-url', onOpenUrl);
     return () => window.removeEventListener('spasibo:open-url', onOpenUrl);

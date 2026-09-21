@@ -211,20 +211,63 @@ async def attribute_new_registration(
     """Привязывает нового пользователя к рефералу при регистрации."""
     code = (referral_code or "").strip().upper()
     if not code:
+        logger.info(
+            "Реферал skip: invitee=%s reason=empty_referral_code",
+            invitee.id,
+        )
         return None
     payload = await _load_campaign(db)
     if not is_referral_campaign_accepting_new(payload):
+        logger.info(
+            "Реферал skip: invitee=%s code=%s reason=campaign_not_accepting "
+            "enabled=%s started_at=%s ends_at=%s",
+            invitee.id,
+            code,
+            payload.enabled,
+            payload.started_at,
+            payload.ends_at,
+        )
         return None
     campaign_key = campaign_key_from_payload(payload)
     if not campaign_key:
+        logger.info(
+            "Реферал skip: invitee=%s code=%s reason=missing_campaign_key",
+            invitee.id,
+            code,
+        )
         return None
     inviter = await get_user_by_referral_code(db, code)
-    if inviter is None or inviter.id == invitee.id:
+    if inviter is None:
+        logger.info(
+            "Реферал skip: invitee=%s code=%s reason=inviter_not_found",
+            invitee.id,
+            code,
+        )
+        return None
+    if inviter.id == invitee.id:
+        logger.info(
+            "Реферал skip: invitee=%s code=%s reason=self_referral",
+            invitee.id,
+            code,
+        )
         return None
     if inviter.status != "approved":
+        logger.info(
+            "Реферал skip: invitee=%s code=%s inviter=%s reason=inviter_not_approved status=%s",
+            invitee.id,
+            code,
+            inviter.id,
+            inviter.status,
+        )
         return None
     existing = await _existing_attribution(db, invitee.id, campaign_key)
     if existing is not None:
+        logger.info(
+            "Реферал skip: invitee=%s code=%s reason=already_attributed attribution_id=%s",
+            invitee.id,
+            code,
+            existing.id,
+        )
         return existing
     row = models.ReferralAttribution(
         campaign_key=campaign_key,
@@ -238,10 +281,11 @@ async def attribute_new_registration(
     db.add(row)
     await db.flush()
     logger.info(
-        "Реферал new: invitee=%s inviter=%s campaign=%s",
+        "Реферал new: invitee=%s inviter=%s campaign=%s code=%s",
         invitee.id,
         inviter.id,
         campaign_key,
+        code,
     )
     return row
 
@@ -336,6 +380,10 @@ async def reward_new_user_on_approval(
     )
     row = result.scalars().first()
     if row is None:
+        logger.info(
+            "Реферал reward skip: invitee=%s reason=no_pending_attribution",
+            invitee.id,
+        )
         return
     payload = await _load_campaign(db)
     await _pay_rewards(db, row, payload, force_new=True)

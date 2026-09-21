@@ -409,6 +409,8 @@ class AppSettings(Base):
     install_promo = Column(JSON, nullable=True)
     # Реферальная кампания (бонусы, сроки, аудитория рекламы)
     referral = Column(JSON, nullable=True)
+    # Fair Play: {"enabled": true/false}
+    fair_play = Column(JSON, nullable=True)
 
 
 class InstallPromoUserState(Base):
@@ -463,3 +465,20 @@ class ReferralPromoUserState(Base):
     done_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     done_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class PasswordRecoveryChallenge(Base):
+    """Одноразовый токен/код для восстановления пароля при повторной регистрации."""
+
+    __tablename__ = "password_recovery_challenges"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    code_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)

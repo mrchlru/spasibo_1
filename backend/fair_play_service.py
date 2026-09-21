@@ -7,11 +7,12 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal, Optional
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from zoneinfo import ZoneInfo
 
 import models
+from app_settings_crud import _normalize_fair_play_settings, get_app_settings
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,66 @@ class FairPlayClearedFlags:
 def _now_utc() -> datetime:
     """Naive UTC — единый формат для сравнений в памяти."""
     return datetime.utcnow()
+
+
+async def is_fair_play_enabled(db: AsyncSession) -> bool:
+    """True, если глобальная защита Fair Play включена."""
+    settings_row = await get_app_settings(db)
+    return _normalize_fair_play_settings(settings_row.fair_play).enabled
+
+
+async def get_fair_play_settings(db: AsyncSession) -> dict[str, bool]:
+    """Текущие глобальные настройки Fair Play."""
+    enabled = await is_fair_play_enabled(db)
+    return {"enabled": enabled}
+
+
+def clear_user_sanctions(user: models.User) -> None:
+    """Полностью снимает fair-play санкции с пользователя."""
+    user.fair_play_ban_until = None
+    user.fair_play_limit_mode = None
+    user.fair_play_limit_cap = None
+    user.fair_play_limit_until = None
+    user.fair_play_suspicious_at = None
+    user.fair_play_strike_count = 0
+    user.fair_play_last_violation_at = None
+    user.fair_play_weekly_sent_count = 0
+    user.fair_play_weekly_sent_for_date = None
+
+
+async def apply_amnesty(db: AsyncSession) -> int:
+    """Снимает все fair-play санкции у всех пользователей. Возвращает число затронутых строк."""
+    result = await db.execute(
+        update(models.User).values(
+            fair_play_ban_until=None,
+            fair_play_limit_mode=None,
+            fair_play_limit_cap=None,
+            fair_play_limit_until=None,
+            fair_play_suspicious_at=None,
+            fair_play_strike_count=0,
+            fair_play_last_violation_at=None,
+            fair_play_weekly_sent_count=0,
+            fair_play_weekly_sent_for_date=None,
+        )
+    )
+    logger.info("Fair Play amnesty applied, rowcount=%s", result.rowcount)
+    return int(result.rowcount or 0)
+
+
+async def set_fair_play_enabled(db: AsyncSession, *, enabled: bool) -> dict[str, bool | int]:
+    """Включает или выключает Fair Play; при выключении делает амнистию."""
+    settings_row = await get_app_settings(db)
+    was_enabled = _normalize_fair_play_settings(settings_row.fair_play).enabled
+    settings_row.fair_play = {"enabled": bool(enabled)}
+    amnesty_count = 0
+    if was_enabled and not enabled:
+        amnesty_count = await apply_amnesty(db)
+        logger.info("Fair Play disabled with amnesty_count=%s", amnesty_count)
+    elif not was_enabled and enabled:
+        logger.info("Fair Play enabled")
+    await db.commit()
+    await db.refresh(settings_row)
+    return {"enabled": bool(enabled), "amnesty_count": amnesty_count}
 
 
 def _as_utc_naive(value: Optional[datetime]) -> Optional[datetime]:
@@ -390,6 +451,9 @@ async def analyze_transfer(
     Returns:
         Payload для email-уведомления админам или None.
     """
+    if not await is_fair_play_enabled(db):
+        return None
+
     now = _now_utc()
     today = msk_calendar_date(now)
 

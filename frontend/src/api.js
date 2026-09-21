@@ -156,6 +156,20 @@ export const registerUser = (telegramId, userData) => {
   });
 };
 
+export function sendAccountRecoveryCode(recoveryToken) {
+  return apiClient.post('/users/auth/recover/send-code', {
+    recovery_token: recoveryToken,
+  });
+}
+
+export function confirmAccountRecovery(recoveryToken, code, newPassword) {
+  return apiClient.post('/users/auth/recover/confirm', {
+    recovery_token: recoveryToken,
+    code,
+    new_password: newPassword,
+  });
+}
+
 export const getAllUsers = (telegramId) => {
   const headers = {};
   if (telegramId) {
@@ -490,6 +504,14 @@ export const getDashboardStats = (startDate, endDate) => {
 
 export const getFairPlayUsers = (sanction = 'all') =>
   apiClient.get(`/admin/fair-play/users?sanction=${sanction}`, getAuthHeaders());
+
+export function getFairPlaySettings() {
+  return apiClient.get('/admin/fair-play/settings', getAuthHeaders());
+}
+
+export function updateFairPlaySettings(enabled) {
+  return apiClient.put('/admin/fair-play/settings', { enabled }, getAuthHeaders());
+}
 
 export const fairPlayLiftBan = (userId) =>
   apiClient.post(`/admin/fair-play/users/${userId}/lift-ban`, {}, getAuthHeaders());

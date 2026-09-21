@@ -104,6 +104,23 @@ async def register_user(request: schemas.RegisterRequest, db: AsyncSession = Dep
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already registered")
         except ValueError:
             pass
+
+    import account_recovery_service
+
+    matched = await account_recovery_service.find_best_matching_user(
+        db,
+        first_name=request.first_name,
+        last_name=request.last_name,
+        email=request.email,
+        phone_number=request.phone_number,
+    )
+    if matched is not None:
+        challenge = await account_recovery_service.create_recovery_challenge(db, matched)
+        payload = account_recovery_service.build_match_response(matched, challenge)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=payload.model_dump(),
+        )
     
     try:
         new_user = await crud.create_user(db, request)
@@ -114,6 +131,54 @@ async def register_user(request: schemas.RegisterRequest, db: AsyncSession = Dep
     except Exception as e:
         print(f"An error occurred during user creation process: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to complete registration process.")
+
+
+@router.post(
+    "/auth/recover/send-code",
+    response_model=schemas.AccountRecoverySendCodeResponse,
+)
+async def recover_send_code(
+    request: schemas.AccountRecoverySendCodeRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Отправляет код восстановления на email найденного аккаунта."""
+    import account_recovery_service
+
+    try:
+        return await account_recovery_service.send_recovery_code(
+            db,
+            recovery_token=request.recovery_token,
+        )
+    except account_recovery_service.AccountRecoveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+@router.post(
+    "/auth/recover/confirm",
+    response_model=schemas.AccountRecoveryConfirmResponse,
+)
+async def recover_confirm(
+    request: schemas.AccountRecoveryConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Проверяет код и устанавливает новый пароль."""
+    import account_recovery_service
+
+    try:
+        return await account_recovery_service.confirm_recovery_password(
+            db,
+            recovery_token=request.recovery_token,
+            code=request.code,
+            new_password=request.new_password,
+        )
+    except account_recovery_service.AccountRecoveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
 
 @router.get("/", response_model=list[schemas.UserResponse])
 async def list_users(
