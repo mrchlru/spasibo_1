@@ -3536,17 +3536,23 @@ def _inactive_activity_band(period_days: int) -> tuple[int, Optional[int]]:
     return (days, None)
 
 
-def _user_last_activity_expr():
-    """SQL-выражение последней активности пользователя."""
-    last_send = (
-        select(func.max(models.Transaction.timestamp))
-        .where(models.Transaction.sender_id == models.User.id)
-        .correlate(models.User)
-        .scalar_subquery()
+def _last_send_by_user_subquery():
+    """Подзапрос: последняя отправка «спасибо» по каждому sender_id."""
+    return (
+        select(
+            models.Transaction.sender_id.label("user_id"),
+            func.max(models.Transaction.timestamp).label("last_sent_at"),
+        )
+        .group_by(models.Transaction.sender_id)
+        .subquery()
     )
+
+
+def _user_last_activity_expr(last_sent_at_col):
+    """SQL-выражение последней активности (вход / отправка / регистрация)."""
     return func.greatest(
         func.coalesce(models.User.last_login_date, models.User.registration_date),
-        func.coalesce(last_send, models.User.registration_date),
+        func.coalesce(last_sent_at_col, models.User.registration_date),
         models.User.registration_date,
     )
 
@@ -3559,7 +3565,8 @@ async def _get_inactive_users_by_activity_band(
     min_days, max_days = _inactive_activity_band(period_days)
     now = datetime.utcnow()
     older_than = now - timedelta(days=min_days)
-    last_activity = _user_last_activity_expr()
+    last_send_sq = _last_send_by_user_subquery()
+    last_activity = _user_last_activity_expr(last_send_sq.c.last_sent_at)
     filters = [
         _statistics_user_status_filter(),
         last_activity < older_than,
@@ -3570,6 +3577,7 @@ async def _get_inactive_users_by_activity_band(
 
     query = (
         select(models.User)
+        .outerjoin(last_send_sq, last_send_sq.c.user_id == models.User.id)
         .where(and_(*filters))
         .order_by(last_activity.asc().nulls_first(), models.User.id.asc())
     )
