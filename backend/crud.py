@@ -3491,15 +3491,17 @@ async def get_inactive_users(
     В статистику входят только ``status=approved`` (не pending / rejected /
     blocked / deleted и не анонимизированные с отрицательным telegram_id).
 
-    При ``period_days`` (вкладки 7 / 30 / 90) окно — последние N дней;
-    множества накопительные: не слал 90 дней ⊆ не слал 30 дней ⊆ не слал 7 дней.
+    При ``period_days`` (вкладки 7 / 30 / 90) — скользящие последние N суток
+    (как в соотношении активных); множества накопительные:
+    не слал 90 дней ⊆ не слал 30 дней ⊆ не слал 7 дней.
     """
     if period_days is not None:
         period_days = max(1, min(int(period_days), 365))
-        end_date = datetime.now(_TRANSFER_LIMIT_TZ).date()
-        start_date = end_date - timedelta(days=period_days)
+        end_utc = datetime.utcnow()
+        start_utc = end_utc - timedelta(days=period_days)
+    else:
+        start_utc, end_utc = _prepare_dates(start_date, end_date)
 
-    start_utc, end_utc = _prepare_dates(start_date, end_date)
     active_senders_q = (
         select(models.Transaction.sender_id)
         .join(models.User, models.User.id == models.Transaction.sender_id)
