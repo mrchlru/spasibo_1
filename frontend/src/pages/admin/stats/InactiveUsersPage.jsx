@@ -7,9 +7,9 @@ import dashboardStyles from '../StatisticsDashboard.module.css';
 import UserAvatar from '../../../components/UserAvatar';
 
 const PERIOD_OPTIONS = [
-  { days: 7, label: '7 дней' },
-  { days: 30, label: '1 месяц' },
-  { days: 90, label: '3 месяца' },
+  { days: 7, label: '7 дней', hint: 'без активности 7–30 дней' },
+  { days: 30, label: '1 месяц', hint: 'без активности 30–90 дней' },
+  { days: 90, label: '3 месяца', hint: 'без активности 90+ дней' },
 ];
 
 function InactiveUsersPage() {
@@ -18,6 +18,8 @@ function InactiveUsersPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState(null);
+
+  const activePeriod = PERIOD_OPTIONS.find((option) => option.days === periodDays) || PERIOD_OPTIONS[1];
 
   const fetchData = useCallback(async () => {
     try {
@@ -41,7 +43,7 @@ function InactiveUsersPage() {
     setExporting(true);
     try {
       const response = await exportInactiveUsers(periodDays);
-      await downloadExcelBlob(response, `inactive_senders_${periodDays}d.xlsx`);
+      await downloadExcelBlob(response, `inactive_users_${periodDays}d.xlsx`);
     } catch (err) {
       console.error(err);
       alert(err.message || 'Не удалось выгрузить Excel.');
@@ -62,7 +64,8 @@ function InactiveUsersPage() {
     <div>
       <h2>Неактивные пользователи</h2>
       <p style={{ color: '#6E7A85', marginTop: '-10px', marginBottom: '16px' }}>
-        Только одобренные пользователи. Не отправляли «спасибо» за выбранный период.
+        Одобренные пользователи без входа и без отправки «спасибо» в выбранном диапазоне.
+        Вкладки не пересекаются: {activePeriod.hint}.
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', alignItems: 'center' }}>
@@ -72,6 +75,7 @@ function InactiveUsersPage() {
             type="button"
             className={`${dashboardStyles.tab} ${periodDays === option.days ? dashboardStyles.tabActive : dashboardStyles.tabCollapsed}`}
             onClick={() => setPeriodDays(option.days)}
+            title={option.hint}
           >
             {option.label}
           </button>
@@ -88,7 +92,9 @@ function InactiveUsersPage() {
         </button>
       </div>
 
-      <p style={{ fontWeight: 600, marginBottom: '12px' }}>Всего неактивных: {users.length}</p>
+      <p style={{ fontWeight: 600, marginBottom: '12px' }}>
+        Всего ({activePeriod.label}): {users.length}
+      </p>
 
       {users.length > 0 ? (
         <ul className={styles.userList}>
@@ -106,7 +112,7 @@ function InactiveUsersPage() {
         </ul>
       ) : (
         <div className={styles.noInactiveMessage}>
-          🎉 За этот период все пользователи отправляли «спасибо».
+          В этом диапазоне неактивных пользователей нет.
         </div>
       )}
     </div>

@@ -53,7 +53,7 @@ function ActiveUserRatioPage() {
   const handleExportInactive = async () => {
     setExporting(true);
     try {
-      const response = await exportInactiveUsers(periodDays);
+      const response = await exportInactiveUsers(periodDays, false);
       await downloadExcelBlob(response, `inactive_senders_${periodDays}d.xlsx`);
     } catch (err) {
       console.error(err);
