@@ -26,7 +26,7 @@ class User(Base):
     is_admin = Column(Boolean, default=False, nullable=False)
     daily_transfer_count = Column(Integer, default=0)
     daily_transfer_count_for_date = Column(Date, nullable=True)
-    last_login_date: Mapped[datetime] = mapped_column(DateTime, nullable=True, onupdate=func.now())
+    last_login_date: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     ticket_parts = Column(Integer, default=0)
     tickets = Column(Integer, default=0)
     last_ticket_part_reset = Column(Date, default=datetime.utcnow)

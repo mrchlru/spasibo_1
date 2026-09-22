@@ -3489,7 +3489,7 @@ async def get_inactive_users(
     """Список неактивных пользователей.
 
     При ``period_days`` (вкладки 7 / 30 / 90) — деление по давности последней
-    активности (вход, отправка спасибки или регистрация), без пересечений:
+    активности (сессия, отправка спасибки или регистрация), без пересечений:
 
     - 7 дней → неактивны от 7 до 30 дней;
     - 30 дней → от 30 до 90 дней;
@@ -3548,10 +3548,26 @@ def _last_send_by_user_subquery():
     )
 
 
-def _user_last_activity_expr(last_sent_at_col):
-    """SQL-выражение последней активности (вход / отправка / регистрация)."""
+def _last_seen_by_user_subquery():
+    """Подзапрос: последний last_seen сессии по каждому user_id."""
+    return (
+        select(
+            models.UserSession.user_id.label("user_id"),
+            func.max(models.UserSession.last_seen).label("last_seen_at"),
+        )
+        .group_by(models.UserSession.user_id)
+        .subquery()
+    )
+
+
+def _user_last_activity_expr(last_sent_at_col, last_seen_at_col):
+    """Последняя активность: сессия, отправка или регистрация.
+
+    ``last_login_date`` не используем: раньше поле обновлялось на любом
+    UPDATE строки пользователя и завышало «свежесть» входа.
+    """
     return func.greatest(
-        func.coalesce(models.User.last_login_date, models.User.registration_date),
+        func.coalesce(last_seen_at_col, models.User.registration_date),
         func.coalesce(last_sent_at_col, models.User.registration_date),
         models.User.registration_date,
     )
@@ -3566,7 +3582,11 @@ async def _get_inactive_users_by_activity_band(
     now = datetime.utcnow()
     older_than = now - timedelta(days=min_days)
     last_send_sq = _last_send_by_user_subquery()
-    last_activity = _user_last_activity_expr(last_send_sq.c.last_sent_at)
+    last_seen_sq = _last_seen_by_user_subquery()
+    last_activity = _user_last_activity_expr(
+        last_send_sq.c.last_sent_at,
+        last_seen_sq.c.last_seen_at,
+    )
     filters = [
         _statistics_user_status_filter(),
         last_activity < older_than,
@@ -3578,6 +3598,7 @@ async def _get_inactive_users_by_activity_band(
     query = (
         select(models.User)
         .outerjoin(last_send_sq, last_send_sq.c.user_id == models.User.id)
+        .outerjoin(last_seen_sq, last_seen_sq.c.user_id == models.User.id)
         .where(and_(*filters))
         .order_by(last_activity.asc().nulls_first(), models.User.id.asc())
     )
