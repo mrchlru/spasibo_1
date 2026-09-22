@@ -568,10 +568,10 @@ export const exportActiveSenders = (periodDays = 30) =>
     responseType: 'blob',
   });
 
-export const exportInactiveUsers = (periodDays = 30, byActivity = true) =>
+export const exportInactiveUsers = (periodDays = 30) =>
   apiClient.get('/admin/statistics/inactive_users/export', {
     ...getAuthHeaders(),
-    params: { period_days: periodDays, by_activity: byActivity },
+    params: { period_days: periodDays },
     responseType: 'blob',
   });
 

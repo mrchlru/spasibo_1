@@ -856,32 +856,11 @@ async def export_active_senders(
 @router.get("/statistics/inactive_users/export")
 async def export_inactive_users(
     period_days: int = Query(30, ge=1, le=365),
-    by_activity: bool = Query(
-        True,
-        description="True — диапазоны без входа/отправки; False — не отправляли «спасибо» за period_days",
-    ),
     db: AsyncSession = Depends(get_db),
 ):
+    inactive_users = await crud.get_inactive_users(db, period_days=period_days)
     moscow_tz = ZoneInfo("Europe/Moscow")
-    if by_activity:
-        inactive_users = await crud.get_inactive_users(db, period_days=period_days)
-        band_titles = {
-            7: "7–30 дней",
-            30: "30–90 дней",
-            90: "90+ дней",
-        }
-        band_label = band_titles.get(period_days, f"{period_days}+ дней")
-        sheet_title = f"Неактивные {band_label}"
-        period_column = band_label
-        filename = f"inactive_users_{period_days}d.xlsx"
-    else:
-        end = datetime.utcnow().date()
-        start = end - timedelta(days=period_days)
-        inactive_users = await crud.get_inactive_users(db, start, end)
-        period_column = f"не отправляли {period_days}д"
-        sheet_title = f"Без отправок {period_days}д"
-        filename = f"inactive_senders_{period_days}d.xlsx"
-
+    period_column = f"не отправляли {period_days}д"
     rows = [
         {
             "#": index,
@@ -901,10 +880,11 @@ async def export_inactive_users(
     output = io.BytesIO()
     workbook = Workbook()
     ws = workbook.active
-    ws.title = sheet_title[:31]
+    ws.title = f"Неактивные {period_days}д"[:31]
     _write_dict_rows_on_sheet(ws, rows)
     workbook.save(output)
     output.seek(0)
+    filename = f"inactive_senders_{period_days}d.xlsx"
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

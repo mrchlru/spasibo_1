@@ -7,9 +7,9 @@ import dashboardStyles from '../StatisticsDashboard.module.css';
 import UserAvatar from '../../../components/UserAvatar';
 
 const PERIOD_OPTIONS = [
-  { days: 7, label: '7 дней', hint: 'без активности 7–30 дней' },
-  { days: 30, label: '1 месяц', hint: 'без активности 30–90 дней' },
-  { days: 90, label: '3 месяца', hint: 'без активности 90+ дней' },
+  { days: 7, label: '7 дней', hint: 'не отправляли «спасибо» за последние 7 дней' },
+  { days: 30, label: '1 месяц', hint: 'не отправляли «спасибо» за последние 30 дней' },
+  { days: 90, label: '3 месяца', hint: 'не отправляли «спасибо» за последние 90 дней' },
 ];
 
 function InactiveUsersPage() {
@@ -43,7 +43,7 @@ function InactiveUsersPage() {
     setExporting(true);
     try {
       const response = await exportInactiveUsers(periodDays);
-      await downloadExcelBlob(response, `inactive_users_${periodDays}d.xlsx`);
+      await downloadExcelBlob(response, `inactive_senders_${periodDays}d.xlsx`);
     } catch (err) {
       console.error(err);
       alert(err.message || 'Не удалось выгрузить Excel.');
@@ -64,8 +64,9 @@ function InactiveUsersPage() {
     <div>
       <h2>Неактивные пользователи</h2>
       <p style={{ color: '#6E7A85', marginTop: '-10px', marginBottom: '16px' }}>
-        Одобренные пользователи без сессии и без отправки «спасибо» в выбранном диапазоне.
-        Вкладки не пересекаются: {activePeriod.hint}.
+        Только одобренные (без удалённых и заблокированных). Неактивный — не отправил
+        ни одного «спасибо» за выбранный период. Более длинный период входит в более короткий:
+        кто не слал 3 месяца, попадает и в «1 месяц», и в «7 дней».
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px', alignItems: 'center' }}>
@@ -112,7 +113,7 @@ function InactiveUsersPage() {
         </ul>
       ) : (
         <div className={styles.noInactiveMessage}>
-          В этом диапазоне неактивных пользователей нет.
+          За этот период все одобренные отправляли «спасибо».
         </div>
       )}
     </div>

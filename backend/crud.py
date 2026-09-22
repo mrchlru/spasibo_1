@@ -3486,20 +3486,18 @@ async def get_inactive_users(
     end_date: Optional[date] = None,
     period_days: Optional[int] = None,
 ):
-    """Список неактивных пользователей.
+    """Неактивные = одобренные, не отправлявшие «спасибо» за период.
 
-    При ``period_days`` (вкладки 7 / 30 / 90) — деление по давности последней
-    активности (сессия, отправка спасибки или регистрация), без пересечений:
+    В статистику входят только ``status=approved`` (не pending / rejected /
+    blocked / deleted и не анонимизированные с отрицательным telegram_id).
 
-    - 7 дней → неактивны от 7 до 30 дней;
-    - 30 дней → от 30 до 90 дней;
-    - 90 дней → 90 дней и дольше;
-    - другое значение → неактивны не меньше ``period_days``.
-
-    Без ``period_days`` (сводный отчёт) — не отправляли «спасибо» в [start, end].
+    При ``period_days`` (вкладки 7 / 30 / 90) окно — последние N дней;
+    множества накопительные: не слал 90 дней ⊆ не слал 30 дней ⊆ не слал 7 дней.
     """
     if period_days is not None:
-        return await _get_inactive_users_by_activity_band(db, int(period_days))
+        period_days = max(1, min(int(period_days), 365))
+        end_date = datetime.now(_TRANSFER_LIMIT_TZ).date()
+        start_date = end_date - timedelta(days=period_days)
 
     start_utc, end_utc = _prepare_dates(start_date, end_date)
     active_senders_q = (
@@ -3521,88 +3519,6 @@ async def get_inactive_users(
     return (await db.execute(
         inactive_filter.filter(models.User.id.notin_(active_user_ids))
     )).scalars().all()
-
-
-def _inactive_activity_band(period_days: int) -> tuple[int, Optional[int]]:
-    """Возвращает полуинтервал дней без активности [min_days, max_days)."""
-    days = max(1, min(int(period_days), 365))
-    bands = {
-        7: (7, 30),
-        30: (30, 90),
-        90: (90, None),
-    }
-    if days in bands:
-        return bands[days]
-    return (days, None)
-
-
-def _last_send_by_user_subquery():
-    """Подзапрос: последняя отправка «спасибо» по каждому sender_id."""
-    return (
-        select(
-            models.Transaction.sender_id.label("user_id"),
-            func.max(models.Transaction.timestamp).label("last_sent_at"),
-        )
-        .group_by(models.Transaction.sender_id)
-        .subquery()
-    )
-
-
-def _last_seen_by_user_subquery():
-    """Подзапрос: последний last_seen сессии по каждому user_id."""
-    return (
-        select(
-            models.UserSession.user_id.label("user_id"),
-            func.max(models.UserSession.last_seen).label("last_seen_at"),
-        )
-        .group_by(models.UserSession.user_id)
-        .subquery()
-    )
-
-
-def _user_last_activity_expr(last_sent_at_col, last_seen_at_col):
-    """Последняя активность: сессия, отправка или регистрация.
-
-    ``last_login_date`` не используем: раньше поле обновлялось на любом
-    UPDATE строки пользователя и завышало «свежесть» входа.
-    """
-    return func.greatest(
-        func.coalesce(last_seen_at_col, models.User.registration_date),
-        func.coalesce(last_sent_at_col, models.User.registration_date),
-        models.User.registration_date,
-    )
-
-
-async def _get_inactive_users_by_activity_band(
-    db: AsyncSession,
-    period_days: int,
-) -> list:
-    """Неактивные в выбранном диапазоне дней без активности."""
-    min_days, max_days = _inactive_activity_band(period_days)
-    now = datetime.utcnow()
-    older_than = now - timedelta(days=min_days)
-    last_send_sq = _last_send_by_user_subquery()
-    last_seen_sq = _last_seen_by_user_subquery()
-    last_activity = _user_last_activity_expr(
-        last_send_sq.c.last_sent_at,
-        last_seen_sq.c.last_seen_at,
-    )
-    filters = [
-        _statistics_user_status_filter(),
-        last_activity < older_than,
-    ]
-    if max_days is not None:
-        newer_than = now - timedelta(days=max_days)
-        filters.append(last_activity >= newer_than)
-
-    query = (
-        select(models.User)
-        .outerjoin(last_send_sq, last_send_sq.c.user_id == models.User.id)
-        .outerjoin(last_seen_sq, last_seen_sq.c.user_id == models.User.id)
-        .where(and_(*filters))
-        .order_by(last_activity.asc().nulls_first(), models.User.id.asc())
-    )
-    return list((await db.execute(query)).scalars().all())
 
 
 async def get_total_balance(db: AsyncSession):
