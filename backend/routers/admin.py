@@ -1443,3 +1443,13 @@ async def fair_play_reset_strikes_route(
     await fair_play_service.admin_reset_strikes(db, user)
     await db.commit()
     return {"detail": "Счётчик нарушений сброшен"}
+
+
+@router.get("/referral/stats", response_model=schemas.ReferralAdminStatsResponse)
+async def admin_referral_stats(
+    db: AsyncSession = Depends(get_db),
+):
+    """Полная статистика реферальной системы."""
+    import referral_service
+
+    return await referral_service.get_admin_referral_stats(db)

@@ -15,7 +15,6 @@ import { useModalAlert } from '../contexts/ModalAlertContext';
 import { formatDateForApi } from '../utils/dateFormatter';
 import {
   captureReferralCodeFromLocation,
-  clearPendingReferralCode,
   getPendingReferralCode,
   isReferralWithinSchedule,
   normalizeReferral,
@@ -205,7 +204,8 @@ function RegistrationPage({ telegramUser, onRegistrationSuccess, isWebBrowser = 
       };
 
       await registerUser(telegramId || '', userData);
-      clearPendingReferralCode();
+      // Код оставляем до claim после одобрения — запасной путь, если атрибуция
+      // при регистрации не успела создаться.
       showAlert('Ваша заявка отправлена на рассмотрение!', 'success');
 
       setTimeout(() => {

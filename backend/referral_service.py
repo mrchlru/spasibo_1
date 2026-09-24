@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm.attributes import flag_modified
 
 import models
@@ -208,7 +209,11 @@ async def attribute_new_registration(
     invitee: models.User,
     referral_code: str | None,
 ) -> models.ReferralAttribution | None:
-    """Привязывает нового пользователя к рефералу при регистрации."""
+    """Привязывает нового пользователя к рефералу при регистрации.
+
+    Код сохраняется в ``invitee.referred_by_code`` даже если атрибуция
+    сейчас не создалась — при одобрении будет повторная попытка.
+    """
     code = (referral_code or "").strip().upper()
     if not code:
         logger.info(
@@ -216,6 +221,10 @@ async def attribute_new_registration(
             invitee.id,
         )
         return None
+
+    invitee.referred_by_code = code
+    await db.flush()
+
     payload = await _load_campaign(db)
     if not is_referral_campaign_accepting_new(payload):
         logger.info(
@@ -262,6 +271,8 @@ async def attribute_new_registration(
         return None
     existing = await _existing_attribution(db, invitee.id, campaign_key)
     if existing is not None:
+        if not existing.referral_code_used:
+            existing.referral_code_used = code
         logger.info(
             "Реферал skip: invitee=%s code=%s reason=already_attributed attribution_id=%s",
             invitee.id,
@@ -277,6 +288,7 @@ async def attribute_new_registration(
         status=STATUS_PENDING,
         attributed_at=_utcnow_naive(),
         send_days=[],
+        referral_code_used=code,
     )
     db.add(row)
     await db.flush()
@@ -296,7 +308,7 @@ async def claim_referral_for_existing_user(
     invitee: models.User,
     referral_code: str,
 ) -> schemas.ReferralClaimResponse:
-    """Привязка неактивного пользователя по ссылке (реактивация)."""
+    """Привязка по реф-коду: реактивация или поздняя привязка нового."""
     payload = await _load_campaign(db)
     if not is_referral_campaign_accepting_new(payload):
         return schemas.ReferralClaimResponse(
@@ -322,45 +334,124 @@ async def claim_referral_for_existing_user(
             message="Нельзя использовать собственную ссылку.",
         )
     if invitee.status != "approved":
+        invitee.referred_by_code = code
+        await db.commit()
         return schemas.ReferralClaimResponse(
-            ok=False,
-            message="Сначала дождитесь одобрения аккаунта.",
+            ok=True,
+            message="Код сохранён. Бонус начислится после одобрения заявки.",
         )
     existing = await _existing_attribution(db, invitee.id, campaign_key)
     if existing is not None:
+        if existing.status == STATUS_PENDING and existing.kind == KIND_NEW:
+            await _pay_rewards(db, existing, payload, force_new=True)
+            await db.commit()
+            await db.refresh(existing)
+            return schemas.ReferralClaimResponse(
+                ok=True,
+                message="Реферальный бонус начислен.",
+                attribution=_attribution_to_item(existing, invitee),
+            )
         return schemas.ReferralClaimResponse(
             ok=True,
             message="Вы уже участвуете в акции по этой кампании.",
             attribution=_attribution_to_item(existing, invitee),
         )
-    if not await is_user_inactive_for_referral(db, invitee, payload):
-        return schemas.ReferralClaimResponse(
-            ok=False,
-            message=(
-                f"Приглашение для вернувшихся действует, если не было активности "
-                f"{payload.inactive_months} мес."
-            ),
+
+    invitee.referred_by_code = code
+    if await is_user_inactive_for_referral(db, invitee, payload):
+        row = models.ReferralAttribution(
+            campaign_key=campaign_key,
+            inviter_id=inviter.id,
+            invitee_id=invitee.id,
+            kind=KIND_REACTIVATION,
+            status=STATUS_IN_PROGRESS,
+            attributed_at=_utcnow_naive(),
+            send_days=[],
+            referral_code_used=code,
         )
-    row = models.ReferralAttribution(
-        campaign_key=campaign_key,
-        inviter_id=inviter.id,
-        invitee_id=invitee.id,
-        kind=KIND_REACTIVATION,
-        status=STATUS_IN_PROGRESS,
-        attributed_at=_utcnow_naive(),
-        send_days=[],
-    )
-    db.add(row)
-    await db.commit()
-    await db.refresh(row)
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        return schemas.ReferralClaimResponse(
+            ok=True,
+            message=(
+                f"Отлично! Отправляйте спасибки минимум {payload.reactivation_min_days} "
+                f"дня за {payload.reactivation_window_days} дней — и вы оба получите бонус."
+            ),
+            attribution=_attribution_to_item(row, invitee),
+        )
+
+    if await _can_late_bind_as_new(invitee, payload):
+        row = models.ReferralAttribution(
+            campaign_key=campaign_key,
+            inviter_id=inviter.id,
+            invitee_id=invitee.id,
+            kind=KIND_NEW,
+            status=STATUS_PENDING,
+            attributed_at=_utcnow_naive(),
+            send_days=[],
+            referral_code_used=code,
+        )
+        db.add(row)
+        await db.flush()
+        await _pay_rewards(db, row, payload, force_new=True)
+        await db.commit()
+        await db.refresh(row)
+        return schemas.ReferralClaimResponse(
+            ok=True,
+            message=(
+                f"Готово! Вам начислено {payload.bonus_new_invitee} спасибок, "
+                f"пригласившему — {payload.bonus_new_inviter}."
+            ),
+            attribution=_attribution_to_item(row, invitee),
+        )
+
     return schemas.ReferralClaimResponse(
-        ok=True,
+        ok=False,
         message=(
-            f"Отлично! Отправляйте спасибки минимум {payload.reactivation_min_days} "
-            f"дня за {payload.reactivation_window_days} дней — и вы оба получите бонус."
+            f"Приглашение для вернувшихся действует, если не было активности "
+            f"{payload.inactive_months} мес."
         ),
-        attribution=_attribution_to_item(row, invitee),
     )
+
+
+async def _can_late_bind_as_new(
+    invitee: models.User,
+    payload: schemas.ReferralCampaignPayload,
+) -> bool:
+    """Можно ли поздно привязать как нового (регистрация в окне текущей акции)."""
+    if not payload.started_at:
+        return False
+    started = _parse_iso_datetime(payload.started_at)
+    reg = _as_aware_utc(invitee.registration_date)
+    if started is None or reg is None:
+        return False
+    return reg >= started
+
+
+async def ensure_reward_after_approval(
+    db: AsyncSession,
+    invitee: models.User,
+) -> None:
+    """После одобрения: добить атрибуцию по referred_by_code и начислить бонус."""
+    payload = await _load_campaign(db)
+    campaign_key = campaign_key_from_payload(payload)
+    if campaign_key:
+        existing = await _existing_attribution(db, invitee.id, campaign_key)
+        if existing is not None and existing.status == STATUS_REWARDED:
+            logger.info(
+                "Реферал reward skip: invitee=%s reason=already_rewarded attribution_id=%s",
+                invitee.id,
+                existing.id,
+            )
+            return
+
+    code = (invitee.referred_by_code or "").strip().upper()
+    if code:
+        await attribute_new_registration(db, invitee=invitee, referral_code=code)
+        await db.flush()
+
+    await reward_new_user_on_approval(db, invitee)
 
 
 async def reward_new_user_on_approval(
@@ -381,8 +472,9 @@ async def reward_new_user_on_approval(
     row = result.scalars().first()
     if row is None:
         logger.info(
-            "Реферал reward skip: invitee=%s reason=no_pending_attribution",
+            "Реферал reward skip: invitee=%s reason=no_pending_attribution referred_by=%s",
             invitee.id,
+            (invitee.referred_by_code or "")[:16] or None,
         )
         return
     payload = await _load_campaign(db)
@@ -601,6 +693,39 @@ def _attribution_to_item(
     )
 
 
+def _public_app_base_url() -> str:
+    """Публичный origin веб-приложения для шаринга."""
+    from config import settings
+
+    raw = (getattr(settings, "WEB_APP_LOGIN_URL", None) or "").strip().rstrip("/")
+    return raw
+
+
+def _build_share_url(code: str) -> tuple[str, str]:
+    """Возвращает (share_path, абсолютный или относительный URL)."""
+    share_path = f"/?ref={code}"
+    base = _public_app_base_url()
+    if base:
+        return share_path, f"{base}{share_path}"
+    return share_path, share_path
+
+
+def _build_share_text(
+    *,
+    code: str,
+    share_url: str,
+    payload: schemas.ReferralCampaignPayload,
+) -> str:
+    """Текст приглашения с кодом и ссылкой."""
+    bonus = max(0, int(payload.bonus_new_invitee))
+    return (
+        f"Я уже в «Спасибо», присоединяйся и ты! "
+        f"Получи {bonus} приветственных спасибок за регистрацию "
+        f"(или за активацию аккаунта), введи мой реферальный код {code}. "
+        f"Ссылка для входа: {share_url}"
+    )
+
+
 async def get_my_referral_summary(
     db: AsyncSession,
     user: models.User,
@@ -627,9 +752,11 @@ async def get_my_referral_summary(
         if item.status == STATUS_REWARDED
     )
     registered_count = sum(1 for item in invites if item.kind == KIND_NEW)
+    share_path, share_url = _build_share_url(code)
     return schemas.ReferralSummaryResponse(
         code=code,
-        share_path=f"/?ref={code}",
+        share_path=share_path,
+        share_text=_build_share_text(code=code, share_url=share_url, payload=payload),
         campaign_active=accepting,
         campaign=payload,
         invites=invites,
@@ -654,6 +781,116 @@ def _build_rules_text(payload: schemas.ReferralCampaignPayload) -> str:
         f"({payload.bonus_reactivate_inviter} / {payload.bonus_reactivate_invitee}).\n"
         f"4. Акция длится месяц. Если коллега начал выполнять условия до конца акции, "
         f"прогресс сохраняется. Новые приглашения после окончания не принимаются."
+    )
+
+
+def _user_display_name(user: models.User | None, fallback_id: int) -> str:
+    """ФИО пользователя или запасной идентификатор."""
+    if user is None:
+        return f"ID {fallback_id}"
+    name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+    return name or f"ID {fallback_id}"
+
+
+async def get_admin_referral_stats(
+    db: AsyncSession,
+) -> schemas.ReferralAdminStatsResponse:
+    """Полная статистика рефералок для админ-панели."""
+    inviter_u = aliased(models.User)
+    invitee_u = aliased(models.User)
+    result = await db.execute(
+        select(models.ReferralAttribution, inviter_u, invitee_u)
+        .join(inviter_u, inviter_u.id == models.ReferralAttribution.inviter_id)
+        .join(invitee_u, invitee_u.id == models.ReferralAttribution.invitee_id)
+        .order_by(models.ReferralAttribution.attributed_at.desc())
+        .limit(2000)
+    )
+    attributions: list[schemas.ReferralAdminAttributionItem] = []
+    rewarded_count = 0
+    pending_count = 0
+    in_progress_count = 0
+    new_count = 0
+    reactivation_count = 0
+    total_inviter_bonuses = 0
+    total_invitee_bonuses = 0
+    attributed_invitee_ids: set[int] = set()
+
+    for attr, inviter, invitee in result.all():
+        attributed_invitee_ids.add(attr.invitee_id)
+        days = list(attr.send_days or [])
+        item = schemas.ReferralAdminAttributionItem(
+            id=attr.id,
+            campaign_key=attr.campaign_key,
+            inviter_id=attr.inviter_id,
+            inviter_name=_user_display_name(inviter, attr.inviter_id),
+            inviter_code=inviter.referral_code,
+            invitee_id=attr.invitee_id,
+            invitee_name=_user_display_name(invitee, attr.invitee_id),
+            invitee_status=invitee.status or "",
+            referred_by_code=invitee.referred_by_code,
+            referral_code_used=attr.referral_code_used,
+            kind=attr.kind,
+            kind_label=KIND_LABELS_RU.get(attr.kind, attr.kind),
+            status=attr.status,
+            status_label=STATUS_LABELS_RU.get(attr.status, attr.status),
+            attributed_at=attr.attributed_at,
+            rewarded_at=attr.rewarded_at,
+            inviter_bonus=attr.inviter_bonus or 0,
+            invitee_bonus=attr.invitee_bonus or 0,
+            send_days_count=len(set(str(d) for d in days)),
+        )
+        attributions.append(item)
+        if attr.status == STATUS_REWARDED:
+            rewarded_count += 1
+            total_inviter_bonuses += int(attr.inviter_bonus or 0)
+            total_invitee_bonuses += int(attr.invitee_bonus or 0)
+        elif attr.status == STATUS_PENDING:
+            pending_count += 1
+        elif attr.status == STATUS_IN_PROGRESS:
+            in_progress_count += 1
+        if attr.kind == KIND_NEW:
+            new_count += 1
+        elif attr.kind == KIND_REACTIVATION:
+            reactivation_count += 1
+
+    orphan_rows = await db.execute(
+        select(models.User)
+        .where(
+            models.User.referred_by_code.is_not(None),
+            models.User.referred_by_code != "",
+        )
+        .order_by(models.User.registration_date.desc())
+        .limit(500)
+    )
+    orphans: list[schemas.ReferralAdminOrphanItem] = []
+    for user in orphan_rows.scalars().all():
+        if user.id in attributed_invitee_ids:
+            continue
+        code = (user.referred_by_code or "").strip()
+        if not code:
+            continue
+        orphans.append(
+            schemas.ReferralAdminOrphanItem(
+                user_id=user.id,
+                user_name=_user_display_name(user, user.id),
+                user_status=user.status or "",
+                referred_by_code=code,
+                registration_date=user.registration_date,
+            )
+        )
+
+    return schemas.ReferralAdminStatsResponse(
+        total_attributions=len(attributions),
+        rewarded_count=rewarded_count,
+        pending_count=pending_count,
+        in_progress_count=in_progress_count,
+        new_count=new_count,
+        reactivation_count=reactivation_count,
+        total_inviter_bonuses=total_inviter_bonuses,
+        total_invitee_bonuses=total_invitee_bonuses,
+        orphan_count=len(orphans),
+        attributions=attributions,
+        orphans=orphans,
     )
 
 

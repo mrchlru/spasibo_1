@@ -62,6 +62,7 @@ class User(Base):
     fair_play_weekly_sent_count: Mapped[int] = mapped_column(Integer, default=0, server_default='0', nullable=False)
     fair_play_weekly_sent_for_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     referral_code: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    referred_by_code: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     sent_transactions = relationship(
         "Transaction",
         back_populates="sender",
@@ -449,6 +450,7 @@ class ReferralAttribution(Base):
     rewarded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     inviter_bonus: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     invitee_bonus: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    referral_code_used: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
 
 
 class ReferralPromoUserState(Base):

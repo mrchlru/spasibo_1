@@ -242,6 +242,9 @@ export const snoozeReferralPromo = () =>
 export const markReferralPromoDone = (reason = 'done') =>
   apiClient.post('/referral/promo-state/done', { reason }, getAuthHeaders());
 
+export const getAdminReferralStats = () =>
+  apiClient.get('/admin/referral/stats', getAuthHeaders());
+
 export const registerFeedPostView = (postId) =>
   apiClient.post(`/feed-posts/${postId}/view`, {}, getAuthHeaders());
 

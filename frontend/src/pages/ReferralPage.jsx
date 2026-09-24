@@ -120,16 +120,20 @@ function ReferralPage({ onBack }) {
   }, [shareUrl]);
 
   async function handleCopy() {
-    if (!shareUrl || busy) {
+    if (busy) {
+      return;
+    }
+    const text = summary?.share_text || shareUrl;
+    if (!text) {
       return;
     }
     setBusy(true);
     try {
-      const ok = await copyTextReliable(shareUrl);
+      const ok = await copyTextReliable(text);
       if (ok) {
-        showAlert('Ссылка скопирована', 'success');
+        showAlert('Текст приглашения скопирован', 'success');
       } else {
-        showAlert('Не удалось скопировать ссылку', 'error');
+        showAlert('Не удалось скопировать', 'error');
       }
     } finally {
       setBusy(false);
@@ -137,16 +141,19 @@ function ReferralPage({ onBack }) {
   }
 
   async function handleShare() {
-    if (!shareUrl || busy) {
+    if (busy) {
+      return;
+    }
+    const text = summary?.share_text || (shareUrl ? `Присоединяйся к «Спасибо»: ${shareUrl}` : '');
+    if (!text) {
       return;
     }
     setBusy(true);
     try {
-      // После «Поделиться» не показываем тосты: успех и закрытие sheet — без уведомлений.
       await shareTextReliable({
         title: 'Спасибо — приглашение',
-        text: `Присоединяйся к «Спасибо»: ${shareUrl}`,
-        url: shareUrl,
+        text,
+        url: shareUrl || undefined,
       });
     } finally {
       setBusy(false);
@@ -202,6 +209,14 @@ function ReferralPage({ onBack }) {
                 <p className={styles.qrHint}>Готовим QR-код…</p>
               )}
               <code className={styles.linkCode}>{shareUrl}</code>
+              {summary.code && (
+                <p className={styles.qrHint}>
+                  Ваш код: <strong>{summary.code}</strong>
+                </p>
+              )}
+              {summary.share_text && (
+                <p className={styles.sharePreview}>{summary.share_text}</p>
+              )}
               <div className={styles.linkActions}>
                 {showShareButton && (
                   <button type="button" className={styles.primaryBtn} onClick={handleShare} disabled={busy}>

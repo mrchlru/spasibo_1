@@ -81,6 +81,18 @@
   text-align: center;
 }
 
+.sharePreview {
+  margin: 0.75rem 0 0.85rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(31, 61, 28, 0.04);
+  font-size: 0.86rem;
+  line-height: 1.4;
+  color: #2a4a27;
+  white-space: pre-wrap;
+  text-align: left;
+}
+
 .linkCode {
   display: block;
   margin-bottom: 0.75rem;

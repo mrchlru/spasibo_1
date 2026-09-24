@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import styles from '../AdminPage.module.css';
-import { adminGetAllUsers, getAppSettings, searchUsers, updateAppSettings } from '../../api';
+import {
+  adminGetAllUsers,
+  getAdminReferralStats,
+  getAppSettings,
+  searchUsers,
+  updateAppSettings,
+} from '../../api';
 import { useModalAlert } from '../../contexts/ModalAlertContext';
 import { formatToMsk } from '../../utils/dateFormatter';
 import {
@@ -40,6 +46,9 @@ function ReferralSettings({ onAppSettingsUpdated }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [stats, setStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsFilter, setStatsFilter] = useState('all');
 
   useEffect(() => {
     let cancelled = false;
@@ -76,10 +85,57 @@ function ReferralSettings({ onAppSettingsUpdated }) {
     };
   }, [showAlert]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setStatsLoading(true);
+      try {
+        const response = await getAdminReferralStats();
+        if (!cancelled) {
+          setStats(response?.data || null);
+        }
+      } catch {
+        if (!cancelled) {
+          showAlert('Не удалось загрузить статистику рефералок.', 'error');
+        }
+      } finally {
+        if (!cancelled) {
+          setStatsLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showAlert]);
+
   const selectedIds = useMemo(
     () => new Set(campaign.promo_allowed_user_ids),
     [campaign.promo_allowed_user_ids],
   );
+
+  const filteredAttributions = useMemo(() => {
+    const rows = stats?.attributions || [];
+    if (statsFilter === 'all') {
+      return rows;
+    }
+    if (statsFilter === 'rewarded') {
+      return rows.filter((row) => row.status === 'rewarded');
+    }
+    if (statsFilter === 'pending') {
+      return rows.filter((row) => row.status === 'pending');
+    }
+    if (statsFilter === 'in_progress') {
+      return rows.filter((row) => row.status === 'in_progress');
+    }
+    if (statsFilter === 'new') {
+      return rows.filter((row) => row.kind === 'new');
+    }
+    if (statsFilter === 'reactivation') {
+      return rows.filter((row) => row.kind === 'reactivation');
+    }
+    return rows;
+  }, [stats, statsFilter]);
 
   function updateField(key, value) {
     setCampaign((prev) => normalizeReferral({ ...prev, [key]: value }));
@@ -159,6 +215,18 @@ function ReferralSettings({ onAppSettingsUpdated }) {
       'promo_allowed_user_ids',
       campaign.promo_allowed_user_ids.filter((id) => id !== userId),
     );
+  }
+
+  async function refreshStats() {
+    setStatsLoading(true);
+    try {
+      const response = await getAdminReferralStats();
+      setStats(response?.data || null);
+    } catch {
+      showAlert('Не удалось обновить статистику рефералок.', 'error');
+    } finally {
+      setStatsLoading(false);
+    }
   }
 
   const scheduleActive = campaign.enabled && isReferralWithinSchedule(campaign);
@@ -356,6 +424,142 @@ function ReferralSettings({ onAppSettingsUpdated }) {
           {loading ? 'Сохранение...' : 'Сохранить настройки'}
         </button>
       </div>
+
+      <h3 style={{ margin: '2rem 0 0.5rem' }}>Статистика рефералок</h3>
+      <p style={{ marginTop: 0, color: '#456843', fontSize: '0.92rem' }}>
+        Кто по какой ссылке/коду пришёл, статусы атрибуций и начисленные бонусы.
+      </p>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+        <button type="button" className={styles.buttonGrey} disabled={statsLoading} onClick={refreshStats}>
+          {statsLoading ? 'Загрузка...' : 'Обновить'}
+        </button>
+        <select
+          className={styles.input}
+          value={statsFilter}
+          onChange={(e) => setStatsFilter(e.target.value)}
+          style={{ maxWidth: 220 }}
+        >
+          <option value="all">Все атрибуции</option>
+          <option value="rewarded">Начислено</option>
+          <option value="pending">Ожидают одобрения</option>
+          <option value="in_progress">В процессе</option>
+          <option value="new">Новые</option>
+          <option value="reactivation">Возвращение</option>
+        </select>
+      </div>
+
+      {stats && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+            gap: '0.65rem',
+            marginBottom: '1rem',
+          }}
+        >
+          {[
+            ['Всего', stats.total_attributions],
+            ['Начислено', stats.rewarded_count],
+            ['Ожидают', stats.pending_count],
+            ['В процессе', stats.in_progress_count],
+            ['Новые', stats.new_count],
+            ['Возврат', stats.reactivation_count],
+            ['Бонус пригласившим', stats.total_inviter_bonuses],
+            ['Бонус приглашённым', stats.total_invitee_bonuses],
+            ['Без атрибуции', stats.orphan_count],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              style={{
+                padding: '0.65rem 0.75rem',
+                borderRadius: 12,
+                background: 'rgba(0,0,0,0.03)',
+              }}
+            >
+              <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1f3d1c' }}>{value}</div>
+              <div style={{ fontSize: '0.78rem', color: '#456843' }}>{label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {statsLoading && !stats && <p style={{ color: '#456843' }}>Загрузка статистики...</p>}
+
+      {filteredAttributions.length > 0 && (
+        <div style={{ overflowX: 'auto', marginBottom: '1.25rem' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
+                <th style={{ padding: '6px 8px' }}>Когда</th>
+                <th style={{ padding: '6px 8px' }}>Пригласил</th>
+                <th style={{ padding: '6px 8px' }}>Код</th>
+                <th style={{ padding: '6px 8px' }}>Пришёл</th>
+                <th style={{ padding: '6px 8px' }}>Тип</th>
+                <th style={{ padding: '6px 8px' }}>Статус</th>
+                <th style={{ padding: '6px 8px' }}>Бонусы</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAttributions.map((row) => (
+                <tr key={row.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                  <td style={{ padding: '6px 8px', whiteSpace: 'nowrap' }}>
+                    {row.attributed_at ? formatToMsk(row.attributed_at) : '—'}
+                  </td>
+                  <td style={{ padding: '6px 8px' }}>
+                    {row.inviter_name}
+                    <div style={{ color: '#678a64', fontSize: '0.78rem' }}>ID {row.inviter_id}</div>
+                  </td>
+                  <td style={{ padding: '6px 8px' }}>
+                    <code>{row.referral_code_used || row.inviter_code || row.referred_by_code || '—'}</code>
+                  </td>
+                  <td style={{ padding: '6px 8px' }}>
+                    {row.invitee_name}
+                    <div style={{ color: '#678a64', fontSize: '0.78rem' }}>
+                      ID {row.invitee_id} · {row.invitee_status}
+                    </div>
+                  </td>
+                  <td style={{ padding: '6px 8px' }}>{row.kind_label}</td>
+                  <td style={{ padding: '6px 8px' }}>{row.status_label}</td>
+                  <td style={{ padding: '6px 8px' }}>
+                    {row.inviter_bonus}/{row.invitee_bonus}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!statsLoading && stats && filteredAttributions.length === 0 && (
+        <p style={{ color: '#456843' }}>Атрибуций по выбранному фильтру нет.</p>
+      )}
+
+      {stats?.orphans?.length > 0 && (
+        <>
+          <h4 style={{ margin: '0.5rem 0' }}>Код есть, атрибуции нет</h4>
+          <p style={{ marginTop: 0, color: '#456843', fontSize: '0.88rem' }}>
+            Пользователи сохранили реферальный код, но запись атрибуции ещё не создана
+            (или не создалась). После одобрения система попробует начислить снова.
+          </p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {stats.orphans.map((row) => (
+              <li
+                key={row.user_id}
+                style={{
+                  padding: '8px 0',
+                  borderBottom: '1px solid rgba(0,0,0,0.06)',
+                  fontSize: '0.9rem',
+                }}
+              >
+                <strong>{row.user_name}</strong> (ID {row.user_id}, {row.user_status})
+                {' — код '}
+                <code>{row.referred_by_code}</code>
+                {row.registration_date ? ` · ${formatToMsk(row.registration_date)}` : ''}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

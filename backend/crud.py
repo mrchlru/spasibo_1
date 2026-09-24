@@ -1348,7 +1348,7 @@ async def update_user_status(db: AsyncSession, user_id: int, status: str):
     try:
         import referral_service
 
-        await referral_service.reward_new_user_on_approval(db, user)
+        await referral_service.ensure_reward_after_approval(db, user)
         await db.commit()
         await db.refresh(user)
     except Exception as e:

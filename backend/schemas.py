@@ -608,6 +608,7 @@ class ReferralSummaryResponse(BaseModel):
 
     code: str
     share_path: str
+    share_text: str = ""
     campaign_active: bool
     campaign: ReferralCampaignPayload
     invites: List[ReferralInviteItem] = Field(default_factory=list)
@@ -615,6 +616,56 @@ class ReferralSummaryResponse(BaseModel):
     earned_spasibki: int = 0
     registered_count: int = 0
     invitees_count: int = 0
+
+
+class ReferralAdminAttributionItem(BaseModel):
+    """Одна атрибуция для админ-статистики рефералок."""
+
+    id: int
+    campaign_key: str
+    inviter_id: int
+    inviter_name: str
+    inviter_code: Optional[str] = None
+    invitee_id: int
+    invitee_name: str
+    invitee_status: str
+    referred_by_code: Optional[str] = None
+    referral_code_used: Optional[str] = None
+    kind: str
+    kind_label: str
+    status: str
+    status_label: str
+    attributed_at: Optional[datetime] = None
+    rewarded_at: Optional[datetime] = None
+    inviter_bonus: int = 0
+    invitee_bonus: int = 0
+    send_days_count: int = 0
+
+
+class ReferralAdminOrphanItem(BaseModel):
+    """Пользователь с кодом приглашения, но без атрибуции."""
+
+    user_id: int
+    user_name: str
+    user_status: str
+    referred_by_code: str
+    registration_date: Optional[datetime] = None
+
+
+class ReferralAdminStatsResponse(BaseModel):
+    """Полная статистика реферальной системы для админки."""
+
+    total_attributions: int = 0
+    rewarded_count: int = 0
+    pending_count: int = 0
+    in_progress_count: int = 0
+    new_count: int = 0
+    reactivation_count: int = 0
+    total_inviter_bonuses: int = 0
+    total_invitee_bonuses: int = 0
+    orphan_count: int = 0
+    attributions: List[ReferralAdminAttributionItem] = Field(default_factory=list)
+    orphans: List[ReferralAdminOrphanItem] = Field(default_factory=list)
 
 
 class ReferralClaimRequest(BaseModel):
