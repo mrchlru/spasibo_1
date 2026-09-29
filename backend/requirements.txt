@@ -1,6 +1,7 @@
 fastapi
 uvicorn
-sqlalchemy
+sqlalchemy[asyncio]
+greenlet
 asyncpg
 python-dotenv
 gunicorn
