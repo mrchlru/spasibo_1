@@ -7,7 +7,7 @@ import {
   markReferralPromoDone,
 } from '../api';
 import {
-  canShowReferralEntry,
+  canShowReferralStories,
   isReferralPromoRestricted,
   normalizeReferral,
 } from '../pwa/referralCampaign.js';
@@ -150,7 +150,7 @@ function ReferralStories({
     if (!welcomePassed) {
       return false;
     }
-    if (!canShowReferralEntry(campaign, {
+    if (!canShowReferralStories(campaign, {
       isAdmin: Boolean(user.is_admin),
       userId: user.id,
     })) {

@@ -13,11 +13,8 @@ import { canShowReferralEntry } from '../pwa/referralCampaign.js';
 function ProfilePage({ user, telegramPhotoUrl, onNavigate, onPurchaseSuccess, referral = null }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const showReferralBanner = useMemo(
-    () => canShowReferralEntry(referral, {
-      isAdmin: Boolean(user?.is_admin),
-      userId: user?.id,
-    }),
-    [referral, user?.id, user?.is_admin],
+    () => canShowReferralEntry(referral),
+    [referral],
   );
 
   useEffect(() => {

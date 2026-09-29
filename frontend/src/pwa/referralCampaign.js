@@ -140,13 +140,26 @@ export function isReferralPromoAudienceAllowed(campaign, options = {}) {
 }
 
 /**
- * Показывать ли вход в рефералку (плашка / история).
+ * Плашка в профиле: всем, пока акция в расписании.
+ *
+ * Аудитория (`promo_admins_only` / список) на плашку не влияет —
+ * она только для тестовых stories.
+ *
+ * @param {unknown} campaign
+ * @returns {boolean}
+ */
+export function canShowReferralEntry(campaign) {
+  return isReferralWithinSchedule(campaign);
+}
+
+/**
+ * Показывать ли входные stories рефералки (с учётом тестовой аудитории).
  *
  * @param {unknown} campaign
  * @param {{ isAdmin?: boolean, userId?: number | null }} [options]
  * @returns {boolean}
  */
-export function canShowReferralEntry(campaign, options = {}) {
+export function canShowReferralStories(campaign, options = {}) {
   if (!isReferralWithinSchedule(campaign)) {
     return false;
   }

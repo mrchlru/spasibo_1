@@ -189,19 +189,35 @@ function App() {
     };
   }, []);
 
+  const applyAppSettingsPayload = useCallback((data) => {
+    if (!data || typeof data !== 'object') {
+      return;
+    }
+    persistAppSettingsFromApi(data);
+    if (data.season_theme) {
+      setSeasonTheme(data.season_theme);
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'theme_assets')) {
+      setThemeAssets(data.theme_assets ?? null);
+      void warmShellAssetsForTheme(data.theme_assets ?? null);
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'android_release')) {
+      setAndroidRelease(normalizeAndroidRelease(data.android_release));
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'install_promo')) {
+      setInstallPromo(normalizeInstallPromo(data.install_promo));
+    }
+    if (Object.prototype.hasOwnProperty.call(data, 'referral')) {
+      setReferral(normalizeReferral(data.referral));
+    }
+    applyFrontendBuildUpdate(data.frontend_build_id);
+  }, []);
+
   useEffect(() => {
     const fetchAppTheme = async () => {
       try {
         const response = await getAppSettings();
-        persistAppSettingsFromApi(response?.data);
-        if (response?.data?.season_theme) {
-          setSeasonTheme(response.data.season_theme);
-        }
-        setThemeAssets(response?.data?.theme_assets ?? null);
-        setAndroidRelease(normalizeAndroidRelease(response?.data?.android_release));
-        setInstallPromo(normalizeInstallPromo(response?.data?.install_promo));
-        setReferral(normalizeReferral(response?.data?.referral));
-        applyFrontendBuildUpdate(response?.data?.frontend_build_id);
+        applyAppSettingsPayload(response?.data);
         void warmShellAssetsForTheme(response?.data?.theme_assets ?? null);
       } catch (error) {
         console.warn('Не удалось загрузить настройки оформления, используем летнюю тему.', error);
@@ -209,37 +225,19 @@ function App() {
     };
 
     fetchAppTheme();
-  }, []);
+  }, [applyAppSettingsPayload]);
 
   useEffect(() => {
     injectThemeAssetStyles(themeAssets);
   }, [themeAssets]);
 
   const handleAppearanceUpdated = useCallback((data) => {
-    if (data?.season_theme) {
-      setSeasonTheme(data.season_theme);
-    }
-    if (data && Object.prototype.hasOwnProperty.call(data, 'theme_assets')) {
-      setThemeAssets(data.theme_assets ?? null);
-      void warmShellAssetsForTheme(data.theme_assets ?? null);
-    }
-    if (data) {
-      persistAppSettingsFromApi(data);
-    }
-  }, []);
+    applyAppSettingsPayload(data);
+  }, [applyAppSettingsPayload]);
 
   const handleAppSettingsUpdated = useCallback((data) => {
-    handleAppearanceUpdated(data);
-    if (data && Object.prototype.hasOwnProperty.call(data, 'android_release')) {
-      setAndroidRelease(normalizeAndroidRelease(data.android_release));
-    }
-    if (data && Object.prototype.hasOwnProperty.call(data, 'install_promo')) {
-      setInstallPromo(normalizeInstallPromo(data.install_promo));
-    }
-    if (data && Object.prototype.hasOwnProperty.call(data, 'referral')) {
-      setReferral(normalizeReferral(data.referral));
-    }
-  }, [handleAppearanceUpdated]);
+    applyAppSettingsPayload(data);
+  }, [applyAppSettingsPayload]);
 
   useEffect(() => {
     captureReferralCodeFromLocation();
@@ -664,7 +662,7 @@ function App() {
   }, [user?.id, user?.status, applyDeepLink]);
 
   useEffect(() => {
-    if (!isAndroidShell || !user || user.status !== 'approved') {
+    if (!user || user.status !== 'approved') {
       return undefined;
     }
     const onVisibility = () => {
@@ -673,13 +671,13 @@ function App() {
       }
       getAppSettings()
         .then((response) => {
-          applyFrontendBuildUpdate(response?.data?.frontend_build_id);
+          applyAppSettingsPayload(response?.data);
         })
         .catch(() => undefined);
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [user?.id, user?.status]);
+  }, [user?.id, user?.status, applyAppSettingsPayload]);
 
   const isAndroidBootLoading =
     loading ||
