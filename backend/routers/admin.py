@@ -1453,3 +1453,34 @@ async def admin_referral_stats(
     import referral_service
 
     return await referral_service.get_admin_referral_stats(db)
+
+
+@router.post(
+    "/referral/repair-reactivation",
+    response_model=schemas.ReferralAdminAttributionItem,
+)
+async def admin_repair_reactivation_route(
+    body: schemas.ReferralRepairReactivationRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Создаёт/добивает атрибуцию возвращения и начисляет бонус при выполнении условий."""
+    import referral_service
+
+    try:
+        item = await referral_service.admin_repair_reactivation(
+            db,
+            inviter_id=body.inviter_id,
+            invitee_id=body.invitee_id,
+            attributed_on=body.attributed_on,
+        )
+        await db.commit()
+        return item
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception:
+        await db.rollback()
+        raise

@@ -358,18 +358,30 @@ async def claim_referral_for_existing_user(
         )
 
     invitee.referred_by_code = code
+    await db.flush()
+
     if await is_user_inactive_for_referral(db, invitee, payload):
-        row = models.ReferralAttribution(
+        row = await _create_reactivation_attribution(
+            db,
             campaign_key=campaign_key,
-            inviter_id=inviter.id,
-            invitee_id=invitee.id,
-            kind=KIND_REACTIVATION,
-            status=STATUS_IN_PROGRESS,
+            inviter=inviter,
+            invitee=invitee,
+            code=code,
             attributed_at=_utcnow_naive(),
-            send_days=[],
-            referral_code_used=code,
         )
-        db.add(row)
+        await _backfill_reactivation_send_days(db, row, payload)
+        if row.status == STATUS_REWARDED:
+            await db.commit()
+            await db.refresh(row)
+            return schemas.ReferralClaimResponse(
+                ok=True,
+                message=(
+                    f"Готово! Условия уже выполнены — вам начислено "
+                    f"{payload.bonus_reactivate_invitee} спасибок, "
+                    f"пригласившему — {payload.bonus_reactivate_inviter}."
+                ),
+                attribution=_attribution_to_item(row, invitee),
+            )
         await db.commit()
         await db.refresh(row)
         return schemas.ReferralClaimResponse(
@@ -379,6 +391,36 @@ async def claim_referral_for_existing_user(
                 f"дня за {payload.reactivation_window_days} дней — и вы оба получите бонус."
             ),
             attribution=_attribution_to_item(row, invitee),
+        )
+
+    revived = await _try_claim_reactivated_after_gap(
+        db,
+        invitee=invitee,
+        inviter=inviter,
+        payload=payload,
+        campaign_key=campaign_key,
+        code=code,
+    )
+    if revived is not None:
+        await db.commit()
+        await db.refresh(revived)
+        if revived.status == STATUS_REWARDED:
+            return schemas.ReferralClaimResponse(
+                ok=True,
+                message=(
+                    f"Готово! Условия возвращения выполнены — вам начислено "
+                    f"{payload.bonus_reactivate_invitee} спасибок."
+                ),
+                attribution=_attribution_to_item(revived, invitee),
+            )
+        return schemas.ReferralClaimResponse(
+            ok=True,
+            message=(
+                f"Привязка сохранена. Отправляйте спасибки минимум "
+                f"{payload.reactivation_min_days} дня за "
+                f"{payload.reactivation_window_days} дней."
+            ),
+            attribution=_attribution_to_item(revived, invitee),
         )
 
     if await _can_late_bind_as_new(invitee, payload):
@@ -406,6 +448,7 @@ async def claim_referral_for_existing_user(
             attribution=_attribution_to_item(row, invitee),
         )
 
+    await db.commit()
     return schemas.ReferralClaimResponse(
         ok=False,
         message=(
@@ -427,6 +470,255 @@ async def _can_late_bind_as_new(
     if started is None or reg is None:
         return False
     return reg >= started
+
+
+async def _create_reactivation_attribution(
+    db: AsyncSession,
+    *,
+    campaign_key: str,
+    inviter: models.User,
+    invitee: models.User,
+    code: str,
+    attributed_at: datetime,
+) -> models.ReferralAttribution:
+    """Создаёт атрибуцию реактивации в статусе in_progress."""
+    row = models.ReferralAttribution(
+        campaign_key=campaign_key,
+        inviter_id=inviter.id,
+        invitee_id=invitee.id,
+        kind=KIND_REACTIVATION,
+        status=STATUS_IN_PROGRESS,
+        attributed_at=attributed_at.replace(tzinfo=None)
+        if attributed_at.tzinfo
+        else attributed_at,
+        send_days=[],
+        referral_code_used=code,
+    )
+    db.add(row)
+    await db.flush()
+    return row
+
+
+async def _invitee_send_days_since(
+    db: AsyncSession,
+    invitee_id: int,
+    since: datetime,
+) -> list[str]:
+    """Календарные дни МСК с отправками invitee начиная с since."""
+    since_naive = since.replace(tzinfo=None) if since.tzinfo else since
+    result = await db.execute(
+        select(models.Transaction.timestamp).where(
+            models.Transaction.sender_id == invitee_id,
+            models.Transaction.timestamp >= since_naive,
+        )
+    )
+    days: set[str] = set()
+    for ts in result.scalars().all():
+        aware = _as_aware_utc(ts)
+        if aware is None:
+            continue
+        days.add(aware.astimezone(_MSK).date().isoformat())
+    return sorted(days)
+
+
+async def _last_send_before(
+    db: AsyncSession,
+    invitee_id: int,
+    before_day: date,
+) -> date | None:
+    """Последний день отправки до before_day (исключая его)."""
+    before_dt = datetime(
+        before_day.year,
+        before_day.month,
+        before_day.day,
+        tzinfo=_MSK,
+    ).astimezone(timezone.utc).replace(tzinfo=None)
+    result = await db.execute(
+        select(func.max(models.Transaction.timestamp)).where(
+            models.Transaction.sender_id == invitee_id,
+            models.Transaction.timestamp < before_dt,
+        )
+    )
+    ts = result.scalar_one_or_none()
+    aware = _as_aware_utc(ts)
+    if aware is None:
+        return None
+    return aware.astimezone(_MSK).date()
+
+
+async def _backfill_reactivation_send_days(
+    db: AsyncSession,
+    row: models.ReferralAttribution,
+    payload: schemas.ReferralCampaignPayload,
+) -> None:
+    """Подтягивает дни отправок с attributed_at и при выполнении условий начисляет."""
+    if row.status == STATUS_REWARDED or row.kind != KIND_REACTIVATION:
+        return
+    start = row.attributed_at or _utcnow_naive()
+    days = await _invitee_send_days_since(db, row.invitee_id, start)
+    existing = list(row.send_days or [])
+    merged = sorted(set(str(d) for d in existing) | set(days))
+    row.send_days = merged
+    flag_modified(row, "send_days")
+    min_days = max(1, int(payload.reactivation_min_days or 3))
+    window_days = max(min_days, int(payload.reactivation_window_days or 7))
+    if _has_min_days_in_window(merged, min_days, window_days):
+        await _pay_rewards(db, row, payload, force_new=False)
+
+
+async def _try_claim_reactivated_after_gap(
+    db: AsyncSession,
+    *,
+    invitee: models.User,
+    inviter: models.User,
+    payload: schemas.ReferralCampaignPayload,
+    campaign_key: str,
+    code: str,
+) -> models.ReferralAttribution | None:
+    """Поздний claim: уже снова активны, но до возвращения был длинный простой."""
+    started = _parse_iso_datetime(payload.started_at) if payload.started_at else None
+    if started is None:
+        return None
+    send_days = await _invitee_send_days_since(db, invitee.id, started)
+    if not send_days:
+        return None
+    first_day = date.fromisoformat(send_days[0])
+    last_before = await _last_send_before(db, invitee.id, first_day)
+    months = max(1, int(payload.inactive_months or 3))
+    gap_days = 30 * months
+    if last_before is not None and (first_day - last_before).days < gap_days:
+        return None
+    attributed_at = datetime(
+        first_day.year,
+        first_day.month,
+        first_day.day,
+        tzinfo=_MSK,
+    ).astimezone(timezone.utc).replace(tzinfo=None)
+    row = await _create_reactivation_attribution(
+        db,
+        campaign_key=campaign_key,
+        inviter=inviter,
+        invitee=invitee,
+        code=code,
+        attributed_at=attributed_at,
+    )
+    await _backfill_reactivation_send_days(db, row, payload)
+    logger.info(
+        "Реферал reactivation late-claim invitee=%s inviter=%s days=%s status=%s",
+        invitee.id,
+        inviter.id,
+        row.send_days,
+        row.status,
+    )
+    return row
+
+
+async def admin_repair_reactivation(
+    db: AsyncSession,
+    *,
+    inviter_id: int,
+    invitee_id: int,
+    attributed_on: date | None = None,
+) -> schemas.ReferralAdminAttributionItem:
+    """Админский ремонт: создать/добить реактивацию и начислить при выполнении условий."""
+    inviter = await db.get(models.User, inviter_id)
+    invitee = await db.get(models.User, invitee_id)
+    if inviter is None or invitee is None:
+        raise ValueError("Пользователь не найден")
+    payload = await _load_campaign(db)
+    campaign_key = campaign_key_from_payload(payload)
+    if not campaign_key:
+        raise ValueError("Реферальная акция не запущена")
+    code = (inviter.referral_code or "").strip().upper()
+    if not code:
+        code = await ensure_user_referral_code(db, inviter)
+
+    existing = await _existing_attribution(db, invitee.id, campaign_key)
+    if existing is not None and existing.status == STATUS_REWARDED:
+        days = list(existing.send_days or [])
+        return schemas.ReferralAdminAttributionItem(
+            id=existing.id,
+            campaign_key=existing.campaign_key,
+            inviter_id=existing.inviter_id,
+            inviter_name=_user_display_name(inviter, inviter.id),
+            inviter_code=inviter.referral_code,
+            invitee_id=existing.invitee_id,
+            invitee_name=_user_display_name(invitee, invitee.id),
+            invitee_status=invitee.status or "",
+            referred_by_code=invitee.referred_by_code,
+            referral_code_used=existing.referral_code_used,
+            kind=existing.kind,
+            kind_label=KIND_LABELS_RU.get(existing.kind, existing.kind),
+            status=existing.status,
+            status_label=STATUS_LABELS_RU.get(existing.status, existing.status),
+            attributed_at=existing.attributed_at,
+            rewarded_at=existing.rewarded_at,
+            inviter_bonus=existing.inviter_bonus or 0,
+            invitee_bonus=existing.invitee_bonus or 0,
+            send_days_count=len(set(str(d) for d in days)),
+        )
+
+    if attributed_on is None:
+        started = _parse_iso_datetime(payload.started_at)
+        since = started.replace(tzinfo=None) if started and started.tzinfo else started
+        if since is None:
+            since = _utcnow_naive() - timedelta(days=30)
+        send_days = await _invitee_send_days_since(db, invitee.id, since)
+        attributed_on = (
+            date.fromisoformat(send_days[0]) if send_days else moscow_today()
+        )
+
+    attributed_at = datetime(
+        attributed_on.year,
+        attributed_on.month,
+        attributed_on.day,
+        tzinfo=_MSK,
+    ).astimezone(timezone.utc).replace(tzinfo=None)
+
+    invitee.referred_by_code = code
+    if existing is None:
+        row = await _create_reactivation_attribution(
+            db,
+            campaign_key=campaign_key,
+            inviter=inviter,
+            invitee=invitee,
+            code=code,
+            attributed_at=attributed_at,
+        )
+    else:
+        if existing.kind != KIND_REACTIVATION:
+            raise ValueError("Уже есть атрибуция другого типа")
+        row = existing
+        row.status = STATUS_IN_PROGRESS
+        row.attributed_at = attributed_at
+        row.inviter_id = inviter.id
+        row.referral_code_used = code
+
+    await _backfill_reactivation_send_days(db, row, payload)
+    await db.flush()
+
+    days = list(row.send_days or [])
+    return schemas.ReferralAdminAttributionItem(
+        id=row.id,
+        campaign_key=row.campaign_key,
+        inviter_id=row.inviter_id,
+        inviter_name=_user_display_name(inviter, inviter.id),
+        inviter_code=inviter.referral_code,
+        invitee_id=row.invitee_id,
+        invitee_name=_user_display_name(invitee, invitee.id),
+        invitee_status=invitee.status or "",
+        referred_by_code=invitee.referred_by_code,
+        referral_code_used=row.referral_code_used,
+        kind=row.kind,
+        kind_label=KIND_LABELS_RU.get(row.kind, row.kind),
+        status=row.status,
+        status_label=STATUS_LABELS_RU.get(row.status, row.status),
+        attributed_at=row.attributed_at,
+        rewarded_at=row.rewarded_at,
+        inviter_bonus=row.inviter_bonus or 0,
+        invitee_bonus=row.invitee_bonus or 0,
+        send_days_count=len(set(str(d) for d in days)),
+    )
 
 
 async def ensure_reward_after_approval(
@@ -497,9 +789,25 @@ async def track_send_for_reactivation(
         .limit(1)
     )
     row = result.scalars().first()
-    if row is None:
-        return
     payload = await _load_campaign(db)
+    if row is None:
+        code = (sender.referred_by_code or "").strip().upper()
+        campaign_key = campaign_key_from_payload(payload)
+        if code and campaign_key and is_referral_campaign_accepting_new(payload):
+            inviter = await get_user_by_referral_code(db, code)
+            if inviter is not None and inviter.id != sender.id:
+                existing = await _existing_attribution(db, sender.id, campaign_key)
+                if existing is None:
+                    row = await _try_claim_reactivated_after_gap(
+                        db,
+                        invitee=sender,
+                        inviter=inviter,
+                        payload=payload,
+                        campaign_key=campaign_key,
+                        code=code,
+                    )
+        if row is None:
+            return
     min_days = max(1, int(payload.reactivation_min_days or 3))
     window_days = max(min_days, int(payload.reactivation_window_days or 7))
     today = moscow_today().isoformat()

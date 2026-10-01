@@ -682,6 +682,14 @@ class ReferralClaimResponse(BaseModel):
     attribution: Optional[ReferralInviteItem] = None
 
 
+class ReferralRepairReactivationRequest(BaseModel):
+    """Админский ремонт реактивации по паре inviter/invitee."""
+
+    inviter_id: int
+    invitee_id: int
+    attributed_on: Optional[date] = None
+
+
 class ReferralPromoUserStateResponse(BaseModel):
     """Состояние показа рекламы рефералки."""
 
