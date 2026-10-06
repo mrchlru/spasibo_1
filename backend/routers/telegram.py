@@ -1,10 +1,11 @@
+import hmac
 import logging
 import traceback
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import avatar_service
@@ -89,16 +90,18 @@ async def safe_send_message(
 
 @router.get("/telegram/test")
 async def telegram_test() -> dict[str, str]:
-    """Проверка маршрутизации без секретов. Не подтверждает setWebhook — см. deploy/set-telegram-webhook.sh info."""
-    return {
-        "status": "ok",
-        "webhook_post_path": "/telegram/webhook",
-        "hint_ru": (
-            "Если при нажатии inline-кнопки в логах нет строки access «POST /telegram/webhook», "
-            "Telegram шлёт обновления не на этот хост: выполните set с APP_PUBLIC_URL вашего Timeweb "
-            "и проверьте getWebhookInfo (url и last_error_message)."
-        ),
-    }
+    """Минимальная проверка, что роут жив (без подсказок по инфраструктуре)."""
+    return {"status": "ok"}
+
+
+async def _verify_telegram_webhook_secret(request: Request) -> None:
+    """Проверяет X-Telegram-Bot-Api-Secret-Token, если TELEGRAM_WEBHOOK_SECRET задан."""
+    expected = (settings.TELEGRAM_WEBHOOK_SECRET or "").strip()
+    if not expected:
+        return
+    got = (request.headers.get("X-Telegram-Bot-Api-Secret-Token") or "").strip()
+    if not hmac.compare_digest(got, expected):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
 async def _local_avatar_response(user_id: int, db: AsyncSession) -> Response | None:
@@ -264,6 +267,7 @@ async def telegram_webhook(request: Request) -> dict[str, bool]:
     зависнет до ``answerCallbackQuery``: кнопки в чате «крутятся», пока не таймаут.
     Сначала читаем JSON и отвечаем на callback, затем открываем сессию.
     """
+    await _verify_telegram_webhook_secret(request)
     client = getattr(request.client, "host", None)
     try:
         data = await request.json()

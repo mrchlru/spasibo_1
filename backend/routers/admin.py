@@ -149,9 +149,10 @@ async def reset_daily_transfer_limits_route(db: AsyncSession = Depends(get_db)):
     await crud.reset_daily_transfer_limits(db)
     return {"detail": "Лимиты на отправку спасибок успешно сброшены у всех пользователей"}
 
-@router.get("/users", response_model=List[schemas.UserResponse])
+@router.get("/users", response_model=List[schemas.AdminUserResponse])
 async def get_all_users_for_admin_route(db: AsyncSession = Depends(get_db)):
-    return await crud.get_all_users_for_admin(db)
+    users = await crud.get_all_users_for_admin(db)
+    return [schemas.admin_user_response(u) for u in users]
 
 
 @router.get("/users/export")

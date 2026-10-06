@@ -11,7 +11,7 @@ router = APIRouter(prefix="/roulette", tags=["roulette"])
 async def assemble_tickets_route(user: models.User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     try:
         updated_user = await crud.assemble_tickets(db, user.id)
-        return updated_user
+        return schemas.user_response_for_public_api(updated_user, fair_play_full=True)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -27,8 +27,10 @@ async def spin_roulette_route(user: models.User = Depends(get_current_user), db:
 async def get_roulette_history_route(
     offset: int = 0,
     limit: int = 20,
+    user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    del user  # auth gate
     safe_limit = min(max(limit, 1), 50)
     safe_offset = max(offset, 0)
     wins, has_more = await crud.get_roulette_history(
@@ -41,7 +43,7 @@ async def get_roulette_history_route(
             id=win.id,
             amount=win.amount,
             timestamp=win.timestamp,
-            user=schemas.user_response_for_public_api(win.user),
+            user=schemas.public_user_brief(win.user),
         )
         for win in wins
     ]

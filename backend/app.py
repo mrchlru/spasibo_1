@@ -40,6 +40,7 @@ from routers import (
 )
 from dual_database_sync import start_dual_db_sync_background
 from internal_scheduler import start_internal_scheduler_background, stop_internal_scheduler
+from security_hardening import SecurityHeadersMiddleware
 from startup_background import run_background_startup
 
 logger = logging.getLogger(__name__)
@@ -159,7 +160,12 @@ class StartupGateMiddleware(BaseHTTPMiddleware):
             )
         return await call_next(request)
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    docs_url="/docs" if settings.ENABLE_API_DOCS else None,
+    redoc_url="/redoc" if settings.ENABLE_API_DOCS else None,
+    openapi_url="/openapi.json" if settings.ENABLE_API_DOCS else None,
+)
 
 class CacheControlMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -189,6 +195,9 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(CacheControlMiddleware)
+
+# Security headers (HSTS / nosniff / frame) — после Cache-Control, до CORS.
+app.add_middleware(SecurityHeadersMiddleware)
 
 # GZip-сжатие ответов > 500 байт ощутимо ускоряет загрузку приложения и тяжёлых
 # JSON-эндпоинтов (лента, рейтинг, список товаров) по медленным каналам.

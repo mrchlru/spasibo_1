@@ -99,6 +99,10 @@ class Settings(BaseSettings):
     STATIC_ROOT: str = ""
     # Дополнительные origins для CORS (через запятую), кроме встроенного списка в app.py
     CORS_ORIGINS: str = ""
+    # Публичная OpenAPI/Swagger/ReDoc. На стенде и проде держите false.
+    ENABLE_API_DOCS: bool = False
+    # Секрет webhook Telegram (setWebhook secret_token). Пусто — проверка отключена (legacy).
+    TELEGRAM_WEBHOOK_SECRET: str = ""
 
     # Web Push (VAPID). Пустой приватный ключ — push отключён.
     VAPID_PUBLIC_KEY: str = ""

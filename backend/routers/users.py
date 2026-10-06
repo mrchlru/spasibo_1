@@ -1,6 +1,6 @@
 from typing import Optional
 import logging
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status, Header, Response
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status, Header, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 import crud, schemas, models
 from database import get_db
@@ -18,6 +18,7 @@ router = APIRouter(
 @router.post("/auth/login", response_model=schemas.UserResponse)
 async def login_user(
     request: schemas.LoginRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
     telegram_id: Optional[str] = Header(None, alias="X-Telegram-Id"),
     telegram_photo_url: Optional[str] = Header(None, alias="X-Telegram-Photo-Url"),
@@ -27,12 +28,24 @@ async def login_user(
     Если передан заголовок X-Telegram-Id, привязывает telegram_id к аккаунту
     (для пользователей, зарегистрировавшихся через веб и входящих из Telegram).
     """
+    from security_hardening import client_ip_from_request, login_rate_limiter
+
+    ip = client_ip_from_request(http_request)
+    login_key = (request.login or "").strip().lower()
+    login_rate_limiter.check_or_raise(f"user-login:{ip}")
+    if login_key:
+        login_rate_limiter.check_or_raise(f"user-login-name:{login_key}")
+
     user = await crud.verify_user_credentials(db, request.login, request.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный логин или пароль"
         )
+
+    login_rate_limiter.reset(f"user-login:{ip}")
+    if login_key:
+        login_rate_limiter.reset(f"user-login-name:{login_key}")
     
     # Привязка аккаунта к Telegram (если вход из Telegram WebApp)
     if telegram_id:
@@ -251,14 +264,28 @@ async def request_profile_update_route(
 async def get_user_transactions_route(
     user_id: int,
     days: int = 7,
-    db: AsyncSession = Depends(get_db)
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """
-    Получает транзакции пользователя.
-    Параметры:
-    - days: количество дней для выборки (по умолчанию 7)
-    """
-    return await crud.get_user_transactions(db, user_id=user_id, days=days)
+    """Транзакции пользователя: только свои или для админа."""
+    if user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав для просмотра чужих транзакций",
+        )
+    rows = await crud.get_user_transactions(db, user_id=user_id, days=days)
+    return [
+        schemas.FeedItem(
+            id=row.id,
+            amount=row.amount,
+            message=row.message,
+            timestamp=row.timestamp,
+            sender=schemas.public_user_brief(row.sender),
+            receiver=schemas.public_user_brief(row.receiver),
+        )
+        for row in rows
+        if row.sender is not None and row.receiver is not None
+    ]
 
 @router.post("/me/card", response_model=schemas.UserResponse)
 async def upload_card(

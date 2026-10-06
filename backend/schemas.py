@@ -40,6 +40,18 @@ class UserBase(OrmBase):
     username: Optional[str] = None
     telegram_photo_url: Optional[str] = None
 
+
+class PublicUserBrief(OrmBase):
+    """Публичный профиль для ленты/рейтинга: без PII (email, телефон, telegram_id, login)."""
+
+    id: int
+    first_name: Optional[str] = None
+    last_name: str
+    position: str
+    department: str
+    username: Optional[str] = None
+    telegram_photo_url: Optional[str] = None
+
 class PurchaseForUserResponse(OrmBase):
     id: int
     timestamp: datetime
@@ -81,7 +93,6 @@ class UserResponse(UserBase):
     has_seen_onboarding: bool
     has_interacted_with_bot: bool
     login: Optional[str] = None
-    password_plain: Optional[str] = None  # Пароль в открытом виде (только для админов)
     browser_auth_enabled: bool = False
     can_publish_feed_posts: bool = False
     registration_date: Optional[datetime] = None
@@ -101,8 +112,25 @@ class UserResponse(UserBase):
         return val.isoformat()
 
 
+class AdminUserResponse(UserResponse):
+    """Профиль для админ-панели: может включать password_plain."""
+
+    password_plain: Optional[str] = None
+
+
+def public_user_brief(user: object) -> PublicUserBrief:
+    """Краткий публичный профиль без PII для ленты и рейтинга."""
+    from avatar_service import resolve_public_avatar_url
+
+    brief = PublicUserBrief.model_validate(user)
+    avatar_url = resolve_public_avatar_url(user)
+    if avatar_url:
+        return brief.model_copy(update={"telegram_photo_url": avatar_url})
+    return brief
+
+
 def user_response_for_public_api(user: object, *, fair_play_full: bool = False) -> UserResponse:
-    """Убирает password_plain из ответов для клиента; у веб-заявки в pending скрывает и login."""
+    """Ответ клиенту без password_plain; у веб-заявки в pending скрывает login."""
     from admin_utils import user_is_primary_admin
     from avatar_service import resolve_public_avatar_url
     import fair_play_service
@@ -115,7 +143,6 @@ def user_response_for_public_api(user: object, *, fair_play_full: bool = False) 
         else {**fair_play_service.build_fair_play_public_hint(user), "effective_daily_limit": 3}
     )
     extra: dict = {
-        "password_plain": None,
         "is_primary_admin": user_is_primary_admin(user),
         "fair_play": FairPlayStatus(**fp_data),
     }
@@ -126,6 +153,13 @@ def user_response_for_public_api(user: object, *, fair_play_full: bool = False) 
     if is_web_pending:
         extra["login"] = None
     return u.model_copy(update=extra)
+
+
+def admin_user_response(user: object) -> AdminUserResponse:
+    """Полный профиль для админ-панели, включая password_plain при наличии."""
+    base = user_response_for_public_api(user)
+    plain = getattr(user, "password_plain", None)
+    return AdminUserResponse(**base.model_dump(), password_plain=plain)
 
 
 def panel_admin_user_response(email: str) -> UserResponse:
@@ -154,7 +188,6 @@ def panel_admin_user_response(email: str) -> UserResponse:
         has_seen_onboarding=True,
         has_interacted_with_bot=False,
         login=None,
-        password_plain=None,
         browser_auth_enabled=False,
         can_publish_feed_posts=True,
         registration_date=None,
@@ -295,11 +328,11 @@ class FeedItem(OrmBase):
     amount: int
     message: Optional[str]
     timestamp: datetime
-    sender: UserBase
-    receiver: UserBase
+    sender: PublicUserBrief
+    receiver: PublicUserBrief
 
 class LeaderboardItem(OrmBase):
-    user: UserResponse
+    user: PublicUserBrief
     total_received: int
 
 class TransferRequest(BaseModel):
@@ -411,7 +444,7 @@ class RouletteWinResponse(OrmBase):
     id: int
     amount: int
     timestamp: datetime
-    user: UserResponse
+    user: PublicUserBrief
 
 class SpinResponse(BaseModel):
     prize_won: int

@@ -50,14 +50,21 @@ case "$cmd" in
     WH_URL="${APP_URL}/telegram/webhook"
     echo "Назначаю webhook: ${WH_URL}"
     DROP="${DROP_PENDING_UPDATES:-}"
+    SECRET="${TELEGRAM_WEBHOOK_SECRET:-}"
     if [ -n "$DROP" ] && [ "$DROP" != "0" ] && [ "$DROP" != "false" ]; then
       echo "(DROP_PENDING_UPDATES: очередь необработанных update будет сброшена)"
-      curl -sS -X POST "${API_ROOT}/setWebhook" \
-        --data-urlencode "url=${WH_URL}" \
-        --data-urlencode "drop_pending_updates=true"
-    else
-      curl -sS -X POST "${API_ROOT}/setWebhook" --data-urlencode "url=${WH_URL}"
     fi
+    if [ -n "$SECRET" ]; then
+      echo "(TELEGRAM_WEBHOOK_SECRET: secret_token будет установлен)"
+    fi
+    set -- -sS -X POST "${API_ROOT}/setWebhook" --data-urlencode "url=${WH_URL}"
+    if [ -n "$DROP" ] && [ "$DROP" != "0" ] && [ "$DROP" != "false" ]; then
+      set -- "$@" --data-urlencode "drop_pending_updates=true"
+    fi
+    if [ -n "$SECRET" ]; then
+      set -- "$@" --data-urlencode "secret_token=${SECRET}"
+    fi
+    curl "$@"
     echo
     ;;
   info)

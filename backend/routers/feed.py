@@ -10,7 +10,7 @@ import feed_post_service
 import feed_service
 import schemas
 from database import get_db
-from dependencies import get_current_user, get_optional_current_user
+from dependencies import get_current_user
 from feed_post_service import user_can_publish_feed_posts
 from models import User
 from routers.media_upload import (
@@ -27,7 +27,7 @@ async def get_unified_feed_route(
     days: int = 90,
     offset: int = 0,
     limit: int = feed_service.FEED_PAGE_DEFAULT,
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Объединённая лента: закреплённые новости и активность порциями."""

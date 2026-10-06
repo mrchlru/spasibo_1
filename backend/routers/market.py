@@ -49,10 +49,19 @@ async def list_items(db: AsyncSession = Depends(get_db)):
 
 @router.post("/market/purchase", response_model=schemas.PurchaseResponse)
 async def purchase_item(
-    request: schemas.PurchaseRequest, db: AsyncSession = Depends(get_db)
+    request: schemas.PurchaseRequest,
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    """Покупка от имени текущего пользователя (user_id в body игнорируется)."""
+    if not user.telegram_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Для покупки нужен привязанный Telegram",
+        )
+    safe_request = request.model_copy(update={"user_id": user.telegram_id})
     try:
-        purchase_result = await crud.create_purchase(db, request)
+        purchase_result = await crud.create_purchase(db, safe_request)
 
         return {
             "message": "Purchase successful",
@@ -67,10 +76,19 @@ async def purchase_item(
 
 @router.post("/market/local-purchase", response_model=schemas.PurchaseResponse)
 async def purchase_local_item(
-    request: schemas.LocalGiftRequest, db: AsyncSession = Depends(get_db)
+    request: schemas.LocalGiftRequest,
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    """Локальный подарок от имени текущего пользователя."""
+    if not user.telegram_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Для покупки нужен привязанный Telegram",
+        )
+    safe_request = request.model_copy(update={"user_id": user.telegram_id})
     try:
-        purchase_result = await crud.create_local_gift(db, request)
+        purchase_result = await crud.create_local_gift(db, safe_request)
         
         return {
             "message": "Local gift request created",
@@ -95,10 +113,20 @@ async def get_statix_bonus_item(db: AsyncSession = Depends(get_db)):
 
 @router.post("/market/statix-bonus/purchase", response_model=schemas.StatixBonusPurchaseResponse)
 async def purchase_statix_bonus(
-    request: schemas.StatixBonusPurchaseRequest, db: AsyncSession = Depends(get_db)
+    request: schemas.StatixBonusPurchaseRequest,
+    user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    """Statix Bonus только для текущего пользователя."""
+    if not user.telegram_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Для покупки нужен привязанный Telegram",
+        )
     try:
-        result = await crud.create_statix_bonus_purchase(db, request.user_id, request.bonus_amount)
+        result = await crud.create_statix_bonus_purchase(
+            db, user.telegram_id, request.bonus_amount
+        )
         return {
             "message": "Statix бонусы успешно приобретены",
             "new_balance": result["new_balance"],

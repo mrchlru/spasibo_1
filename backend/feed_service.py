@@ -9,7 +9,6 @@ import feed_engagement_service
 import feed_post_service
 import models
 import schemas
-from avatar_service import resolve_public_avatar_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
 FEED_PAGE_DEFAULT = 20
@@ -163,14 +162,8 @@ def _transaction_entry(transaction: models.Transaction) -> schemas.UnifiedFeedEn
     if sender is None or receiver is None:
         raise ValueError(f"Транзакция {transaction.id} без участников")
 
-    sender_dto = schemas.UserBase.model_validate(sender)
-    receiver_dto = schemas.UserBase.model_validate(receiver)
-    sender_dto = sender_dto.model_copy(
-        update={"telegram_photo_url": resolve_public_avatar_url(sender)},
-    )
-    receiver_dto = receiver_dto.model_copy(
-        update={"telegram_photo_url": resolve_public_avatar_url(receiver)},
-    )
+    sender_dto = schemas.public_user_brief(sender)
+    receiver_dto = schemas.public_user_brief(receiver)
 
     return schemas.UnifiedFeedEntry(
         kind="transaction",
