@@ -5,51 +5,78 @@ import { FaCoins } from 'react-icons/fa';
 import { getStatixBonusSettings, updateStatixBonusSettings } from '../../api';
 import AdminImageUrlField from '../../components/AdminImageUrlField';
 import { useModalAlert } from '../../contexts/ModalAlertContext';
+import { useConfirmation } from '../../contexts/ConfirmationContext';
 import { clearCache } from '../../storage';
 import styles from '../AdminPage.module.css';
 
-const StatixSettings = () => {
+const DEFAULT_STATIX = {
+  name: 'Бонусы Statix',
+  description: 'Покупка бонусов для платформы Statix',
+  image_url: '',
+  thanks_to_statix_rate: 10,
+  min_bonus_per_step: 100,
+  max_bonus_per_step: 10000,
+  bonus_step: 100,
+  is_active: false,
+};
+
+/**
+ * Настройки товара Statix Bonus в админке, включая включение/отключение витрины.
+ */
+function StatixSettings() {
   const { showAlert } = useModalAlert();
-  const [statixSettings, setStatixSettings] = useState({
-    name: 'Бонусы Statix',
-    description: 'Покупка бонусов для платформы Statix',
-    image_url: '',
-    thanks_to_statix_rate: 10,
-    min_bonus_per_step: 100,
-    max_bonus_per_step: 10000,
-    bonus_step: 100
-  });
+  const { confirm } = useConfirmation();
+  const [statixSettings, setStatixSettings] = useState(DEFAULT_STATIX);
   const [statixLoading, setStatixLoading] = useState(false);
+  const [toggling, setToggling] = useState(false);
 
   useEffect(() => {
-    fetchStatixSettings();
+    void fetchStatixSettings();
   }, []);
 
-  const fetchStatixSettings = async () => {
+  async function fetchStatixSettings() {
     setStatixLoading(true);
     try {
       const response = await getStatixBonusSettings();
-      setStatixSettings(response.data);
+      if (!response.data) {
+        setStatixSettings(DEFAULT_STATIX);
+        return;
+      }
+      setStatixSettings({
+        ...DEFAULT_STATIX,
+        ...response.data,
+        is_active: Boolean(response.data.is_active),
+      });
     } catch (error) {
+      const status = error.response?.status;
+      if (status === 404 || status === 204) {
+        setStatixSettings(DEFAULT_STATIX);
+        return;
+      }
       showAlert('Не удалось загрузить настройки Statix Bonus.', 'error');
     } finally {
       setStatixLoading(false);
     }
-  };
+  }
 
-  const handleStatixSettingsChange = (e) => {
+  function handleStatixSettingsChange(e) {
     const { name, value, type, checked } = e.target;
-    setStatixSettings(prev => ({
+    setStatixSettings((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : (type === 'number' ? parseInt(value) || 0 : value)
+      [name]: type === 'checkbox' ? checked : type === 'number' ? parseInt(value, 10) || 0 : value,
     }));
-  };
+  }
 
-  const handleStatixSettingsSubmit = async (e) => {
+  async function handleStatixSettingsSubmit(e) {
     e.preventDefault();
     setStatixLoading(true);
     try {
-      await updateStatixBonusSettings(statixSettings);
+      const response = await updateStatixBonusSettings(statixSettings);
+      setStatixSettings({
+        ...DEFAULT_STATIX,
+        ...response.data,
+        is_active: Boolean(response.data?.is_active),
+      });
       showAlert('Настройки Statix Bonus обновлены!', 'success');
       clearCache('market');
     } catch (error) {
@@ -57,29 +84,99 @@ const StatixSettings = () => {
     } finally {
       setStatixLoading(false);
     }
-  };
+  }
+
+  async function handleToggleActive() {
+    const nextActive = !statixSettings.is_active;
+    const isConfirmed = await confirm(
+      nextActive ? 'Включить Statix Bonus' : 'Отключить Statix Bonus',
+      nextActive
+        ? 'Товар снова появится в маркетплейсе у пользователей.'
+        : 'Товар исчезнет из маркетплейса. Сообщения об ошибке загрузки показываться не будут.'
+    );
+    if (!isConfirmed) {
+      return;
+    }
+
+    setToggling(true);
+    try {
+      const response = await updateStatixBonusSettings({
+        ...statixSettings,
+        is_active: nextActive,
+      });
+      setStatixSettings({
+        ...DEFAULT_STATIX,
+        ...response.data,
+        is_active: Boolean(response.data?.is_active),
+      });
+      showAlert(
+        nextActive ? 'Statix Bonus включён.' : 'Statix Bonus отключён.',
+        'success'
+      );
+      clearCache('market');
+    } catch (error) {
+      showAlert('Не удалось изменить статус Statix Bonus.', 'error');
+    } finally {
+      setToggling(false);
+    }
+  }
+
+  const isActive = Boolean(statixSettings.is_active);
 
   return (
     <div className={styles.card}>
-      <h2><FaCoins style={{marginRight: '8px'}} />Настройки Statix Bonus</h2>
+      <h2>
+        <FaCoins style={{ marginRight: '8px' }} />
+        Настройки Statix Bonus
+      </h2>
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          flexWrap: 'wrap',
+          marginBottom: '16px',
+          padding: '12px',
+          borderRadius: '8px',
+          background: isActive ? 'rgba(46, 125, 50, 0.08)' : 'rgba(158, 158, 158, 0.12)',
+        }}
+      >
+        <div>
+          <strong>Статус:</strong>{' '}
+          {isActive ? 'включён (виден пользователям)' : 'отключён (скрыт)'}
+        </div>
+        <button
+          type="button"
+          onClick={handleToggleActive}
+          disabled={statixLoading || toggling}
+          className={isActive ? styles.buttonGrey : styles.buttonGreen}
+        >
+          {toggling
+            ? 'Сохранение...'
+            : isActive
+              ? 'Отключить Statix Bonus'
+              : 'Включить Statix Bonus'}
+        </button>
+      </div>
+
       <form onSubmit={handleStatixSettingsSubmit}>
         <AdminImageUrlField
           value={statixSettings.image_url}
-          onChange={(v) =>
-            setStatixSettings((prev) => ({ ...prev, image_url: v }))
-          }
+          onChange={(v) => setStatixSettings((prev) => ({ ...prev, image_url: v }))}
           placeholder="Ссылка на изображение (URL) 4:3 или загрузка (AVIF)"
           urlHint="Загрузка: AVIF в объектное хранилище."
         />
-        
-        <input 
-          type="text" 
-          name="name" 
-          value={statixSettings.name} 
-          onChange={handleStatixSettingsChange} 
-          placeholder="Название товара" 
-          className={styles.input} 
-          required 
+
+        <input
+          type="text"
+          name="name"
+          value={statixSettings.name}
+          onChange={handleStatixSettingsChange}
+          placeholder="Название товара"
+          className={styles.input}
+          required
         />
 
         <textarea
@@ -94,71 +191,73 @@ const StatixSettings = () => {
         <div className={styles.statixSettingsGrid}>
           <div className={styles.settingGroup}>
             <label>Курс валют (спасибок за 100 бонусов)</label>
-            <input 
-              type="number" 
-              name="thanks_to_statix_rate" 
-              value={statixSettings.thanks_to_statix_rate} 
-              onChange={handleStatixSettingsChange} 
-              className={styles.input} 
+            <input
+              type="number"
+              name="thanks_to_statix_rate"
+              value={statixSettings.thanks_to_statix_rate}
+              onChange={handleStatixSettingsChange}
+              className={styles.input}
               min="1"
-              required 
+              required
             />
           </div>
 
           <div className={styles.settingGroup}>
             <label>Минимум бонусов за шаг</label>
-            <input 
-              type="number" 
-              name="min_bonus_per_step" 
-              value={statixSettings.min_bonus_per_step} 
-              onChange={handleStatixSettingsChange} 
-              className={styles.input} 
+            <input
+              type="number"
+              name="min_bonus_per_step"
+              value={statixSettings.min_bonus_per_step}
+              onChange={handleStatixSettingsChange}
+              className={styles.input}
               min="1"
-              required 
+              required
             />
           </div>
 
           <div className={styles.settingGroup}>
             <label>Максимум бонусов за шаг</label>
-            <input 
-              type="number" 
-              name="max_bonus_per_step" 
-              value={statixSettings.max_bonus_per_step} 
-              onChange={handleStatixSettingsChange} 
-              className={styles.input} 
+            <input
+              type="number"
+              name="max_bonus_per_step"
+              value={statixSettings.max_bonus_per_step}
+              onChange={handleStatixSettingsChange}
+              className={styles.input}
               min="1"
-              required 
+              required
             />
           </div>
 
           <div className={styles.settingGroup}>
             <label>Шаг увеличения бонусов</label>
-            <input 
-              type="number" 
-              name="bonus_step" 
-              value={statixSettings.bonus_step} 
-              onChange={handleStatixSettingsChange} 
-              className={styles.input} 
+            <input
+              type="number"
+              name="bonus_step"
+              value={statixSettings.bonus_step}
+              onChange={handleStatixSettingsChange}
+              className={styles.input}
               min="1"
-              required 
+              required
             />
           </div>
         </div>
 
         <div className={styles.pricePreview}>
-          <p><strong>Примеры курса:</strong></p>
+          <p>
+            <strong>Примеры курса:</strong>
+          </p>
           <p>10 спасибок = 100 бонусов</p>
           <p>20 спасибок = 200 бонусов</p>
           <p>100 спасибок = 1000 бонусов</p>
           <p>1000 спасибок = 10000 бонусов</p>
         </div>
 
-        <button type="submit" disabled={statixLoading} className={styles.buttonGreen}>
+        <button type="submit" disabled={statixLoading || toggling} className={styles.buttonGreen}>
           {statixLoading ? 'Сохранение...' : 'Сохранить настройки'}
         </button>
       </form>
     </div>
   );
-};
+}
 
 export default StatixSettings;

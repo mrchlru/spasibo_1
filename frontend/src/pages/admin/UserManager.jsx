@@ -44,6 +44,7 @@ function buildEditUserFormState(user) {
         tickets: user.tickets ?? 0,
         ticket_parts: user.ticket_parts ?? 0,
         status: user.status || 'approved',
+        is_admin: Boolean(user.is_admin),
         login: user.login || '',
         password: '',
         browser_auth_enabled: user.browser_auth_enabled || false,
@@ -51,18 +52,22 @@ function buildEditUserFormState(user) {
     };
 }
 
-function pickAdminUserUpdatePayload(formData) {
+function pickAdminUserUpdatePayload(formData, canGrantAdmin) {
     const payload = {};
     for (const key of ADMIN_USER_UPDATE_FIELDS) {
-        if (Object.prototype.hasOwnProperty.call(formData, key)) {
-            payload[key] = formData[key];
+        if (!Object.prototype.hasOwnProperty.call(formData, key)) {
+            continue;
         }
+        if (key === 'is_admin' && !canGrantAdmin) {
+            continue;
+        }
+        payload[key] = formData[key];
     }
     return payload;
 }
 
 // Модальное окно для редактирования
-function EditUserModal({ user, onClose, onSave, onDelete, onChangePassword, onDeletePassword }) {
+function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChangePassword, onDeletePassword }) {
     const { confirm } = useConfirmation();
     const { showAlert } = useModalAlert();
     const [formData, setFormData] = useState(() => buildEditUserFormState(user));
@@ -200,6 +205,18 @@ function EditUserModal({ user, onClose, onSave, onDelete, onChangePassword, onDe
                             />
                             <span>Может писать новости в ленте</span>
                         </label>
+                        {canGrantAdmin && (
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', gridColumn: '1 / -1' }}>
+                                <input
+                                    type="checkbox"
+                                    name="is_admin"
+                                    checked={formData.is_admin || false}
+                                    onChange={handleChange}
+                                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                />
+                                <span>Режим администратора</span>
+                            </label>
+                        )}
                         {formData.login && (
                             <div style={{ gridColumn: '1 / -1', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
                                 💡 Текущий логин: <strong>{formData.login}</strong>
@@ -280,7 +297,7 @@ function EditUserModal({ user, onClose, onSave, onDelete, onChangePassword, onDe
 
 
 // Основной компонент
-function UserManager() {
+function UserManager({ canGrantAdmin = false }) {
     const { showAlert } = useModalAlert();
     const [allUsers, setAllUsers] = useState([]);
     const [view, setView] = useState('active');
@@ -317,7 +334,7 @@ function UserManager() {
         }
 
         const dataToSend = {
-            ...pickAdminUserUpdatePayload(userData),
+            ...pickAdminUserUpdatePayload(userData, canGrantAdmin),
             date_of_birth: apiDate,
         };
 
@@ -431,7 +448,8 @@ function UserManager() {
             {editingUser && (
                 <EditUserModal 
                     key={editingUser.id}
-                    user={editingUser} 
+                    user={editingUser}
+                    canGrantAdmin={canGrantAdmin}
                     onClose={() => setEditingUser(null)} 
                     onSave={handleSaveUser}
                     onDelete={handleDeleteUser}

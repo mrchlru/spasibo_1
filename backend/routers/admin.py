@@ -339,7 +339,9 @@ async def admin_update_user_route(user_id: int, user_data: schemas.AdminUserUpda
         updated_user = await crud.admin_update_user(db, user_id, user_data, admin_user)
         if not updated_user:
             raise HTTPException(status_code=404, detail="User not found")
-        return updated_user
+        return schemas.user_response_for_public_api(updated_user)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1029,7 +1031,8 @@ async def get_statix_bonus_settings(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user)
 ):
-    item = await crud.get_statix_bonus_item(db)
+    """Настройки Statix Bonus для админки (включая неактивный товар)."""
+    item = await crud.get_any_statix_bonus_item(db)
     if not item:
         default_item = {
             "name": "Бонусы Statix",
@@ -1037,10 +1040,12 @@ async def get_statix_bonus_settings(
             "thanks_to_statix_rate": 10,
             "min_bonus_per_step": 100,
             "max_bonus_per_step": 10000,
-            "bonus_step": 100
+            "bonus_step": 100,
+            "is_active": False,
         }
         item = await crud.create_statix_bonus_item(db, default_item)
     return item
+
 
 @router.put("/statix-bonus", response_model=schemas.StatixBonusItemResponse)
 async def update_statix_bonus_settings(
@@ -1048,12 +1053,12 @@ async def update_statix_bonus_settings(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user)
 ):
-    existing_item = await crud.get_statix_bonus_item(db)
-    
+    """Обновить или создать товар Statix Bonus (в т.ч. включить/выключить)."""
+    existing_item = await crud.get_any_statix_bonus_item(db)
+    payload = item_data.model_dump(exclude_unset=True)
+
     if existing_item:
-        updated_item = await crud.update_statix_bonus_item(
-            db, existing_item.id, item_data.model_dump(exclude_unset=True)
-        )
+        updated_item = await crud.update_statix_bonus_item(db, existing_item.id, payload)
     else:
         default_data = {
             "name": "Бонусы Statix",
@@ -1061,11 +1066,11 @@ async def update_statix_bonus_settings(
             "thanks_to_statix_rate": 10,
             "min_bonus_per_step": 100,
             "max_bonus_per_step": 10000,
-            "bonus_step": 100
+            "bonus_step": 100,
+            "is_active": False,
         }
-        update_data = {**default_data, **item_data.model_dump(exclude_unset=True)}
-        updated_item = await crud.create_statix_bonus_item(db, update_data)
-    
+        updated_item = await crud.create_statix_bonus_item(db, {**default_data, **payload})
+
     return updated_item
 
 @router.post("/generate-leaderboard-banners", status_code=status.HTTP_201_CREATED)

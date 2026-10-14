@@ -16,9 +16,20 @@ function StatixBonusCard({ user, onPurchaseSuccess }) {
     const fetchStatixItem = async () => {
       try {
         const response = await getStatixBonusItem();
+        // 204 / пустой ответ — товар отключён, блок просто не показываем
+        if (!response.data || response.status === 204 || !response.data.is_active) {
+          setStatixItem(null);
+          return;
+        }
         setStatixItem(response.data);
         setBonusAmount(response.data.min_bonus_per_step);
       } catch (error) {
+        const status = error.response?.status;
+        // Отключённый или отсутствующий товар — без алерта
+        if (status === 404 || status === 204) {
+          setStatixItem(null);
+          return;
+        }
         console.error("Failed to fetch Statix Bonus item", error);
         showAlert("Не удалось загрузить настройки бонусов Statix.", 'error');
       } finally {

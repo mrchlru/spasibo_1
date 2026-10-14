@@ -97,6 +97,7 @@ class UserResponse(UserBase):
     can_publish_feed_posts: bool = False
     registration_date: Optional[datetime] = None
     is_primary_admin: bool = False
+    can_grant_admin: bool = False
     fair_play: Optional[FairPlayStatus] = None
 
     @field_serializer('date_of_birth')
@@ -131,7 +132,7 @@ def public_user_brief(user: object) -> PublicUserBrief:
 
 def user_response_for_public_api(user: object, *, fair_play_full: bool = False) -> UserResponse:
     """Ответ клиенту без password_plain; у веб-заявки в pending скрывает login."""
-    from admin_utils import user_is_primary_admin
+    from admin_utils import user_can_grant_admin, user_is_primary_admin
     from avatar_service import resolve_public_avatar_url
     import fair_play_service
 
@@ -144,6 +145,7 @@ def user_response_for_public_api(user: object, *, fair_play_full: bool = False) 
     )
     extra: dict = {
         "is_primary_admin": user_is_primary_admin(user),
+        "can_grant_admin": user_can_grant_admin(user),
         "fair_play": FairPlayStatus(**fp_data),
     }
     if avatar_url:
@@ -192,6 +194,7 @@ def panel_admin_user_response(email: str) -> UserResponse:
         can_publish_feed_posts=True,
         registration_date=None,
         is_primary_admin=True,
+        can_grant_admin=True,
     )
 
 

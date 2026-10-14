@@ -2162,11 +2162,17 @@ async def admin_update_user(db: AsyncSession, user_id: int, user_data: schemas.A
     Обновляет данные пользователя от имени администратора и отправляет лог.
     (Версия с исправленной логикой сравнения)
     """
+    from admin_utils import user_can_grant_admin
+
     user = await get_user(db, user_id)
     if not user:
         return None
     
     update_data = user_data.model_dump(exclude_unset=True)
+    if "is_admin" in update_data and not user_can_grant_admin(admin_user):
+        raise PermissionError(
+            "Назначать администраторов могут только админы из TELEGRAM_ADMIN_IDS"
+        )
     changes_log = []
     login_changed = False
     password_changed = False
@@ -3932,36 +3938,46 @@ async def generate_monthly_leaderboard_banners(db: AsyncSession):
 
 # --- CRUD ОПЕРАЦИИ ДЛЯ STATIX BONUS ---
 async def get_statix_bonus_item(db: AsyncSession):
-    """Получить активный товар Statix Bonus"""
+    """Получить активный товар Statix Bonus."""
     result = await db.execute(
         select(models.StatixBonusItem).where(models.StatixBonusItem.is_active == True)
     )
     return result.scalars().first()
 
+
+async def get_any_statix_bonus_item(db: AsyncSession):
+    """Получить товар Statix Bonus независимо от is_active (для админки)."""
+    result = await db.execute(
+        select(models.StatixBonusItem).order_by(models.StatixBonusItem.id.desc())
+    )
+    return result.scalars().first()
+
+
 async def create_statix_bonus_item(db: AsyncSession, item_data: dict):
-    """Создать товар Statix Bonus"""
+    """Создать товар Statix Bonus."""
     db_item = models.StatixBonusItem(**item_data)
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
     return db_item
 
+
 async def update_statix_bonus_item(db: AsyncSession, item_id: int, item_data: dict):
-    """Обновить товар Statix Bonus"""
+    """Обновить товар Statix Bonus (включая is_active=False)."""
     result = await db.execute(
         select(models.StatixBonusItem).where(models.StatixBonusItem.id == item_id)
     )
     db_item = result.scalars().first()
     if not db_item:
         return None
-    
+
     for key, value in item_data.items():
-        if value is not None:
-            setattr(db_item, key, value)
-    
+        setattr(db_item, key, value)
+
     await db.commit()
     await db.refresh(db_item)
     return db_item
+
 
 def _normalize_statix_phone(phone_number: Optional[str]) -> str:
     digits = re.sub(r"\D", "", phone_number or "")

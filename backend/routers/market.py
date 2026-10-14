@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 
 import crud
 import models
@@ -101,14 +101,16 @@ async def purchase_local_item(
             detail=str(e)
         )
 
-@router.get("/market/statix-bonus", response_model=schemas.StatixBonusItemResponse)
+@router.get("/market/statix-bonus", response_model=Optional[schemas.StatixBonusItemResponse])
 async def get_statix_bonus_item(db: AsyncSession = Depends(get_db)):
+    """
+    Активный товар Statix Bonus для витрины.
+
+    Если товар выключен или не создан — 204 без тела (клиент просто скрывает блок).
+    """
     item = await crud.get_statix_bonus_item(db)
     if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Statix Bonus товар не настроен"
-        )
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     return item
 
 @router.post("/market/statix-bonus/purchase", response_model=schemas.StatixBonusPurchaseResponse)

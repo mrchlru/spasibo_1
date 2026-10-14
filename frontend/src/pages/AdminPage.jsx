@@ -139,6 +139,7 @@ function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppS
   const { confirm } = useConfirmation();
   const [loading, setLoading] = useState(false); // Для отслеживания загрузки
   const isPrimaryAdmin = isPrimaryAdminUser(adminUser);
+  const canGrantAdmin = Boolean(adminUser?.can_grant_admin);
 
 // Это твоя старая функция, она вызывает баннеры за ПРОШЛЫЙ МЕСЯЦ
   const handleGenerateBanners = async () => {
@@ -263,7 +264,7 @@ function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppS
       case 'feed-posts': return <FeedPostManager />;
       case 'items': return <ItemManager />;
         {/*case 'mass-actions': return <MassActions />;*/}
-      case 'users': return <UserManager />;
+      case 'users': return <UserManager canGrantAdmin={canGrantAdmin} />;
       case 'fair-play': return <FairPlayManager />;
       case 'registrations': return <RegistrationManager />;
       case 'purchases': return <PurchasesManager />;
