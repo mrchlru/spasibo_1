@@ -1034,16 +1034,10 @@ async def get_statix_bonus_settings(
     """Настройки Statix Bonus для админки (включая неактивный товар)."""
     item = await crud.get_any_statix_bonus_item(db)
     if not item:
-        default_item = {
-            "name": "Бонусы Statix",
-            "description": "Покупка бонусов для платформы Statix",
-            "thanks_to_statix_rate": 10,
-            "min_bonus_per_step": 100,
-            "max_bonus_per_step": 10000,
-            "bonus_step": 100,
-            "is_active": False,
-        }
-        item = await crud.create_statix_bonus_item(db, default_item)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Statix Bonus товар ещё не создан",
+        )
     return item
 
 
@@ -1054,24 +1048,36 @@ async def update_statix_bonus_settings(
     current_user: models.User = Depends(get_current_admin_user)
 ):
     """Обновить или создать товар Statix Bonus (в т.ч. включить/выключить)."""
-    existing_item = await crud.get_any_statix_bonus_item(db)
     payload = item_data.model_dump(exclude_unset=True)
 
+    # Переключение только статуса — отдельный надёжный путь без лишних полей.
+    if set(payload.keys()) == {"is_active"}:
+        return await crud.set_statix_bonus_active(db, is_active=bool(payload["is_active"]))
+
+    existing_item = await crud.get_any_statix_bonus_item(db)
     if existing_item:
         updated_item = await crud.update_statix_bonus_item(db, existing_item.id, payload)
-    else:
-        default_data = {
-            "name": "Бонусы Statix",
-            "description": "Покупка бонусов для платформы Statix",
-            "thanks_to_statix_rate": 10,
-            "min_bonus_per_step": 100,
-            "max_bonus_per_step": 10000,
-            "bonus_step": 100,
-            "is_active": False,
-        }
-        updated_item = await crud.create_statix_bonus_item(db, {**default_data, **payload})
+        if not updated_item:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Statix Bonus товар не найден",
+            )
+        if "is_active" in payload:
+            updated_item = await crud.set_statix_bonus_active(
+                db, is_active=bool(payload["is_active"])
+            )
+        return updated_item
 
-    return updated_item
+    default_data = {
+        "name": "Бонусы Statix",
+        "description": "Покупка бонусов для платформы Statix",
+        "thanks_to_statix_rate": 10,
+        "min_bonus_per_step": 100,
+        "max_bonus_per_step": 10000,
+        "bonus_step": 100,
+        "is_active": False,
+    }
+    return await crud.create_statix_bonus_item(db, {**default_data, **payload})
 
 @router.post("/generate-leaderboard-banners", status_code=status.HTTP_201_CREATED)
 async def trigger_leaderboard_banner_generation(

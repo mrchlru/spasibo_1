@@ -3979,6 +3979,41 @@ async def update_statix_bonus_item(db: AsyncSession, item_id: int, item_data: di
     return db_item
 
 
+async def set_statix_bonus_active(db: AsyncSession, *, is_active: bool) -> models.StatixBonusItem:
+    """
+    Включить или выключить товар Statix Bonus.
+
+    При включении активным остаётся только последний товар; остальные гасятся.
+    Если записей нет — создаётся базовая с нужным статусом.
+    """
+    items_result = await db.execute(
+        select(models.StatixBonusItem).order_by(models.StatixBonusItem.id.desc())
+    )
+    items = list(items_result.scalars().all())
+
+    if not items:
+        return await create_statix_bonus_item(
+            db,
+            {
+                "name": "Бонусы Statix",
+                "description": "Покупка бонусов для платформы Statix",
+                "thanks_to_statix_rate": 10,
+                "min_bonus_per_step": 100,
+                "max_bonus_per_step": 10000,
+                "bonus_step": 100,
+                "is_active": is_active,
+            },
+        )
+
+    primary = items[0]
+    for item in items:
+        item.is_active = bool(is_active) if item.id == primary.id else False
+
+    await db.commit()
+    await db.refresh(primary)
+    return primary
+
+
 def _normalize_statix_phone(phone_number: Optional[str]) -> str:
     digits = re.sub(r"\D", "", phone_number or "")
     if not digits:

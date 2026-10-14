@@ -16,7 +16,7 @@ function StatixBonusCard({ user, onPurchaseSuccess }) {
     const fetchStatixItem = async () => {
       try {
         const response = await getStatixBonusItem();
-        // 204 / пустой ответ — товар отключён, блок просто не показываем
+        // Нет данных / неактивен — блок просто не показываем, без уведомлений
         if (!response.data || response.status === 204 || !response.data.is_active) {
           setStatixItem(null);
           return;
@@ -24,20 +24,14 @@ function StatixBonusCard({ user, onPurchaseSuccess }) {
         setStatixItem(response.data);
         setBonusAmount(response.data.min_bonus_per_step);
       } catch (error) {
-        const status = error.response?.status;
-        // Отключённый или отсутствующий товар — без алерта
-        if (status === 404 || status === 204) {
-          setStatixItem(null);
-          return;
-        }
-        console.error("Failed to fetch Statix Bonus item", error);
-        showAlert("Не удалось загрузить настройки бонусов Statix.", 'error');
+        // Отключён, 500 от старого бага 204+GZip, сеть — всегда тихо скрываем карточку
+        setStatixItem(null);
       } finally {
         setIsLoading(false);
       }
     };
     fetchStatixItem();
-  }, [showAlert]);
+  }, []);
 
   const handleSliderChange = (event) => {
     const value = parseInt(event.target.value);
@@ -83,15 +77,8 @@ function StatixBonusCard({ user, onPurchaseSuccess }) {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className={styles.card}>
-        <div className={styles.loading}>Загрузка...</div>
-      </div>
-    );
-  }
-
-  if (!statixItem || !statixItem.is_active) {
+  // Пока грузим или товар выключен — ничего не показываем и не алертим
+  if (isLoading || !statixItem || !statixItem.is_active) {
     return null;
   }
 

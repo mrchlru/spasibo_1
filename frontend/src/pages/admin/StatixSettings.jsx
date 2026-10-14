@@ -21,6 +21,34 @@ const DEFAULT_STATIX = {
 };
 
 /**
+ * Собирает тело PUT /admin/statix-bonus без служебных полей ответа.
+ */
+function buildStatixUpdatePayload(settings, overrides = {}) {
+  return {
+    name: settings.name,
+    description: settings.description,
+    image_url: settings.image_url || null,
+    thanks_to_statix_rate: Number(settings.thanks_to_statix_rate) || 10,
+    min_bonus_per_step: Number(settings.min_bonus_per_step) || 100,
+    max_bonus_per_step: Number(settings.max_bonus_per_step) || 10000,
+    bonus_step: Number(settings.bonus_step) || 100,
+    is_active: Boolean(settings.is_active),
+    ...overrides,
+  };
+}
+
+/**
+ * Текст ошибки API для алерта.
+ */
+function getApiErrorDetail(error, fallback) {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail;
+  }
+  return fallback;
+}
+
+/**
  * Настройки товара Statix Bonus в админке, включая включение/отключение витрины.
  */
 function StatixSettings() {
@@ -45,15 +73,17 @@ function StatixSettings() {
       setStatixSettings({
         ...DEFAULT_STATIX,
         ...response.data,
+        image_url: response.data.image_url || '',
         is_active: Boolean(response.data.is_active),
       });
     } catch (error) {
       const status = error.response?.status;
+      // Товара ещё нет — форма с дефолтами, без ошибки «не удалось загрузить».
       if (status === 404 || status === 204) {
         setStatixSettings(DEFAULT_STATIX);
         return;
       }
-      showAlert('Не удалось загрузить настройки Statix Bonus.', 'error');
+      showAlert(getApiErrorDetail(error, 'Не удалось загрузить настройки Statix Bonus.'), 'error');
     } finally {
       setStatixLoading(false);
     }
@@ -71,16 +101,17 @@ function StatixSettings() {
     e.preventDefault();
     setStatixLoading(true);
     try {
-      const response = await updateStatixBonusSettings(statixSettings);
+      const response = await updateStatixBonusSettings(buildStatixUpdatePayload(statixSettings));
       setStatixSettings({
         ...DEFAULT_STATIX,
         ...response.data,
+        image_url: response.data?.image_url || '',
         is_active: Boolean(response.data?.is_active),
       });
       showAlert('Настройки Statix Bonus обновлены!', 'success');
       clearCache('market');
     } catch (error) {
-      showAlert('Ошибка при обновлении настроек.', 'error');
+      showAlert(getApiErrorDetail(error, 'Ошибка при обновлении настроек.'), 'error');
     } finally {
       setStatixLoading(false);
     }
@@ -92,7 +123,7 @@ function StatixSettings() {
       nextActive ? 'Включить Statix Bonus' : 'Отключить Statix Bonus',
       nextActive
         ? 'Товар снова появится в маркетплейсе у пользователей.'
-        : 'Товар исчезнет из маркетплейса. Сообщения об ошибке загрузки показываться не будут.'
+        : 'Товар исчезнет из маркетплейса. Уведомления об ошибке загрузки показываться не будут.'
     );
     if (!isConfirmed) {
       return;
@@ -100,22 +131,21 @@ function StatixSettings() {
 
     setToggling(true);
     try {
-      const response = await updateStatixBonusSettings({
-        ...statixSettings,
-        is_active: nextActive,
-      });
-      setStatixSettings({
-        ...DEFAULT_STATIX,
+      // Только статус — бэкенд обрабатывает это отдельным надёжным путём.
+      const response = await updateStatixBonusSettings({ is_active: nextActive });
+      setStatixSettings((prev) => ({
+        ...prev,
         ...response.data,
+        image_url: response.data?.image_url || prev.image_url || '',
         is_active: Boolean(response.data?.is_active),
-      });
+      }));
       showAlert(
         nextActive ? 'Statix Bonus включён.' : 'Statix Bonus отключён.',
         'success'
       );
       clearCache('market');
     } catch (error) {
-      showAlert('Не удалось изменить статус Statix Bonus.', 'error');
+      showAlert(getApiErrorDetail(error, 'Не удалось изменить статус Statix Bonus.'), 'error');
     } finally {
       setToggling(false);
     }
