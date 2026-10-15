@@ -53,16 +53,9 @@ async def purchase_item(
     user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Покупка от имени текущего пользователя (user_id в body игнорируется)."""
-    if not user.telegram_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Для покупки нужен привязанный Telegram",
-        )
-    safe_request = request.model_copy(update={"user_id": user.telegram_id})
+    """Покупка от имени текущего авторизованного пользователя."""
     try:
-        purchase_result = await crud.create_purchase(db, safe_request)
-
+        purchase_result = await crud.create_purchase(db, request, buyer=user)
         return {
             "message": "Purchase successful",
             "new_balance": purchase_result["new_balance"],
@@ -71,8 +64,9 @@ async def purchase_item(
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail=str(e),
         )
+
 
 @router.post("/market/local-purchase", response_model=schemas.PurchaseResponse)
 async def purchase_local_item(
@@ -80,16 +74,9 @@ async def purchase_local_item(
     user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Локальный подарок от имени текущего пользователя."""
-    if not user.telegram_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Для покупки нужен привязанный Telegram",
-        )
-    safe_request = request.model_copy(update={"user_id": user.telegram_id})
+    """Локальный подарок от имени текущего авторизованного пользователя."""
     try:
-        purchase_result = await crud.create_local_gift(db, safe_request)
-        
+        purchase_result = await crud.create_local_gift(db, request, buyer=user)
         return {
             "message": "Local gift request created",
             "new_balance": purchase_result["new_balance"],
@@ -98,7 +85,7 @@ async def purchase_local_item(
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail=str(e),
         )
 
 @router.get("/market/statix-bonus", response_model=schemas.StatixBonusItemResponse)

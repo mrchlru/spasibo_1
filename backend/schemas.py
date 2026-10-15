@@ -344,14 +344,16 @@ class TransferRequest(BaseModel):
     message: Optional[str] = None
 
 class PurchaseRequest(BaseModel):
-    user_id: int
     item_id: int
-    
+    # Устарело: покупатель берётся из авторизации, поле игнорируется.
+    user_id: Optional[int] = None
+
 class LocalGiftRequest(BaseModel):
-    user_id: int
     item_id: int
     city: str
     website_url: str
+    # Устарело: покупатель берётся из авторизации, поле игнорируется.
+    user_id: Optional[int] = None
     
 class PurchaseResponse(BaseModel):
     message: str

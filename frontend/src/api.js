@@ -295,19 +295,30 @@ export const getLeaderboardStatus = () =>
 
 export const getMarketItems = () => apiClient.get('/market/items');
 
-export const purchaseItem = (userId, itemId) => {
-  // Убедись, что user_id здесь это telegram_id
-  return apiClient.post('/market/purchase', { user_id: userId, item_id: itemId });
-};
+/**
+ * Покупка товара. Покупатель определяется по заголовкам авторизации.
+ * Старый вызов purchaseItem(telegramId, itemId) тоже поддерживается.
+ */
+export function purchaseItem(userIdOrItemId, maybeItemId) {
+  const itemId = maybeItemId !== undefined ? maybeItemId : userIdOrItemId;
+  return apiClient.post('/market/purchase', { item_id: itemId }, getAuthHeaders());
+}
 
-export const purchaseLocalItem = (userId, itemId, city, websiteUrl) => {
-  return apiClient.post('/market/local-purchase', {
-    user_id: userId,
-    item_id: itemId,
-    city: city,
-    website_url: websiteUrl
-  });
-};
+/**
+ * Локальный подарок. Покупатель — из авторизации.
+ * Старый вызов purchaseLocalItem(telegramId, itemId, city, url) поддерживается.
+ */
+export function purchaseLocalItem(userIdOrItemId, maybeItemId, maybeCity, maybeWebsiteUrl) {
+  const hasLegacyUserId = maybeWebsiteUrl !== undefined;
+  const itemId = hasLegacyUserId ? maybeItemId : userIdOrItemId;
+  const city = hasLegacyUserId ? maybeCity : maybeItemId;
+  const websiteUrl = hasLegacyUserId ? maybeWebsiteUrl : maybeCity;
+  return apiClient.post(
+    '/market/local-purchase',
+    { item_id: itemId, city, website_url: websiteUrl },
+    getAuthHeaders()
+  );
+}
 
 export const getMyPurchases = () =>
   apiClient.get('/market/purchases/me', getAuthHeaders());

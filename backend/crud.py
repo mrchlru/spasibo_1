@@ -809,13 +809,16 @@ async def list_purchases_for_user(
     return items
 
 
-async def create_purchase(db: AsyncSession, pr: schemas.PurchaseRequest):
+async def create_purchase(
+    db: AsyncSession,
+    pr: schemas.PurchaseRequest,
+    buyer: models.User,
+):
+    """Создаёт покупку для уже авторизованного пользователя."""
     issued_code_value = None
     item = await db.get(models.MarketItem, pr.item_id)
-    result = await db.execute(
-        select(models.User).where(models.User.telegram_id == pr.user_id)
-    )
-    user = result.scalar_one_or_none()
+    # Покупатель — из сессии; подгружаем заново в текущей сессии БД.
+    user = await db.get(models.User, buyer.id)
 
     if not item or not user:
         raise ValueError("Товар или пользователь не найдены")
@@ -901,13 +904,15 @@ async def create_purchase(db: AsyncSession, pr: schemas.PurchaseRequest):
             message_thread_id=settings.TELEGRAM_PURCHASE_TOPIC_ID,
         )
 
-        # Уведомление для пользователя (теперь для всех покупок)
-        user_message = f"🎉 Поздравляем с покупкой \"{escape_html(item_name)}\"!"
-        if issued_code_value:
-            # Для товаров с кодом добавляем сам код
-            user_message += f"\n\nВаш уникальный код/ссылка:\n<code>{escape_html(issued_code_value)}</code>"
-        
-        await send_telegram_message(chat_id=user_telegram_id, text=user_message)
+        # Уведомление в Telegram — только если есть telegram_id
+        if user_telegram_id:
+            user_message = f"🎉 Поздравляем с покупкой \"{escape_html(item_name)}\"!"
+            if issued_code_value:
+                user_message += (
+                    f"\n\nВаш уникальный код/ссылка:\n"
+                    f"<code>{escape_html(issued_code_value)}</code>"
+                )
+            await send_telegram_message(chat_id=user_telegram_id, text=user_message)
 
     except Exception as e:
         print(f"Could not send notification. Error: {e}")
@@ -918,7 +923,10 @@ async def create_purchase(db: AsyncSession, pr: schemas.PurchaseRequest):
             send_purchase_confirmation_to_user,
             send_purchase_notification_to_admins,
         )
-        user_name_display = f"{user_first_name or ''} {user_last_name or ''}".strip() or str(user_telegram_id)
+        user_name_display = (
+            f"{user_first_name or ''} {user_last_name or ''}".strip()
+            or (str(user_telegram_id) if user_telegram_id else f"id:{user.id}")
+        )
         if user.email:
             await send_purchase_confirmation_to_user(
                 to_email=user.email,
@@ -951,13 +959,14 @@ async def create_purchase(db: AsyncSession, pr: schemas.PurchaseRequest):
 
     return {"new_balance": user.balance, "issued_code": issued_code_value}
 
-async def create_local_gift(db: AsyncSession, pr: schemas.LocalGiftRequest):
-    """Создает локальный подарок с резервированием спасибок"""
+async def create_local_gift(
+    db: AsyncSession,
+    pr: schemas.LocalGiftRequest,
+    buyer: models.User,
+):
+    """Создаёт локальный подарок с резервированием спасибок."""
     item = await db.get(models.MarketItem, pr.item_id)
-    result = await db.execute(
-        select(models.User).where(models.User.telegram_id == pr.user_id)
-    )
-    user = result.scalar_one_or_none()
+    user = await db.get(models.User, buyer.id)
 
     if not item or not user:
         raise ValueError("Товар или пользователь не найдены")
