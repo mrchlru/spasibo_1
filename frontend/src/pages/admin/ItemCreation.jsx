@@ -10,6 +10,7 @@ import {
   getArchivedMarketItems,
   restoreMarketItem,
   deleteMarketItemPermanently,
+  deleteMarketItemCode,
   reorderMarketItems,
   uploadPrizeImage,
 } from '../../api';
@@ -55,6 +56,8 @@ const ItemCreation = () => {
   const [prizeUploading, setPrizeUploading] = useState(false);
   const [prizeUploadDone, setPrizeUploadDone] = useState(0);
   const [prizeUploadTotal, setPrizeUploadTotal] = useState(0);
+  const [existingCodes, setExistingCodes] = useState([]);
+  const [deletingCodeId, setDeletingCodeId] = useState(null);
   const prizeFileInputRef = useRef(null);
 
   const fetchItems = async () => {
@@ -263,10 +266,12 @@ const ItemCreation = () => {
 
   const handleEdit = (item) => {
     setEditingItemId(item.id);
-    const codeValues = item.codes ? item.codes.map((c) => c.code_value) : [];
+    const codes = Array.isArray(item.codes) ? item.codes : [];
+    const codeValues = codes.map((c) => c.code_value);
     const prizeCodeValues = codeValues.filter(isPrizeImageUrl);
     setIssuanceMode(prizeCodeValues.length > 0 ? 'images' : 'codes');
     setPrizeUrls([]);
+    setExistingCodes(codes);
     setForm({
         name: item.name,
         description: item.description || '',
@@ -289,10 +294,55 @@ const ItemCreation = () => {
     setEditingItemId(null);
     setIssuanceMode('codes');
     setPrizeUrls([]);
+    setExistingCodes([]);
+    setDeletingCodeId(null);
     setPrizeUploading(false);
     setPrizeUploadDone(0);
     setPrizeUploadTotal(0);
   };
+
+  /**
+   * Удаляет ошибочно загруженный / лишний невыданный сертификат или код.
+   */
+  async function handleDeleteExistingCode(code) {
+    if (!editingItemId || !code?.id) {
+      return;
+    }
+    if (code.is_issued) {
+      showAlert('Этот сертификат уже выдан покупателю — удалить нельзя.', 'error');
+      return;
+    }
+    const label = isPrizeImageUrl(code.code_value) ? 'эту картинку-сертификат' : 'этот код';
+    const isConfirmed = await confirm(
+      'Удалить сертификат',
+      `Удалить ${label} из товара? Остаток в магазине пересчитается. Файл в S3 тоже будет удалён, если ещё есть.`
+    );
+    if (!isConfirmed) {
+      return;
+    }
+
+    setDeletingCodeId(code.id);
+    try {
+      const response = await deleteMarketItemCode(editingItemId, code.id);
+      const updated = response.data;
+      const nextCodes = Array.isArray(updated?.codes) ? updated.codes : [];
+      setExistingCodes(nextCodes);
+      setForm((prev) => ({
+        ...prev,
+        stock: updated?.stock ?? nextCodes.filter((entry) => !entry.is_issued).length,
+        codes_text: nextCodes.map((entry) => entry.code_value).join('\n'),
+      }));
+      setItems((prev) =>
+        prev.map((item) => (item.id === editingItemId ? { ...item, ...updated } : item))
+      );
+      clearCache('market');
+      showAlert('Сертификат удалён.', 'success');
+    } catch (error) {
+      showAlert(error.response?.data?.detail || 'Не удалось удалить сертификат.', 'error');
+    } finally {
+      setDeletingCodeId(null);
+    }
+  }
   
   const handleArchive = async (itemId) => {
     const isConfirmed = await confirm('Архивация', 'Вы уверены, что хотите архивировать этот товар?');
@@ -516,6 +566,62 @@ const ItemCreation = () => {
 
           {form.is_auto_issuance ? (
             <>
+              {editingItemId && existingCodes.length > 0 && (
+                <div className={prizeStyles.existingBlock}>
+                  <h3 className={prizeStyles.existingTitle}>
+                    Загруженные сертификаты ({existingCodes.length})
+                  </h3>
+                  <p className={prizeStyles.hint}>
+                    Невыданные можно удалить, если загрузили не те картинки или лишние коды.
+                    Выданные покупателям удалить нельзя.
+                  </p>
+                  <div className={prizeStyles.existingList}>
+                    {existingCodes.map((code) => {
+                      const isImage = isPrizeImageUrl(code.code_value);
+                      return (
+                        <div
+                          key={code.id}
+                          className={`${prizeStyles.existingCard} ${code.is_issued ? prizeStyles.existingIssued : ''}`}
+                        >
+                          {isImage ? (
+                            <img
+                              src={code.code_value}
+                              alt=""
+                              className={prizeStyles.existingThumb}
+                              loading="lazy"
+                              onError={(event) => {
+                                event.currentTarget.style.opacity = '0.35';
+                              }}
+                            />
+                          ) : (
+                            <div className={prizeStyles.existingCodeText} title={code.code_value}>
+                              {code.code_value}
+                            </div>
+                          )}
+                          <div className={prizeStyles.existingMeta}>
+                            <span className={prizeStyles.existingBadge}>
+                              {code.is_issued ? 'выдан' : 'в остатке'}
+                            </span>
+                            {!code.is_issued && (
+                              <button
+                                type="button"
+                                className={prizeStyles.deleteCodeBtn}
+                                disabled={deletingCodeId === code.id || prizeUploading}
+                                onClick={() => {
+                                  void handleDeleteExistingCode(code);
+                                }}
+                              >
+                                {deletingCodeId === code.id ? '…' : 'Удалить'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className={prizeStyles.issuanceModes}>
                 <button
                   type="button"

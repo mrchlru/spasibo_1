@@ -668,6 +668,23 @@ export const completeOnboarding = () =>
 export const deleteMarketItemPermanently = (itemId) =>
   apiClient.delete(`/admin/market-items/${itemId}/permanent`, getAuthHeaders());
 
+/** Удаляет один невыданный код/сертификат товара. */
+export function deleteMarketItemCode(itemId, codeId) {
+  return apiClient.delete(
+    `/admin/market-items/${itemId}/codes/${codeId}`,
+    getAuthHeaders()
+  );
+}
+
+/** Удаляет несколько невыданных кодов/сертификатов. */
+export function deleteMarketItemCodes(itemId, codeIds) {
+  return apiClient.post(
+    `/admin/market-items/${itemId}/codes/delete`,
+    { code_ids: codeIds },
+    getAuthHeaders()
+  );
+}
+
 // --- API ФУНКЦИИ ДЛЯ STATIX BONUS ---
 export const getStatixBonusItem = () => {
     return apiClient.get('/market/statix-bonus');

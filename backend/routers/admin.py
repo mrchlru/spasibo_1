@@ -111,6 +111,40 @@ async def update_market_item_route(
             detail="Произошла внутренняя ошибка сервера при обновлении."
         )
 
+@router.delete(
+    "/market-items/{item_id}/codes/{code_id}",
+    response_model=schemas.MarketItemResponse,
+)
+async def delete_market_item_code_route(
+    item_id: int,
+    code_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    """Удаляет один невыданный код/сертификат (и файл в S3, если есть)."""
+    try:
+        return await crud.admin_delete_item_codes(db, item_id, [code_id])
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post(
+    "/market-items/{item_id}/codes/delete",
+    response_model=schemas.MarketItemResponse,
+)
+async def delete_market_item_codes_bulk_route(
+    item_id: int,
+    payload: schemas.ItemCodesDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    """Удаляет несколько невыданных кодов/сертификатов товара."""
+    try:
+        return await crud.admin_delete_item_codes(db, item_id, payload.code_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
 @router.delete("/market-items/{item_id}", status_code=204)
 async def archive_item_route(item_id: int, db: AsyncSession = Depends(get_db)):
     success = await crud.archive_market_item(db, item_id)

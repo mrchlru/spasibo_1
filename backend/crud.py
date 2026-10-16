@@ -1725,7 +1725,78 @@ async def admin_update_market_item(db: AsyncSession, item_id: int, item_data: sc
          print(f"--- [UPDATE ITEM {item_id}] ОШИБКА: Не удалось перечитать товар после обновления ---") # <-- Лог ошибки перечитки
 
     return updated_item_with_codes
-    
+
+
+async def admin_delete_item_codes(
+    db: AsyncSession,
+    item_id: int,
+    code_ids: list[int],
+) -> models.MarketItem:
+    """
+    Удаляет невыданные коды/сертификаты товара.
+
+    Уже выданные коды нельзя снять. Для призовых картинок пытается
+    удалить объект из S3 (если файл уже удалён вручную — ок).
+    """
+    from object_storage import (
+        delete_object_key,
+        is_prize_asset_url,
+        public_url_to_object_key,
+    )
+
+    unique_ids = sorted({int(code_id) for code_id in code_ids if code_id is not None})
+    if not unique_ids:
+        raise ValueError("Не указаны коды для удаления")
+
+    item = await db.get(models.MarketItem, item_id)
+    if not item or item.is_archived:
+        raise ValueError("Товар не найден")
+
+    result = await db.execute(
+        select(models.ItemCode).where(
+            models.ItemCode.market_item_id == item_id,
+            models.ItemCode.id.in_(unique_ids),
+        )
+    )
+    codes = list(result.scalars().all())
+    if not codes:
+        raise ValueError("Указанные коды не найдены у этого товара")
+
+    issued = [code.id for code in codes if code.is_issued]
+    if issued:
+        raise ValueError(
+            "Нельзя удалить уже выданные сертификаты: "
+            + ", ".join(str(code_id) for code_id in issued)
+        )
+
+    for code in codes:
+        if is_prize_asset_url(code.code_value):
+            key = public_url_to_object_key(code.code_value)
+            if key:
+                await asyncio.to_thread(delete_object_key, key)
+        await db.delete(code)
+
+    await db.flush()
+    available_count = await db.scalar(
+        select(func.count(models.ItemCode.id)).where(
+            models.ItemCode.market_item_id == item_id,
+            models.ItemCode.is_issued.is_(False),
+        )
+    )
+    item.stock = int(available_count or 0)
+    await db.commit()
+    await _invalidate_market_cache(f"удаление кодов товара {item_id}")
+
+    refreshed = await db.execute(
+        select(models.MarketItem)
+        .where(models.MarketItem.id == item_id)
+        .options(selectinload(models.MarketItem.codes))
+    )
+    updated = refreshed.scalar_one()
+    updated.stock = item.stock
+    return updated
+
+
 async def archive_market_item(db: AsyncSession, item_id: int, restore: bool = False):
     """Архивирует или восстанавливает товар."""
     db_item = await db.get(models.MarketItem, item_id)

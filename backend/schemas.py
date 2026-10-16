@@ -224,7 +224,14 @@ class ItemCodeResponse(OrmBase):
     id: int
     code_value: str
     is_issued: bool
-        
+
+
+class ItemCodesDeleteRequest(BaseModel):
+    """Список id кодов/сертификатов для удаления у товара."""
+
+    code_ids: List[int] = Field(..., min_length=1)
+
+
 class MarketItemResponse(OrmBase):
     id: int
     name: str
