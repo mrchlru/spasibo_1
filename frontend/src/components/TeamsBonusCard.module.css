@@ -1,13 +1,40 @@
 .root {
   font-family: Manrope, 'Segoe UI', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* Мягче, чем на сайте Teams: тень не лезет на кнопку партнёров ниже */
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.14);
+  margin-bottom: 4px;
 }
 
-.barcode {
-  display: flex;
-  justify-content: center;
-  overflow: hidden;
+.root :global(.wallet-amount) {
+  font-weight: 800;
+  font-size: 34px;
 }
 
-.barcode svg {
+.root :global(.wallet-discount) {
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.root :global(.wallet-code-number) {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.root :global(.wallet-meta) {
+  margin: 14px 0 0;
+  font-size: 12px;
+  opacity: 0.8;
+  text-align: left;
+}
+
+.root :global(.wallet-barcode svg) {
+  width: 100%;
   max-width: 100%;
+  height: 56px;
+  display: block;
 }

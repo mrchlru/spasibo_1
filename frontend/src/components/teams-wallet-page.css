@@ -110,7 +110,9 @@
   align-items: center;
   gap: 12px;
   width: 100%;
-  margin: 12px 0 0;
+  margin: 16px 0 0;
+  position: relative;
+  z-index: 1;
   padding: 14px 16px;
   border: 1px solid rgba(0, 181, 150, 0.35);
   border-radius: 14px;

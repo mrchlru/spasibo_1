@@ -146,7 +146,6 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
 
         {teamsMode && teamsCard?.linked && (
           <>
-            <p className="wallet-hint">Покажите штрихкод управляющему в ресторане.</p>
             <TeamsBonusCard card={teamsCard} fallbackName={fallbackName} />
             <button
               type="button"

@@ -32,10 +32,11 @@ function TeamsBonusCard({ card, fallbackName = '' }) {
     card.segment_name && card.segment_name.trim()
       ? `${holderBase}, ${card.segment_name.trim().toLowerCase()}`
       : holderBase;
-  const logoSrc = card.logo_custom && card.logo_url
-    ? card.logo_url
-    : (card.default_logo_url || '/teams-wallet-logo.png');
-  const logoIsDefault = !(card.logo_custom && card.logo_url);
+  const logoSrc =
+    (card.logo_url || '').trim() ||
+    card.default_logo_url ||
+    '/teams-wallet-logo.png';
+  const logoIsDefault = !card.logo_custom;
 
   const metaParts = [];
   if (card.public_number) metaParts.push(card.public_number);
@@ -45,7 +46,7 @@ function TeamsBonusCard({ card, fallbackName = '' }) {
   return (
     <article
       ref={rootRef}
-      className={`wallet-card tilt-card tilt-card--shadow ${styles.root}`}
+      className={`wallet-card tilt-card ${styles.root}`}
       style={{ '--card': card.color || '#00A8A8' }}
     >
       <div className="wallet-top">
