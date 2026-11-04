@@ -203,6 +203,7 @@ async def export_all_users(db: AsyncSession = Depends(get_db)):
     users_list = [
         {
             "№": index,
+            "ID": user.id,
             "ФИО": crud._format_user_full_name(user),
             "Телефон": user.phone_number or "",
             "Email": user.email or "",
@@ -223,7 +224,7 @@ async def export_all_users(db: AsyncSession = Depends(get_db)):
         filename=filename,
         column_widths={"ФИО": 36, "Email": 28, "Должность": 24, "Отдел": 20},
         default_headers=[
-            "№", "ФИО", "Телефон", "Email", "Должность", "Отдел",
+            "№", "ID", "ФИО", "Телефон", "Email", "Должность", "Отдел",
             "Статус", "Баланс", "Дата регистрации", "Последний вход",
         ],
     )
