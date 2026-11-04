@@ -891,8 +891,28 @@ class StatixBonusItemUpdate(BaseModel):
     bonus_step: Optional[int] = None
 
 class StatixBonusPurchaseRequest(BaseModel):
-    user_id: int
+    user_id: Optional[int] = None  # устарело: используется текущий пользователь из JWT
     bonus_amount: int  # Количество бонусов Statix для покупки
+
+class TeamsBonusCardResponse(BaseModel):
+    """Прокси карты Teams Bonus для экрана «Бонусная карта»."""
+
+    integration_enabled: bool = False
+    linked: bool = False
+    spasibo_user_id: str = ""
+    public_number: str = ""
+    short_code: str = ""
+    short_code_display: str = ""
+    balance_kopecks: int = 0
+    balance_rub: str = "0"
+    holder_name: str = ""
+    card_url: str = ""
+    color: str = "#00A8A8"
+    template_url: str = ""
+    logo_url: str = ""
+    barcode_value: str = ""
+    discount_percent: int = 0
+    status: str = ""
 
 class StatixBonusPurchaseResponse(BaseModel):
     message: str

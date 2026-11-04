@@ -1,6 +1,7 @@
 import io
 import zipfile
 import json
+import uuid
 import math 
 import re
 import logging
@@ -4178,43 +4179,55 @@ async def _send_statix_bonus_request(phone: str, bonus_amount: int, card_number:
     return data if isinstance(data, dict) else None
 
 
-async def create_statix_bonus_purchase(db: AsyncSession, user_id: int, bonus_amount: int):
-    """Создать покупку бонусов Statix"""
-    # Получаем настройки товара
+async def create_statix_bonus_purchase(db: AsyncSession, user: models.User, bonus_amount: int):
+    """Создать покупку бонусов (Teams Bonus или legacy Statix)."""
+    import teams_bonus_client
+
     statix_item = await get_statix_bonus_item(db)
     if not statix_item:
         raise ValueError("Statix Bonus товар не настроен")
-    
-    # Рассчитываем стоимость в спасибках
+
     thanks_cost = (bonus_amount / 100) * statix_item.thanks_to_statix_rate
-    
-    # Получаем пользователя по Telegram ID (user_id здесь - это telegram_id)
-    user = await get_user_by_telegram(db, user_id)
-    if not user:
-        raise ValueError("Пользователь не найден")
-    
-    # Проверяем, что у пользователя добавлена карта статикс
-    if not user.card_barcode:
-        raise ValueError("Для покупки бонусов Statix необходимо добавить карту статикс в профиль")
-    
-    # Проверяем баланс
+    use_teams = teams_bonus_client.teams_bonus_configured()
+
+    if use_teams:
+        card = await teams_bonus_client.fetch_teams_bonus_card(user.id)
+        if not card.get("linked"):
+            raise ValueError(
+                "Карта Teams Bonus не привязана. Обратитесь к HR для коннекта по ID Спасибо."
+            )
+    elif not user.card_barcode:
+        raise ValueError("Для покупки бонусов Statix необходимо добавить карту Statix в профиль")
+
     if user.balance < thanks_cost:
         raise ValueError("Недостаточно спасибок для покупки")
-    
-    # Подготавливаем данные для начисления бонусов
-    formatted_phone = _normalize_statix_phone(user.phone_number)
 
+    formatted_phone = ""
+    if not use_teams:
+        formatted_phone = _normalize_statix_phone(user.phone_number)
+
+    product_label = "Teams Bonus" if use_teams else "Statix"
     original_balance = user.balance
+    idempotency_key = f"spasibo:{user.id}:{uuid.uuid4().hex}"
 
     try:
-        # Списываем спасибки
         user.balance -= thanks_cost
-
-        # Начисляем бонусы через Statix API
-        await _send_statix_bonus_request(formatted_phone, bonus_amount, user.card_barcode)
+        if use_teams:
+            await teams_bonus_client.redeem_teams_bonus(
+                user.id,
+                int(bonus_amount),
+                idempotency_key=idempotency_key,
+                comment=f"Спасибо: обмен {thanks_cost} спасибок → {bonus_amount} бонусов",
+            )
+        else:
+            await _send_statix_bonus_request(formatted_phone, bonus_amount, user.card_barcode)
 
         await db.commit()
         await db.refresh(user)
+    except teams_bonus_client.TeamsBonusError as exc:
+        await db.rollback()
+        user.balance = original_balance
+        raise ValueError(exc.message) from exc
     except ValueError:
         await db.rollback()
         user.balance = original_balance
@@ -4223,53 +4236,53 @@ async def create_statix_bonus_purchase(db: AsyncSession, user_id: int, bonus_amo
         await db.rollback()
         user.balance = original_balance
         logger.exception(
-            "Неожиданная ошибка при начислении Statix бонусов (user_id=%s, phone=%s)",
-            user_id,
-            formatted_phone,
+            "Ошибка начисления бонусов (%s) user_id=%s",
+            product_label,
+            user.id,
         )
-        raise ValueError("Не удалось начислить бонусы Statix. Пожалуйста, попробуйте позже.") from exc
+        raise ValueError(
+            f"Не удалось начислить бонусы {product_label}. Пожалуйста, попробуйте позже."
+        ) from exc
     else:
         logger.info(
-            "Statix бонусы начислены: user_id=%s, phone=%s, bonus_points=%s",
-            user_id,
-            formatted_phone,
+            "%s бонусы начислены: user_id=%s, bonus=%s",
+            product_label,
+            user.id,
             bonus_amount,
         )
-        
-        # Отправляем уведомление администраторам
+
         try:
             admin_message = (
-                f"🎁 <b>Покупка бонусов Statix!</b>\n\n"
-                f"👤 <b>Пользователь:</b> {escape_html(user.first_name or '')} (@{escape_html(user.username or str(user.telegram_id))})\n"
+                f"🎁 <b>Покупка бонусов {escape_html(product_label)}!</b>\n\n"
+                f"👤 <b>Пользователь:</b> {escape_html(user.first_name or '')} "
+                f"(@{escape_html(user.username or str(user.telegram_id or user.id))})\n"
                 f"📞 <b>Телефон:</b> {escape_html(user.phone_number or 'не указан')}\n"
-            )
-            admin_message += (
                 f"💼 <b>Должность:</b> {escape_html(user.position or '')}\n\n"
                 f"💰 <b>Куплено бонусов:</b> {bonus_amount}\n"
                 f"💸 <b>Потрачено спасибок:</b> {thanks_cost}\n"
                 f"📉 <b>Новый баланс:</b> {user.balance} спасибок"
             )
-            
             await safe_admin_notify(
                 chat_id=settings.TELEGRAM_CHAT_ID,
                 text=admin_message,
                 message_thread_id=settings.TELEGRAM_PURCHASE_TOPIC_ID,
             )
         except Exception as e:
-            logger.exception("Could not send admin notification for Statix purchase: %s", e)
+            logger.exception("Could not send bonus purchase admin notification: %s", e)
 
-        # Email пользователю и админам
         try:
             from email_service import (
                 send_purchase_confirmation_to_user,
                 send_purchase_notification_to_admins,
             )
+
             user_name_display = f"{user.first_name or ''} {user.last_name or ''}".strip()
+            item_name = f"Бонусы {product_label}"
             if user.email:
                 await send_purchase_confirmation_to_user(
                     to_email=user.email,
                     user_name=user_name_display,
-                    item_name="Бонусы Statix",
+                    item_name=item_name,
                     amount=int(thanks_cost),
                     purchase_type="statix",
                 )
@@ -4278,24 +4291,26 @@ async def create_statix_bonus_purchase(db: AsyncSession, user_id: int, bonus_amo
                 user_name=user_name_display,
                 user_phone=user.phone_number or "",
                 user_email=user.email,
-                item_name="Бонусы Statix",
+                item_name=item_name,
                 amount=int(thanks_cost),
                 extra_info=f"Куплено бонусов: {bonus_amount}",
             )
         except Exception as e:
-            print(f"Could not send Statix purchase emails. Error: {e}")
+            print(f"Could not send bonus purchase emails. Error: {e}")
 
         await _create_notification(
-            db, user.id, "purchase",
-            "Покупка бонусов Statix",
-            f"Куплено {bonus_amount} бонусов Statix за {thanks_cost} спасибок.",
+            db,
+            user.id,
+            "purchase",
+            f"Покупка бонусов {product_label}",
+            f"Куплено {bonus_amount} бонусов за {thanks_cost} спасибок.",
         )
         await db.commit()
 
     return {
         "new_balance": user.balance,
         "purchased_bonus_amount": bonus_amount,
-        "thanks_spent": thanks_cost
+        "thanks_spent": thanks_cost,
     }
 
 # --- НОВАЯ ФУНКЦИЯ ДЛЯ ТЕСТИРОВАНИЯ ---

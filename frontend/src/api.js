@@ -690,8 +690,15 @@ export const getStatixBonusItem = () => {
     return apiClient.get('/market/statix-bonus');
 };
 
-export const purchaseStatixBonus = (telegramId, bonusAmount) =>
-  apiClient.post('/market/statix-bonus/purchase', { user_id: telegramId, bonus_amount: bonusAmount }, getAuthHeaders());
+export const purchaseStatixBonus = (bonusAmount) =>
+  apiClient.post(
+    '/market/statix-bonus/purchase',
+    { bonus_amount: bonusAmount },
+    getAuthHeaders()
+  );
+
+export const getTeamsBonusCard = () =>
+  apiClient.get('/users/me/teams-bonus-card', getAuthHeaders());
 
 // --- Функции для работы с Redis кешем ---
 

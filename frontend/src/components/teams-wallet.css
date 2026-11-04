@@ -1,0 +1,136 @@
+/* Стили карты Teams Bonus (из Teams Bonus app.css, wallet-*) */
+
+.wallet-card {
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--card, #00a8a8);
+  color: white;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  max-width: 380px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.wallet-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 18px 12px;
+}
+
+.wallet-logo {
+  width: 140px;
+  max-width: min(140px, 44%);
+  height: 44px;
+  object-fit: contain;
+  object-position: left center;
+  flex: 0 1 auto;
+}
+
+.wallet-logo.is-default {
+  width: 58px;
+  max-width: 58px;
+  height: auto;
+  flex: 0 0 auto;
+  filter: brightness(0) invert(1);
+}
+
+.wallet-balance {
+  text-align: right;
+}
+
+.wallet-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.wallet-amount {
+  margin: 4px 0 0;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.wallet-discount {
+  margin: 8px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0.95;
+}
+
+.wallet-banner {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1672 / 763;
+  height: auto;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.wallet-banner.is-empty {
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.wallet-banner img,
+.wallet-placeholder {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+}
+
+.wallet-placeholder {
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14), transparent 50%),
+    rgba(0, 0, 0, 0.12);
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.wallet-body {
+  padding: 20px 18px 22px;
+}
+
+.wallet-holder {
+  margin: 8px 0 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.wallet-code {
+  width: min(248px, 92%);
+  margin: 28px auto 0;
+  padding: 12px 10px 10px;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.wallet-code-number {
+  margin: 8px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.wallet-meta {
+  margin: 16px 0 0;
+  font-size: 12px;
+  opacity: 0.85;
+  text-align: center;
+}

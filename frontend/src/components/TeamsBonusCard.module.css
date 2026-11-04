@@ -1,0 +1,13 @@
+.root {
+  font-family: Manrope, 'Segoe UI', Arial, sans-serif;
+}
+
+.barcode {
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.barcode svg {
+  max-width: 100%;
+}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { purchaseStatixBonus, getStatixBonusItem } from '../api';
+import { purchaseStatixBonus, getStatixBonusItem, getTeamsBonusCard } from '../api';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 import { useConfirmation } from '../contexts/ConfirmationContext';
 import styles from './StatixBonusCard.module.css';
@@ -9,8 +9,15 @@ function StatixBonusCard({ user, onPurchaseSuccess }) {
   const [bonusAmount, setBonusAmount] = useState(100);
   const [isLoading, setIsLoading] = useState(true);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [teamsCard, setTeamsCard] = useState(null);
   const { showAlert } = useModalAlert();
   const { confirm } = useConfirmation();
+
+  useEffect(() => {
+    getTeamsBonusCard()
+      .then((response) => setTeamsCard(response.data))
+      .catch(() => setTeamsCard({ integration_enabled: false, linked: false }));
+  }, [user?.id]);
 
   useEffect(() => {
     const fetchStatixItem = async () => {
@@ -43,25 +50,27 @@ function StatixBonusCard({ user, onPurchaseSuccess }) {
     return Math.round((bonusAmount / 100) * statixItem.thanks_to_statix_rate);
   };
 
+  const teamsMode = Boolean(teamsCard?.integration_enabled);
+  const bonusProductLabel = teamsMode ? 'Teams Bonus' : 'Statix';
+
   const handlePurchase = async () => {
     if (!statixItem) return;
     
     const thanksCost = calculateThanksCost();
     const isConfirmed = await confirm(
-      `Вы уверены, что хотите купить ${bonusAmount} бонусов Statix за ${thanksCost} спасибок?`
+      `Вы уверены, что хотите купить ${bonusAmount} бонусов ${bonusProductLabel} за ${thanksCost} спасибок?`
     );
     
     if (isConfirmed) {
       setIsPurchasing(true);
       try {
-        const response = await purchaseStatixBonus(user.telegram_id, bonusAmount);
+        const response = await purchaseStatixBonus(bonusAmount);
         const { new_balance, purchased_bonus_amount } = response.data;
         
         onPurchaseSuccess({ balance: new_balance });
         
-        // Показываем модальное окно с результатом покупки
         showAlert(
-          `Успешно приобретено ${purchased_bonus_amount} бонусов Statix!`,
+          `Успешно приобретено ${purchased_bonus_amount} бонусов ${bonusProductLabel}!`,
           'success'
         );
         
@@ -84,7 +93,10 @@ function StatixBonusCard({ user, onPurchaseSuccess }) {
 
   const thanksCost = calculateThanksCost();
   const canAfford = user?.balance >= thanksCost;
-  const hasCard = user?.card_barcode; // Проверяем наличие карты статикс
+  const teamsReady = teamsCard !== null;
+  const hasCard = teamsMode
+    ? teamsReady && teamsCard.linked
+    : Boolean(user?.card_barcode);
 
   return (
     <div className={styles.card}>
@@ -104,16 +116,22 @@ function StatixBonusCard({ user, onPurchaseSuccess }) {
         </div>
       )}
 
-      {!hasCard && (
+      {teamsMode && !teamsReady && (
+        <div className={styles.noCardWarning}>Проверяем привязку карты Teams…</div>
+      )}
+
+      {((teamsMode && teamsReady && !hasCard) || (!teamsMode && !hasCard)) && (
         <div className={styles.noCardWarning}>
-          ⚠️ Для покупки бонусов необходимо добавить карту статикс в профиль
+          {teamsMode
+            ? `⚠️ Привяжите карту Teams Bonus (ID Спасибо: ${user?.id}) через HR`
+            : '⚠️ Для покупки бонусов необходимо добавить карту Statix в профиль'}
         </div>
       )}
 
       <div className={styles.bonusSelector}>
         <div className={styles.amountDisplay}>
           <span className={styles.bonusAmount}>{bonusAmount}</span>
-          <span className={styles.bonusLabel}>бонусов Statix</span>
+          <span className={styles.bonusLabel}>бонусов {bonusProductLabel}</span>
         </div>
         
         <div className={styles.sliderContainer}>

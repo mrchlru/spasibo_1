@@ -109,18 +109,18 @@ async def purchase_statix_bonus(
     user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Statix Bonus только для текущего пользователя."""
-    if not user.telegram_id:
+    """Бонусы магазина только для текущего пользователя (Teams или Statix)."""
+    import teams_bonus_client
+
+    if not teams_bonus_client.teams_bonus_configured() and not user.telegram_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Для покупки нужен привязанный Telegram",
         )
     try:
-        result = await crud.create_statix_bonus_purchase(
-            db, user.telegram_id, request.bonus_amount
-        )
+        result = await crud.create_statix_bonus_purchase(db, user, request.bonus_amount)
         return {
-            "message": "Statix бонусы успешно приобретены",
+            "message": "Бонусы успешно приобретены",
             "new_balance": result["new_balance"],
             "purchased_bonus_amount": result["purchased_bonus_amount"]
         }

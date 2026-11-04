@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     STATIX_BONUS_RESTAURANT_NAME: str = "TG BOT"
     STATIX_BONUS_TIMEOUT_SECONDS: int = 10
 
+    # Teams Bonus (обмен спасибок → карта сотрудника Teams)
+    TEAMS_BONUS_ENABLED: bool = False
+    TEAMS_BONUS_BASE_URL: str = ""
+    TEAMS_BONUS_API_KEY: str = ""
+    TEAMS_BONUS_TIMEOUT_SECONDS: int = 15
+
     # Настройки Redis (REDIS_ENABLED=false — не подключаться и не использовать кеш)
     REDIS_ENABLED: bool = True
     REDIS_HOST: str = "localhost"

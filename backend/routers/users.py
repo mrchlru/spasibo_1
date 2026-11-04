@@ -201,6 +201,42 @@ async def list_users(
     users = await crud.get_users(db)
     return [schemas.user_response_for_public_api(u) for u in users]
 
+@router.get("/me/teams-bonus-card", response_model=schemas.TeamsBonusCardResponse)
+async def get_my_teams_bonus_card(
+    user: models.User = Depends(get_current_user),
+):
+    """Карта Teams Bonus по users.id (прокси к Teams API)."""
+    import teams_bonus_client
+
+    if not teams_bonus_client.teams_bonus_configured():
+        return schemas.TeamsBonusCardResponse(integration_enabled=False, linked=False)
+    try:
+        payload = await teams_bonus_client.fetch_teams_bonus_card(user.id)
+    except teams_bonus_client.TeamsBonusError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.message,
+        ) from exc
+    return schemas.TeamsBonusCardResponse(
+        integration_enabled=True,
+        linked=bool(payload.get("linked")),
+        spasibo_user_id=str(payload.get("spasibo_user_id") or user.id),
+        public_number=str(payload.get("public_number") or ""),
+        short_code=str(payload.get("short_code") or ""),
+        short_code_display=str(payload.get("short_code_display") or ""),
+        balance_kopecks=int(payload.get("balance_kopecks") or 0),
+        balance_rub=str(payload.get("balance_rub") or "0"),
+        holder_name=str(payload.get("holder_name") or ""),
+        card_url=str(payload.get("card_url") or ""),
+        color=str(payload.get("color") or "#00A8A8"),
+        template_url=str(payload.get("template_url") or ""),
+        logo_url=str(payload.get("logo_url") or ""),
+        barcode_value=str(payload.get("barcode_value") or ""),
+        discount_percent=int(payload.get("discount_percent") or 0),
+        status=str(payload.get("status") or ""),
+    )
+
+
 @router.get("/me", response_model=schemas.UserResponse)
 async def get_self(
     user: models.User = Depends(get_current_user),
