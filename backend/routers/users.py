@@ -201,6 +201,40 @@ async def list_users(
     users = await crud.get_users(db)
     return [schemas.user_response_for_public_api(u) for u in users]
 
+def _teams_card_response(payload: dict, *, user_id: int) -> schemas.TeamsBonusCardResponse:
+    history_raw = payload.get("history") or []
+    history = [schemas.TeamsBonusHistoryItem(**item) for item in history_raw if isinstance(item, dict)]
+    return schemas.TeamsBonusCardResponse(
+        integration_enabled=True,
+        linked=bool(payload.get("linked")),
+        spasibo_user_id=str(payload.get("spasibo_user_id") or user_id),
+        public_number=str(payload.get("public_number") or ""),
+        short_code=str(payload.get("short_code") or ""),
+        short_code_display=str(payload.get("short_code_display") or ""),
+        balance_kopecks=int(payload.get("balance_kopecks") or 0),
+        balance_rub=str(payload.get("balance_rub") or "0"),
+        holder_name=str(payload.get("holder_name") or ""),
+        card_url=str(payload.get("card_url") or ""),
+        color=str(payload.get("color") or "#00A8A8"),
+        template_url=str(payload.get("template_url") or ""),
+        logo_url=str(payload.get("logo_url") or ""),
+        logo_custom=bool(payload.get("logo_custom")),
+        default_logo_url=str(payload.get("default_logo_url") or ""),
+        barcode_value=str(payload.get("barcode_value") or ""),
+        barcode_svg=str(payload.get("barcode_svg") or ""),
+        discount_percent=int(payload.get("discount_percent") or 0),
+        status=str(payload.get("status") or ""),
+        status_label=str(payload.get("status_label") or ""),
+        segment_name=str(payload.get("segment_name") or ""),
+        use_days_label=str(payload.get("use_days_label") or ""),
+        use_days_active=list(payload.get("use_days_active") or []),
+        expires_on=str(payload.get("expires_on") or ""),
+        history=history,
+        history_has_more=bool(payload.get("history_has_more")),
+        history_next_before=payload.get("history_next_before"),
+    )
+
+
 @router.get("/me/teams-bonus-card", response_model=schemas.TeamsBonusCardResponse)
 async def get_my_teams_bonus_card(
     user: models.User = Depends(get_current_user),
@@ -221,24 +255,61 @@ async def get_my_teams_bonus_card(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=exc.message,
         ) from exc
-    return schemas.TeamsBonusCardResponse(
-        integration_enabled=True,
-        linked=bool(payload.get("linked")),
-        spasibo_user_id=str(payload.get("spasibo_user_id") or user.id),
-        public_number=str(payload.get("public_number") or ""),
-        short_code=str(payload.get("short_code") or ""),
-        short_code_display=str(payload.get("short_code_display") or ""),
-        balance_kopecks=int(payload.get("balance_kopecks") or 0),
-        balance_rub=str(payload.get("balance_rub") or "0"),
-        holder_name=str(payload.get("holder_name") or ""),
-        card_url=str(payload.get("card_url") or ""),
-        color=str(payload.get("color") or "#00A8A8"),
-        template_url=str(payload.get("template_url") or ""),
-        logo_url=str(payload.get("logo_url") or ""),
-        barcode_value=str(payload.get("barcode_value") or ""),
-        discount_percent=int(payload.get("discount_percent") or 0),
-        status=str(payload.get("status") or ""),
+    return _teams_card_response(payload, user_id=user.id)
+
+
+@router.get("/me/teams-bonus-history", response_model=schemas.TeamsBonusHistoryPageResponse)
+async def get_my_teams_bonus_history(
+    user: models.User = Depends(get_current_user),
+    before: Optional[int] = None,
+    limit: int = 10,
+):
+    """Следующая порция истории (кеш ~45 с на сервере «Спасибо»)."""
+    import teams_bonus_cache
+    import teams_bonus_client
+
+    if not teams_bonus_client.teams_bonus_configured():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teams Bonus выключен")
+    cache_key = f"{user.id}:{before or 0}:{limit}"
+
+    async def _load() -> dict:
+        return await teams_bonus_client.fetch_teams_bonus_history(
+            user.id,
+            before=before,
+            limit=limit,
+        )
+
+    try:
+        page = await teams_bonus_cache.cached_history(cache_key, _load)
+    except teams_bonus_client.TeamsBonusError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.message) from exc
+    items = [schemas.TeamsBonusHistoryItem(**row) for row in page.get("items", []) if isinstance(row, dict)]
+    return schemas.TeamsBonusHistoryPageResponse(
+        items=items,
+        has_more=bool(page.get("has_more")),
+        next_before=page.get("next_before"),
     )
+
+
+@router.get("/me/teams-bonus-partners", response_model=schemas.TeamsBonusPartnersResponse)
+async def get_my_teams_bonus_partners(
+    user: models.User = Depends(get_current_user),
+):
+    """Партнёры и дни недели (кеш ~1 ч)."""
+    del user
+    import teams_bonus_cache
+    import teams_bonus_client
+
+    if not teams_bonus_client.teams_bonus_configured():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teams Bonus выключен")
+
+    try:
+        payload = await teams_bonus_cache.cached_partners(
+            teams_bonus_client.fetch_teams_bonus_partners
+        )
+    except teams_bonus_client.TeamsBonusError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=exc.message) from exc
+    return schemas.TeamsBonusPartnersResponse(**payload)
 
 
 @router.get("/me", response_model=schemas.UserResponse)

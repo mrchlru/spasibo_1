@@ -4,6 +4,9 @@ import { deleteUserCard, getTeamsBonusCard, uploadPkpassFile } from '../api';
 import styles from './BonusCardPage.module.css';
 import BonusCard from '../components/BonusCard';
 import TeamsBonusCard from '../components/TeamsBonusCard';
+import TeamsBonusHistory from '../components/TeamsBonusHistory';
+import TeamsBonusPartnersDialog from '../components/TeamsBonusPartnersDialog';
+import '../components/teams-wallet-page.css';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 import { useConfirmation } from '../contexts/ConfirmationContext';
 import { FaUpload, FaSpinner } from 'react-icons/fa';
@@ -14,6 +17,7 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
   const [uploading, setUploading] = useState(false);
   const [teamsCard, setTeamsCard] = useState(null);
   const [teamsLoading, setTeamsLoading] = useState(true);
+  const [partnersOpen, setPartnersOpen] = useState(false);
   const fileInputRef = React.useRef(null);
 
   const isTelegramWebApp = !!window.Telegram?.WebApp;
@@ -112,16 +116,6 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
     }
   };
 
-  const openTeamsCardUrl = () => {
-    if (!teamsCard?.card_url) return;
-    const url = teamsCard.card_url;
-    if (window.Telegram?.WebApp?.openLink) {
-      window.Telegram.WebApp.openLink(url);
-    } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    }
-  };
-
   const fallbackName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
 
   if (teamsLoading) {
@@ -139,7 +133,7 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
 
   return (
     <PageLayout title="Бонусная карта">
-      <div className={teamsMode ? styles.pageTeams : undefined}>
+      <div className={teamsMode ? `${styles.pageTeams} teams-wallet-page` : undefined}>
         <button type="button" onClick={onBack} className={styles.backButton}>
           &larr; Назад в профиль
         </button>
@@ -151,17 +145,41 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
         )}
 
         {teamsMode && teamsCard?.linked && (
-          <div className={styles.cardContainer}>
+          <>
+            <p className="wallet-hint">Покажите штрихкод управляющему в ресторане.</p>
             <TeamsBonusCard card={teamsCard} fallbackName={fallbackName} />
-            {teamsCard.card_url && (
-              <button type="button" onClick={openTeamsCardUrl} className={styles.openCardButton}>
-                Открыть карту в Teams Bonus
-              </button>
-            )}
-            <p className={styles.subText}>
-              ID Спасибо для HR: <strong>{user.id}</strong>
-            </p>
-          </div>
+            <button
+              type="button"
+              className="partners-wide-btn"
+              onClick={() => setPartnersOpen(true)}
+            >
+              <span className="partners-wide-icon" aria-hidden="true">
+                <svg viewBox="0 0 48 48" width="22" height="22" fill="none">
+                  <path
+                    d="M24 44s14-12.2 14-24a14 14 0 1 0-28 0c0 11.8 14 24 14 24Z"
+                    stroke="currentColor"
+                    strokeWidth="2.6"
+                    strokeLinejoin="round"
+                  />
+                  <circle cx="24" cy="20" r="5.2" stroke="currentColor" strokeWidth="2.6" />
+                </svg>
+              </span>
+              <span className="partners-wide-copy">
+                <strong>Где и когда действует карта</strong>
+                <small>Рестораны-партнёры и дни использования</small>
+              </span>
+            </button>
+            <TeamsBonusHistory
+              initialItems={teamsCard.history}
+              initialHasMore={teamsCard.history_has_more}
+              initialNextBefore={teamsCard.history_next_before}
+            />
+            <TeamsBonusPartnersDialog
+              open={partnersOpen}
+              onClose={() => setPartnersOpen(false)}
+              card={teamsCard}
+            />
+          </>
         )}
 
         {teamsMode && !teamsCard?.linked && !teamsCard?.integration_error && (

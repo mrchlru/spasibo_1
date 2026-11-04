@@ -1,9 +1,14 @@
 /* frontend/src/pages/BonusCardPage.module.css */
 .pageTeams {
-  background: #ffffff;
+  background: #2b2b2b;
   min-height: calc(100vh - 80px);
   margin: -16px -16px 0;
-  padding: 16px 16px 32px;
+  padding: 16px 12px 32px;
+  color: #f5f5f5;
+}
+
+.pageTeams .backButton {
+  color: #eafff8;
 }
 
 .hintBox,
@@ -27,18 +32,6 @@
   background: #fdecea;
   border: 1px solid #f5c2c0;
   color: #7a1f1a;
-}
-
-.openCardButton {
-  background: #039980;
-  color: #fff;
-  border: none;
-  padding: 12px 22px;
-  border-radius: 20px;
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 700;
-  margin-top: 20px;
 }
 
 .backButton { margin-bottom: 20px; background: none; border: none; font-size: 16px; cursor: pointer; color: var(--theme-primary-dark); padding: 0; font-weight: bold; }

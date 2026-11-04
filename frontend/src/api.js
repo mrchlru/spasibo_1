@@ -700,6 +700,15 @@ export const purchaseStatixBonus = (bonusAmount) =>
 export const getTeamsBonusCard = () =>
   apiClient.get('/users/me/teams-bonus-card', getAuthHeaders());
 
+export const getTeamsBonusHistory = (before, limit = 10) =>
+  apiClient.get('/users/me/teams-bonus-history', {
+    ...getAuthHeaders(),
+    params: { before, limit },
+  });
+
+export const getTeamsBonusPartners = () =>
+  apiClient.get('/users/me/teams-bonus-partners', getAuthHeaders());
+
 // --- Функции для работы с Redis кешем ---
 
 /**

@@ -894,6 +894,17 @@ class StatixBonusPurchaseRequest(BaseModel):
     user_id: Optional[int] = None  # устарело: используется текущий пользователь из JWT
     bonus_amount: int  # Количество бонусов Statix для покупки
 
+class TeamsBonusHistoryItem(BaseModel):
+    id: int
+    title: str
+    meta: str
+    amount_display: str = ""
+    is_minus: bool = False
+    show_amount: bool = True
+    cheque_detail: str = ""
+    undone: bool = False
+
+
 class TeamsBonusCardResponse(BaseModel):
     """Прокси карты Teams Bonus для экрана «Бонусная карта»."""
 
@@ -911,9 +922,46 @@ class TeamsBonusCardResponse(BaseModel):
     color: str = "#00A8A8"
     template_url: str = ""
     logo_url: str = ""
+    logo_custom: bool = False
+    default_logo_url: str = ""
     barcode_value: str = ""
+    barcode_svg: str = ""
     discount_percent: int = 0
     status: str = ""
+    status_label: str = ""
+    segment_name: str = ""
+    use_days_label: str = ""
+    use_days_active: list[str] = Field(default_factory=list)
+    expires_on: str = ""
+    history: list[TeamsBonusHistoryItem] = Field(default_factory=list)
+    history_has_more: bool = False
+    history_next_before: Optional[int] = None
+
+
+class TeamsBonusHistoryPageResponse(BaseModel):
+    items: list[TeamsBonusHistoryItem]
+    has_more: bool
+    next_before: Optional[int] = None
+
+
+class TeamsBonusPartnerPlace(BaseModel):
+    name: str
+    addresses: list[str] = Field(default_factory=list)
+
+
+class TeamsBonusPartnerCity(BaseModel):
+    city: str
+    places: list[TeamsBonusPartnerPlace] = Field(default_factory=list)
+
+
+class TeamsBonusWeekdayChoice(BaseModel):
+    value: str
+    title: str
+
+
+class TeamsBonusPartnersResponse(BaseModel):
+    weekday_choices: list[TeamsBonusWeekdayChoice] = Field(default_factory=list)
+    cities: list[TeamsBonusPartnerCity] = Field(default_factory=list)
 
 class StatixBonusPurchaseResponse(BaseModel):
     message: str

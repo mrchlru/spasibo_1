@@ -43,6 +43,47 @@ async def fetch_teams_bonus_card(spasibo_user_id: int) -> dict[str, Any]:
     return _parse_json_response(response, "Не удалось загрузить карту Teams Bonus")
 
 
+async def fetch_teams_bonus_history(
+    spasibo_user_id: int,
+    *,
+    before: int | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Следующая порция истории операций по карте."""
+    base_url = _base_url()
+    timeout = httpx.Timeout(settings.TEAMS_BONUS_TIMEOUT_SECONDS or 15)
+    params: dict[str, str | int] = {"user_id": str(spasibo_user_id), "limit": limit}
+    if before is not None:
+        params["before"] = before
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            response = await client.get(
+                f"{base_url}/api/spasibo/history",
+                params=params,
+                headers=_auth_headers(),
+            )
+        except httpx.RequestError as exc:
+            logger.error("Teams Bonus history request failed: %s", exc)
+            raise TeamsBonusError("Teams Bonus недоступен, попробуйте позже.") from exc
+    return _parse_json_response(response, "Не удалось загрузить историю Teams Bonus")
+
+
+async def fetch_teams_bonus_partners() -> dict[str, Any]:
+    """Каталог ресторанов-партнёров."""
+    base_url = _base_url()
+    timeout = httpx.Timeout(settings.TEAMS_BONUS_TIMEOUT_SECONDS or 15)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            response = await client.get(
+                f"{base_url}/api/spasibo/partners",
+                headers=_auth_headers(),
+            )
+        except httpx.RequestError as exc:
+            logger.error("Teams Bonus partners request failed: %s", exc)
+            raise TeamsBonusError("Teams Bonus недоступен, попробуйте позже.") from exc
+    return _parse_json_response(response, "Не удалось загрузить партнёров Teams Bonus")
+
+
 async def redeem_teams_bonus(
     spasibo_user_id: int,
     bonus_amount_rub: int,

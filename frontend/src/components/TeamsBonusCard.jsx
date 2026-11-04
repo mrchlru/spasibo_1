@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from 'react';
-import Barcode from 'react-barcode';
 import '../lib/tilt/tilt-card.css';
 import '../lib/tilt/tilt-core.js';
 import './teams-wallet.css';
@@ -22,14 +21,24 @@ function TeamsBonusCard({ card, fallbackName = '' }) {
         tilt.destroy();
       }
     };
-  }, [card?.barcode_value, card?.balance_rub]);
+  }, [card?.barcode_value, card?.barcode_svg, card?.balance_rub]);
 
   if (!card?.linked) {
     return null;
   }
 
-  const holder = card.holder_name || fallbackName;
-  const logoIsDefault = !card.logo_url;
+  const holderBase = card.holder_name || fallbackName;
+  const holder =
+    card.segment_name && card.segment_name.trim()
+      ? `${holderBase}, ${card.segment_name.trim().toLowerCase()}`
+      : holderBase;
+  const logoSrc = card.logo_url || card.default_logo_url;
+  const logoIsDefault = !card.logo_custom || !card.logo_url;
+
+  const metaParts = [];
+  if (card.public_number) metaParts.push(card.public_number);
+  if (card.status_label) metaParts.push(card.status_label);
+  const metaLine = metaParts.join(' · ');
 
   return (
     <article
@@ -38,24 +47,14 @@ function TeamsBonusCard({ card, fallbackName = '' }) {
       style={{ '--card': card.color || '#00A8A8' }}
     >
       <div className="wallet-top">
-        {card.logo_url ? (
+        {logoSrc ? (
           <img
             className={`wallet-logo${logoIsDefault ? ' is-default' : ''}`}
-            src={card.logo_url}
+            src={logoSrc}
             alt=""
             data-tilt-depth="3"
           />
-        ) : (
-          <img
-            className="wallet-logo is-default"
-            src="/teams-wallet-logo.png"
-            alt=""
-            data-tilt-depth="3"
-            onError={(event) => {
-              event.currentTarget.style.display = 'none';
-            }}
-          />
-        )}
+        ) : null}
         <div className="wallet-balance" data-tilt-depth="2">
           <p className="wallet-label">Баланс</p>
           <p className="wallet-amount">{card.balance_rub || '0'}</p>
@@ -88,30 +87,35 @@ function TeamsBonusCard({ card, fallbackName = '' }) {
         <p className="wallet-holder" data-tilt-depth="2">
           {holder}
         </p>
+        {card.expires_on && (
+          <p className="wallet-expiry" data-tilt-depth="2">
+            Действует до {formatExpiry(card.expires_on)}
+          </p>
+        )}
         <div className="wallet-code" data-tilt-ignore data-tilt-above>
-          {card.barcode_value && (
-            <div className={styles.barcode}>
-              <Barcode
-                value={card.barcode_value}
-                displayValue={false}
-                height={48}
-                margin={0}
-                background="transparent"
-                lineColor="#111"
-              />
-            </div>
-          )}
+          {card.barcode_svg ? (
+            <div
+              className="wallet-barcode"
+              aria-hidden="true"
+              dangerouslySetInnerHTML={{ __html: card.barcode_svg }}
+            />
+          ) : null}
           <p className="wallet-code-number">
             {card.short_code_display || card.barcode_value || '••••-••••'}
           </p>
         </div>
-        {card.public_number && (
-          <p className="wallet-meta">{card.public_number}</p>
-        )}
+        {metaLine && <p className="wallet-meta">{metaLine}</p>}
       </div>
       <span className="tilt-card__sheen" data-tilt-sheen aria-hidden="true" />
     </article>
   );
+}
+
+function formatExpiry(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 export default TeamsBonusCard;

@@ -128,6 +128,27 @@
   letter-spacing: 0.06em;
 }
 
+.wallet-expiry {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.9;
+}
+
+.wallet-barcode {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  overflow: hidden;
+}
+
+.wallet-barcode svg {
+  max-width: 100%;
+  height: auto;
+}
+
 .wallet-meta {
   margin: 16px 0 0;
   font-size: 12px;
