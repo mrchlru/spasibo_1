@@ -133,7 +133,7 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
 
   return (
     <PageLayout title="Бонусная карта">
-      <div className={teamsMode ? `${styles.pageTeams} teams-wallet-page` : undefined}>
+      <div className={teamsMode ? `${styles.pageTeams} teams-wallet-page teams-wallet-light` : undefined}>
         <button type="button" onClick={onBack} className={styles.backButton}>
           &larr; Назад в профиль
         </button>

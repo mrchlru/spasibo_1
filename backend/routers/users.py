@@ -201,6 +201,18 @@ async def list_users(
     users = await crud.get_users(db)
     return [schemas.user_response_for_public_api(u) for u in users]
 
+def _teams_asset_url(raw: str) -> str:
+    from config import settings
+
+    cleaned = (raw or "").strip()
+    if cleaned == "" or cleaned.startswith("http://") or cleaned.startswith("https://"):
+        return cleaned
+    base = (settings.TEAMS_BONUS_BASE_URL or "").strip().rstrip("/")
+    if base == "":
+        return cleaned
+    return f"{base}/{cleaned.lstrip('/')}"
+
+
 def _teams_card_response(payload: dict, *, user_id: int) -> schemas.TeamsBonusCardResponse:
     history_raw = payload.get("history") or []
     history = [schemas.TeamsBonusHistoryItem(**item) for item in history_raw if isinstance(item, dict)]
@@ -216,10 +228,10 @@ def _teams_card_response(payload: dict, *, user_id: int) -> schemas.TeamsBonusCa
         holder_name=str(payload.get("holder_name") or ""),
         card_url=str(payload.get("card_url") or ""),
         color=str(payload.get("color") or "#00A8A8"),
-        template_url=str(payload.get("template_url") or ""),
-        logo_url=str(payload.get("logo_url") or ""),
+        template_url=_teams_asset_url(str(payload.get("template_url") or "")),
+        logo_url=_teams_asset_url(str(payload.get("logo_url") or "")),
         logo_custom=bool(payload.get("logo_custom")),
-        default_logo_url=str(payload.get("default_logo_url") or ""),
+        default_logo_url=_teams_asset_url(str(payload.get("default_logo_url") or "")),
         barcode_value=str(payload.get("barcode_value") or ""),
         barcode_svg=str(payload.get("barcode_svg") or ""),
         discount_percent=int(payload.get("discount_percent") or 0),

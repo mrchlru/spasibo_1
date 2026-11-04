@@ -6,7 +6,6 @@
   background: var(--card, #00a8a8);
   color: white;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
-  max-width: 380px;
   width: 100%;
   margin: 0 auto;
 }

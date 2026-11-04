@@ -32,8 +32,10 @@ function TeamsBonusCard({ card, fallbackName = '' }) {
     card.segment_name && card.segment_name.trim()
       ? `${holderBase}, ${card.segment_name.trim().toLowerCase()}`
       : holderBase;
-  const logoSrc = card.logo_url || card.default_logo_url;
-  const logoIsDefault = !card.logo_custom || !card.logo_url;
+  const logoSrc = card.logo_custom && card.logo_url
+    ? card.logo_url
+    : (card.default_logo_url || '/teams-wallet-logo.png');
+  const logoIsDefault = !(card.logo_custom && card.logo_url);
 
   const metaParts = [];
   if (card.public_number) metaParts.push(card.public_number);

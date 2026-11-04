@@ -1,14 +1,8 @@
 /* frontend/src/pages/BonusCardPage.module.css */
 .pageTeams {
-  background: #2b2b2b;
-  min-height: calc(100vh - 80px);
-  margin: -16px -16px 0;
-  padding: 16px 12px 32px;
-  color: #f5f5f5;
-}
-
-.pageTeams .backButton {
-  color: #eafff8;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 0 0 32px;
 }
 
 .hintBox,
