@@ -64,6 +64,17 @@ class Settings(BaseSettings):
     TEAMS_BONUS_API_KEY: str = ""
     TEAMS_BONUS_TIMEOUT_SECONDS: int = 15
 
+    @field_validator("TEAMS_BONUS_ENABLED", mode="before")
+    @classmethod
+    def _parse_teams_bonus_enabled(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off", ""}:
+                return False
+        return value
+
     # Настройки Redis (REDIS_ENABLED=false — не подключаться и не использовать кеш)
     REDIS_ENABLED: bool = True
     REDIS_HOST: str = "localhost"

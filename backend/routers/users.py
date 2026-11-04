@@ -209,7 +209,11 @@ async def get_my_teams_bonus_card(
     import teams_bonus_client
 
     if not teams_bonus_client.teams_bonus_configured():
-        return schemas.TeamsBonusCardResponse(integration_enabled=False, linked=False)
+        return schemas.TeamsBonusCardResponse(
+            integration_enabled=False,
+            linked=False,
+            integration_error="teams_not_configured",
+        )
     try:
         payload = await teams_bonus_client.fetch_teams_bonus_card(user.id)
     except teams_bonus_client.TeamsBonusError as exc:

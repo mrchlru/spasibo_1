@@ -899,6 +899,7 @@ class TeamsBonusCardResponse(BaseModel):
 
     integration_enabled: bool = False
     linked: bool = False
+    integration_error: str = ""
     spasibo_user_id: str = ""
     public_number: str = ""
     short_code: str = ""

@@ -6,6 +6,29 @@
   padding: 16px 16px 32px;
 }
 
+.hintBox,
+.warnBox {
+  max-width: 380px;
+  margin: 0 auto 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.hintBox {
+  background: #fff8e6;
+  border: 1px solid #f0d78c;
+  color: #5c4a12;
+}
+
+.warnBox {
+  background: #fdecea;
+  border: 1px solid #f5c2c0;
+  color: #7a1f1a;
+}
+
 .openCardButton {
   background: #039980;
   color: #fff;

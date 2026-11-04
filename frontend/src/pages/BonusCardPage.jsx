@@ -27,9 +27,18 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
         if (!cancelled) {
           setTeamsCard(response.data);
         }
-      } catch {
-        if (!cancelled) {
-          setTeamsCard({ integration_enabled: false, linked: false });
+      } catch (error) {
+        if (cancelled) return;
+        const status = error.response?.status;
+        const detail = error.response?.data?.detail;
+        if (status === 502 && detail) {
+          setTeamsCard({
+            integration_enabled: true,
+            linked: false,
+            integration_error: typeof detail === 'string' ? detail : 'Teams Bonus недоступен',
+          });
+        } else {
+          setTeamsCard({ integration_enabled: false, linked: false, integration_error: '' });
         }
       } finally {
         if (!cancelled) {
@@ -65,11 +74,10 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
   const handleRequestCard = () => {
     const userName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Не указано';
     const phoneNumber = user.phone_number || 'Не указан';
-    const idLine = teamsMode ? `\n3. ID Спасибо — ${user.id}` : '';
 
     const message = teamsMode
       ? `Здравствуйте! Нужна привязка карты Teams Bonus.\nID Спасибо: ${user.id}\nИмя: ${userName}\nТелефон: ${phoneNumber}`
-      : `Здравствуйте! Мне нужна карта Statix. Мои данные для выдачи:\n1. Имя Фамилия - ${userName}\n2. Номер телефона - ${phoneNumber}${idLine}`;
+      : `Здравствуйте! Мне нужна карта Statix. Мои данные для выдачи:\n1. Имя Фамилия - ${userName}\n2. Номер телефона - ${phoneNumber}`;
 
     const encodedMessage = encodeURIComponent(message);
     const url = `${supportUrl}?text=${encodedMessage}`;
@@ -116,6 +124,19 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
 
   const fallbackName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
 
+  if (teamsLoading) {
+    return (
+      <PageLayout title="Бонусная карта">
+        <button type="button" onClick={onBack} className={styles.backButton}>
+          &larr; Назад в профиль
+        </button>
+        <p className={styles.infoText}>
+          <FaSpinner className={styles.spinIcon} /> Проверяем настройки Teams Bonus…
+        </p>
+      </PageLayout>
+    );
+  }
+
   return (
     <PageLayout title="Бонусная карта">
       <div className={teamsMode ? styles.pageTeams : undefined}>
@@ -123,11 +144,13 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
           &larr; Назад в профиль
         </button>
 
-        {teamsLoading && teamsMode && (
-          <p className={styles.infoText}>Загрузка карты Teams Bonus…</p>
+        {teamsMode && teamsCard?.integration_error && !teamsCard?.linked && (
+          <div className={styles.warnBox}>
+            Не удалось загрузить карту Teams: {teamsCard.integration_error}
+          </div>
         )}
 
-        {!teamsLoading && teamsMode && teamsCard?.linked && (
+        {teamsMode && teamsCard?.linked && (
           <div className={styles.cardContainer}>
             <TeamsBonusCard card={teamsCard} fallbackName={fallbackName} />
             {teamsCard.card_url && (
@@ -141,7 +164,7 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
           </div>
         )}
 
-        {!teamsLoading && teamsMode && !teamsCard?.linked && (
+        {teamsMode && !teamsCard?.linked && !teamsCard?.integration_error && (
           <div className={styles.cardContainer}>
             <p className={styles.infoText}>Карта Teams Bonus ещё не привязана.</p>
             <p className={styles.subText}>
@@ -152,6 +175,14 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
               Написать в поддержку
             </button>
           </div>
+        )}
+
+        {!teamsMode && teamsCard?.integration_error === 'teams_not_configured' && user.card_barcode && (
+          <p className={styles.hintBox}>
+            Показана старая карта Statix: на сервере «Спасибо» не включена интеграция Teams (
+            <code>TEAMS_BONUS_ENABLED</code>, URL и ключ). После настройки и перезапуска backend откроется
+            карта Teams.
+          </p>
         )}
 
         {!teamsMode && user.card_barcode && (
