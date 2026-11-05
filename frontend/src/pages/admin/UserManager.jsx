@@ -19,7 +19,11 @@ import { useModalAlert } from '../../contexts/ModalAlertContext';
 import { useConfirmation } from '../../contexts/ConfirmationContext';
 import { formatDateForDisplay } from '../../utils/dateFormatter';
 
-/** Поля, которые админ может менять через PUT /admin/users/{id}. */
+/**
+ * Поля PUT /admin/users/{id}.
+ * Пароль сюда не входит: только через кнопку «Изменить пароль»,
+ * иначе менеджер паролей браузера подставляет чужие значения при «Сохранить».
+ */
 const ADMIN_USER_UPDATE_FIELDS = [
     'first_name',
     'last_name',
@@ -34,7 +38,6 @@ const ADMIN_USER_UPDATE_FIELDS = [
     'is_admin',
     'login',
     'email',
-    'password',
     'browser_auth_enabled',
     'can_publish_feed_posts',
     'teams_bonus_card',
@@ -55,14 +58,29 @@ function buildEditUserFormState(user) {
         status: user.status || 'approved',
         is_admin: Boolean(user.is_admin),
         login: user.login || '',
-        password: '',
         browser_auth_enabled: user.browser_auth_enabled || false,
         can_publish_feed_posts: user.can_publish_feed_posts || false,
         teams_bonus_card: '',
     };
 }
 
-function pickAdminUserUpdatePayload(formData, canGrantAdmin) {
+/**
+ * Сравнивает значения формы для детекта реальных правок админа.
+ */
+function formValuesEqual(left, right) {
+    if (typeof left === 'boolean' || typeof right === 'boolean') {
+        return Boolean(left) === Boolean(right);
+    }
+    if (typeof left === 'number' || typeof right === 'number') {
+        return Number(left) === Number(right);
+    }
+    return String(left ?? '') === String(right ?? '');
+}
+
+/**
+ * В PUT уходят только поля, которые реально изменились относительно baseline.
+ */
+function pickChangedAdminUserPayload(formData, baseline, canGrantAdmin) {
     const payload = {};
     for (const key of ADMIN_USER_UPDATE_FIELDS) {
         if (!Object.prototype.hasOwnProperty.call(formData, key)) {
@@ -71,7 +89,9 @@ function pickAdminUserUpdatePayload(formData, canGrantAdmin) {
         if (key === 'is_admin' && !canGrantAdmin) {
             continue;
         }
-        payload[key] = formData[key];
+        if (!formValuesEqual(formData[key], baseline?.[key])) {
+            payload[key] = formData[key];
+        }
     }
     return payload;
 }
@@ -81,13 +101,16 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
     const { confirm } = useConfirmation();
     const { showAlert } = useModalAlert();
     const [formData, setFormData] = useState(() => buildEditUserFormState(user));
+    const [baselineForm, setBaselineForm] = useState(() => buildEditUserFormState(user));
     const [newPassword, setNewPassword] = useState('');
     const [showPasswordChange, setShowPasswordChange] = useState(false);
     const [teamsBonusEnabled, setTeamsBonusEnabled] = useState(false);
     const [teamsCardLoading, setTeamsCardLoading] = useState(false);
 
     useEffect(() => {
-        setFormData(buildEditUserFormState(user));
+        const next = buildEditUserFormState(user);
+        setFormData(next);
+        setBaselineForm(next);
         setNewPassword('');
         setShowPasswordChange(false);
     }, [user.id]);
@@ -101,10 +124,11 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
                 const data = response.data || {};
                 setTeamsBonusEnabled(Boolean(data.integration_enabled));
                 if (data.integration_enabled) {
-                    setFormData((prev) => ({
-                        ...prev,
-                        teams_bonus_card: data.linked ? (data.public_number || '') : '',
-                    }));
+                    const cardValue = data.linked ? (data.public_number || '') : '';
+                    setFormData((prev) => ({ ...prev, teams_bonus_card: cardValue }));
+                    // Baseline после загрузки карты — иначе «пустая→MR-…» всегда считалась бы изменением,
+                    // а чужой autofill email/password не должен уезжать вместе с картой.
+                    setBaselineForm((prev) => ({ ...prev, teams_bonus_card: cardValue }));
                 }
             })
             .catch(() => {
@@ -129,9 +153,13 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
 
     const handleSave = (e) => {
         e.preventDefault();
-        const payload = { ...formData };
+        const payload = pickChangedAdminUserPayload(formData, baselineForm, canGrantAdmin);
         if (!teamsBonusEnabled) {
             delete payload.teams_bonus_card;
+        }
+        if (Object.keys(payload).length === 0) {
+            showAlert('Нет изменений для сохранения.', 'info');
+            return;
         }
         onSave(user.id, payload);
     };
@@ -155,7 +183,8 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
             `Вы уверены, что хотите ${actionText} пользователя ${user.first_name}?`
         );
         if (isConfirmed) {
-            onSave(user.id, { ...formData, status: newStatus });
+            // Только статус — без остальных полей формы (защита от autofill).
+            onSave(user.id, { status: newStatus });
         }
     };
 
@@ -191,18 +220,30 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
                 <button onClick={onClose} className={userManagerStyles.closeButton}><FaTimes /></button>
 
                 <h2>Редактирование: {user.first_name} {user.last_name}</h2>
-                <form onSubmit={handleSave}>
+                <form onSubmit={handleSave} autoComplete="off">
                     <div className={userManagerStyles.formGrid}>
-                        <input name="first_name" value={formData.first_name || ''} onChange={handleChange} placeholder="Имя" className={styles.input} />
-                        <input name="last_name" value={formData.last_name || ''} onChange={handleChange} placeholder="Фамилия" className={styles.input} />
-                        <input name="department" value={formData.department || ''} onChange={handleChange} placeholder="Подразделение" className={styles.input} />
-                        <input name="position" value={formData.position || ''} onChange={handleChange} placeholder="Должность" className={styles.input} />
-                        <input type="tel" name="phone_number" value={formData.phone_number || ''} onChange={handleChange} placeholder="Номер телефона" className={styles.input} />
-                        <input type="email" name="email" value={formData.email || ''} onChange={handleChange} placeholder="Email (при наличии)" className={styles.input} autoComplete="off" />
-                        <input type="text" name="date_of_birth" value={formData.date_of_birth || ''} onChange={handleChange} placeholder="Дата (ДД.ММ.ГГГГ)" className={styles.input} />
-                        <input type="number" name="balance" value={formData.balance || 0} onChange={handleChange} placeholder="Баланс" className={styles.input} />
-                        <input type="number" name="tickets" value={formData.tickets || 0} onChange={handleChange} placeholder="Билеты" className={styles.input} />
-                        <input type="number" name="ticket_parts" value={formData.ticket_parts || 0} onChange={handleChange} placeholder="Части билетов" className={styles.input} />
+                        <input name="first_name" value={formData.first_name || ''} onChange={handleChange} placeholder="Имя" className={styles.input} autoComplete="off" />
+                        <input name="last_name" value={formData.last_name || ''} onChange={handleChange} placeholder="Фамилия" className={styles.input} autoComplete="off" />
+                        <input name="department" value={formData.department || ''} onChange={handleChange} placeholder="Подразделение" className={styles.input} autoComplete="off" />
+                        <input name="position" value={formData.position || ''} onChange={handleChange} placeholder="Должность" className={styles.input} autoComplete="off" />
+                        <input type="tel" name="phone_number" value={formData.phone_number || ''} onChange={handleChange} placeholder="Номер телефона" className={styles.input} autoComplete="off" />
+                        <input
+                            type="email"
+                            name="email"
+                            value={formData.email || ''}
+                            onChange={handleChange}
+                            placeholder="Email (при наличии)"
+                            className={styles.input}
+                            autoComplete="off"
+                            readOnly
+                            onFocus={(event) => event.currentTarget.removeAttribute('readOnly')}
+                            data-lpignore="true"
+                            data-1p-ignore="true"
+                        />
+                        <input type="text" name="date_of_birth" value={formData.date_of_birth || ''} onChange={handleChange} placeholder="Дата (ДД.ММ.ГГГГ)" className={styles.input} autoComplete="off" />
+                        <input type="number" name="balance" value={formData.balance || 0} onChange={handleChange} placeholder="Баланс" className={styles.input} autoComplete="off" />
+                        <input type="number" name="tickets" value={formData.tickets || 0} onChange={handleChange} placeholder="Билеты" className={styles.input} autoComplete="off" />
+                        <input type="number" name="ticket_parts" value={formData.ticket_parts || 0} onChange={handleChange} placeholder="Части билетов" className={styles.input} autoComplete="off" />
                         <select name="status" value={formData.status} onChange={handleChange} className={styles.select}>
                             <option value="approved">Активен</option>
                             <option value="blocked">Заблокирован</option>
@@ -246,16 +287,15 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
                             placeholder="Логин (минимум 3 символа)" 
                             className={styles.input}
                             minLength={3}
+                            autoComplete="off"
+                            readOnly
+                            onFocus={(event) => event.currentTarget.removeAttribute('readOnly')}
+                            data-lpignore="true"
+                            data-1p-ignore="true"
                         />
-                        <input 
-                            type="password" 
-                            name="password" 
-                            value={formData.password || ''} 
-                            onChange={handleChange} 
-                            placeholder="Пароль (минимум 6 символов, оставьте пустым чтобы не менять)" 
-                            className={styles.input}
-                            minLength={6}
-                        />
+                        <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: '12px', color: '#888' }}>
+                            Пароль меняется только кнопкой «Изменить пароль» ниже — не через общее «Сохранить».
+                        </p>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', gridColumn: '1 / -1' }}>
                             <input
                                 type="checkbox"
@@ -341,6 +381,9 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
                                     className={styles.input}
                                     style={{ flex: 1 }}
                                     minLength={6}
+                                    autoComplete="new-password"
+                                    data-lpignore="true"
+                                    data-1p-ignore="true"
                                 />
                                 <button 
                                     type="button" 
@@ -398,35 +441,32 @@ function UserManager({ canGrantAdmin = false }) {
     };
 
     const handleSaveUser = async (userId, userData) => {
-        const dateParts = (userData.date_of_birth || '').split('.');
-        let apiDate = null;
-        if (dateParts.length === 3) {
-            apiDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+        // Пароль из общей формы больше не принимаем (защита от autofill менеджера паролей).
+        const dataToSend = { ...userData };
+        delete dataToSend.password;
+
+        if (Object.prototype.hasOwnProperty.call(dataToSend, 'date_of_birth')) {
+            const dateParts = String(dataToSend.date_of_birth || '').split('.');
+            let apiDate = null;
+            if (dateParts.length === 3) {
+                apiDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+            }
+            dataToSend.date_of_birth = apiDate;
         }
 
-        const dataToSend = {
-            ...pickAdminUserUpdatePayload(userData, canGrantAdmin),
-            date_of_birth: apiDate,
-        };
-
-        // Если пароль пустой, не отправляем его (чтобы не перезаписывать существующий)
-        if (!dataToSend.password || String(dataToSend.password).trim() === '') {
-            delete dataToSend.password;
-        }
-
-        // Пустой email — явно сброс в null на бэкенде
+        // Пустой email — явно сброс в null на бэкенде (только если поле реально отправили)
         if (dataToSend.email !== undefined && String(dataToSend.email).trim() === '') {
             dataToSend.email = null;
         }
 
+        if (Object.keys(dataToSend).length === 0) {
+            showAlert('Нет изменений для сохранения.', 'info');
+            return;
+        }
+
         try {
-            if (dataToSend.action === 'delete') {
-                await adminDeleteUser(userId);
-                showAlert('Пользователь успешно сброшен.', 'success');
-            } else {
-                await adminUpdateUser(userId, dataToSend);
-                showAlert('Данные пользователя обновлены.', 'success');
-            }
+            await adminUpdateUser(userId, dataToSend);
+            showAlert('Данные пользователя обновлены.', 'success');
             setEditingUser(null);
             fetchUsers();
         } catch (error) {
