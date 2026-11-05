@@ -425,6 +425,7 @@ class AdminUserUpdate(BaseModel):
     password: Optional[str] = None
     browser_auth_enabled: Optional[bool] = None
     can_publish_feed_posts: Optional[bool] = None
+    teams_bonus_card: Optional[str] = None
 
 class BannerBase(OrmBase):
     image_url: Optional[str] = None

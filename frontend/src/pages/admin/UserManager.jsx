@@ -3,7 +3,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 // --- ИЗМЕНЕНИЕ: Добавляем иконку FaDownload и функцию exportAllUsers ---
 import { FaPencilAlt, FaTimes, FaDownload, FaKey, FaTrash } from 'react-icons/fa';
-import { adminGetAllUsers, adminUpdateUser, adminDeleteUser, exportAllUsers, adminChangeUserPassword, adminDeleteUserPassword } from '../../api';
+import {
+  adminGetAllUsers,
+  adminUpdateUser,
+  adminDeleteUser,
+  exportAllUsers,
+  adminChangeUserPassword,
+  adminDeleteUserPassword,
+  adminGetUserTeamsBonusCard,
+} from '../../api';
 import { downloadExcelBlob } from '../../utils/downloadBlob';
 import styles from '../AdminPage.module.css';
 import userManagerStyles from './UserManager.module.css';
@@ -29,6 +37,7 @@ const ADMIN_USER_UPDATE_FIELDS = [
     'password',
     'browser_auth_enabled',
     'can_publish_feed_posts',
+    'teams_bonus_card',
 ];
 
 function buildEditUserFormState(user) {
@@ -49,6 +58,7 @@ function buildEditUserFormState(user) {
         password: '',
         browser_auth_enabled: user.browser_auth_enabled || false,
         can_publish_feed_posts: user.can_publish_feed_posts || false,
+        teams_bonus_card: '',
     };
 }
 
@@ -73,11 +83,43 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
     const [formData, setFormData] = useState(() => buildEditUserFormState(user));
     const [newPassword, setNewPassword] = useState('');
     const [showPasswordChange, setShowPasswordChange] = useState(false);
+    const [teamsBonusEnabled, setTeamsBonusEnabled] = useState(false);
+    const [teamsCardLoading, setTeamsCardLoading] = useState(false);
 
     useEffect(() => {
         setFormData(buildEditUserFormState(user));
         setNewPassword('');
         setShowPasswordChange(false);
+    }, [user.id]);
+
+    useEffect(() => {
+        let cancelled = false;
+        setTeamsCardLoading(true);
+        void adminGetUserTeamsBonusCard(user.id)
+            .then((response) => {
+                if (cancelled) return;
+                const data = response.data || {};
+                setTeamsBonusEnabled(Boolean(data.integration_enabled));
+                if (data.integration_enabled) {
+                    setFormData((prev) => ({
+                        ...prev,
+                        teams_bonus_card: data.linked ? (data.public_number || '') : '',
+                    }));
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setTeamsBonusEnabled(false);
+                }
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setTeamsCardLoading(false);
+                }
+            });
+        return () => {
+            cancelled = true;
+        };
     }, [user.id]);
 
     const handleChange = (e) => {
@@ -87,7 +129,11 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
 
     const handleSave = (e) => {
         e.preventDefault();
-        onSave(user.id, formData);
+        const payload = { ...formData };
+        if (!teamsBonusEnabled) {
+            delete payload.teams_bonus_card;
+        }
+        onSave(user.id, payload);
     };
 
    // --- ИЗМЕНЕНИЕ: Логика кнопки теперь соответствует анонимизации ---
@@ -161,6 +207,31 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
                             <option value="approved">Активен</option>
                             <option value="blocked">Заблокирован</option>
                         </select>
+
+                        {teamsBonusEnabled && (
+                            <>
+                                <div style={{ gridColumn: '1 / -1', borderTop: '2px solid #ddd', marginTop: '10px', paddingTop: '15px' }}>
+                                    <h3 style={{ marginTop: 0, marginBottom: '8px', fontSize: '16px', color: '#666' }}>
+                                        Карта Teams Bonus
+                                    </h3>
+                                    <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#777', lineHeight: 1.45 }}>
+                                        ID Спасибо: <strong>{user.id}</strong>. Укажите номер карты Teams (например MR-00813).
+                                        Очистите поле и сохраните, чтобы снять привязку.
+                                    </p>
+                                </div>
+                                <input
+                                    type="text"
+                                    name="teams_bonus_card"
+                                    value={formData.teams_bonus_card || ''}
+                                    onChange={handleChange}
+                                    placeholder={teamsCardLoading ? 'Загрузка…' : 'MR-00000 или short code'}
+                                    className={styles.input}
+                                    style={{ gridColumn: '1 / -1' }}
+                                    disabled={teamsCardLoading}
+                                    autoComplete="off"
+                                />
+                            </>
+                        )}
                         
                         {/* Разделитель для учетных данных */}
                         <div style={{ gridColumn: '1 / -1', borderTop: '2px solid #ddd', marginTop: '10px', paddingTop: '15px' }}>

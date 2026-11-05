@@ -456,6 +456,9 @@ export const adminGetAllUsers = () =>
 export const adminUpdateUser = (userId, userData) =>
   apiClient.put(`/admin/users/${userId}`, userData, getAuthHeaders());
 
+export const adminGetUserTeamsBonusCard = (userId) =>
+  apiClient.get(`/admin/users/${userId}/teams-bonus-card`, getAuthHeaders());
+
 export const adminDeleteUser = (userId) =>
   apiClient.delete(`/admin/users/${userId}`, getAuthHeaders());
 

@@ -380,6 +380,36 @@ async def admin_update_user_route(user_id: int, user_data: schemas.AdminUserUpda
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
+@router.get("/users/{user_id}/teams-bonus-card")
+async def admin_user_teams_bonus_card(
+    user_id: int,
+    admin_user: models.User = Depends(get_current_admin_user),
+):
+    """Статус привязки карты Teams для формы редактирования пользователя."""
+    del admin_user
+    import teams_bonus_client
+
+    if not teams_bonus_client.teams_bonus_configured():
+        return {
+            "integration_enabled": False,
+            "linked": False,
+            "public_number": "",
+        }
+    try:
+        card = await teams_bonus_client.fetch_teams_bonus_card(user_id)
+    except teams_bonus_client.TeamsBonusError:
+        return {
+            "integration_enabled": True,
+            "linked": False,
+            "public_number": "",
+        }
+    return {
+        "integration_enabled": True,
+        "linked": bool(card.get("linked")),
+        "public_number": card.get("public_number") or "",
+    }
+
 @router.delete("/users/{user_id}", status_code=204)
 async def admin_delete_user_route(user_id: int, admin_user: models.User = Depends(get_current_admin_user), db: AsyncSession = Depends(get_db)):
     success = await crud.admin_delete_user(db, user_id, admin_user)

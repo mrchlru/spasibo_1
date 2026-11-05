@@ -2250,6 +2250,7 @@ async def admin_update_user(db: AsyncSession, user_id: int, user_data: schemas.A
         return None
     
     update_data = user_data.model_dump(exclude_unset=True)
+    teams_bonus_card_update = update_data.pop("teams_bonus_card", None)
     if "is_admin" in update_data and not user_can_grant_admin(admin_user):
         raise PermissionError(
             "Назначать администраторов могут только админы из TELEGRAM_ADMIN_IDS"
@@ -2350,6 +2351,29 @@ async def admin_update_user(db: AsyncSession, user_id: int, user_data: schemas.A
             user.browser_auth_enabled = True
             changes_log.append(f"  - browser_auth_enabled: `False` -> `True` (автоматически включено при наличии логина и пароля)")
     
+    if teams_bonus_card_update is not None:
+        import teams_bonus_client
+
+        if not teams_bonus_client.teams_bonus_configured():
+            raise ValueError(
+                "Интеграция Teams Bonus не настроена (TEAMS_BONUS_ENABLED, URL и ключ)"
+            )
+        try:
+            link_result = await teams_bonus_client.link_teams_bonus_holder(
+                user_id,
+                teams_bonus_card_update,
+                replace_conflicts=True,
+            )
+        except teams_bonus_client.TeamsBonusError as exc:
+            raise ValueError(exc.message) from exc
+        public_number = link_result.get("public_number") or ""
+        if public_number:
+            changes_log.append(
+                f"  - teams_bonus_card: привязана `{public_number}` (ID Спасибо {user_id})"
+            )
+        else:
+            changes_log.append("  - teams_bonus_card: привязка снята")
+
     # Отправляем уведомление, только если были реальные изменения
     if changes_log:
         await db.commit()
@@ -4076,8 +4100,8 @@ async def set_statix_bonus_active(db: AsyncSession, *, is_active: bool) -> model
         return await create_statix_bonus_item(
             db,
             {
-                "name": "Бонусы Statix",
-                "description": "Покупка бонусов для платформы Statix",
+                "name": "Бонусы Teams Bonus",
+                "description": "Обмен спасибок на бонусы карты Teams Bonus",
                 "thanks_to_statix_rate": 10,
                 "min_bonus_per_step": 100,
                 "max_bonus_per_step": 10000,

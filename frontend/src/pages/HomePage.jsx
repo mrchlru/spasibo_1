@@ -40,9 +40,7 @@ import {
   applyOptimisticReaction,
 } from '../utils/feedReactions';
 import { syncBannersCache, warmCachedBannerAssets } from '../pwa/bannerAssetCache';
-import TeamsBonusCardPlate, {
-  TeamsBonusCardPlateSkeleton,
-} from '../components/TeamsBonusCardPlate';
+import TeamsBonusCardPlate from '../components/TeamsBonusCardPlate';
 
 function canManageFeedPosts(user) {
   return Boolean(user?.is_admin || user?.can_publish_feed_posts);
@@ -721,8 +719,7 @@ function HomePage({
   const hasFeedContent = pinnedEntries.length > 0 || streamDateKeys.length > 0;
   const isRatingSection = !isDesktop && homeSection === 'rating';
   const teamsPlateLinked = Boolean(teamsCardHome?.integration_enabled && teamsCardHome?.linked);
-  const showTeamsPlateSkeleton = teamsCardHomeLoading;
-  const showTeamsPlateBlock = showTeamsPlateSkeleton || teamsPlateLinked;
+  const showTeamsPlateBlock = teamsPlateLinked;
   const teamsPlateLoadError = Boolean(
     teamsPlateLinked && !String(teamsCardHome?.balance_rub || '').trim(),
   );
@@ -732,9 +729,6 @@ function HomePage({
   }
 
   function renderTeamsCardPlate() {
-    if (showTeamsPlateSkeleton) {
-      return <TeamsBonusCardPlateSkeleton />;
-    }
     if (!teamsPlateLinked) {
       return null;
     }

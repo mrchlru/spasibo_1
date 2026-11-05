@@ -10,8 +10,8 @@ import { clearCache } from '../../storage';
 import styles from '../AdminPage.module.css';
 
 const DEFAULT_STATIX = {
-  name: 'Бонусы Statix',
-  description: 'Покупка бонусов для платформы Statix',
+  name: 'Бонусы Teams Bonus',
+  description: 'Обмен спасибок на бонусы карты Teams Bonus',
   image_url: '',
   thanks_to_statix_rate: 10,
   min_bonus_per_step: 100,
@@ -49,7 +49,7 @@ function getApiErrorDetail(error, fallback) {
 }
 
 /**
- * Настройки товара Statix Bonus в админке, включая включение/отключение витрины.
+ * Настройки товара Teams Bonus в магазине (API statix-bonus), включая вкл/выкл витрины.
  */
 function StatixSettings() {
   const { showAlert } = useModalAlert();
@@ -120,7 +120,7 @@ function StatixSettings() {
   async function handleToggleActive() {
     const nextActive = !statixSettings.is_active;
     const isConfirmed = await confirm(
-      nextActive ? 'Включить Statix Bonus' : 'Отключить Statix Bonus',
+      nextActive ? 'Включить Teams Bonus' : 'Отключить Teams Bonus',
       nextActive
         ? 'Товар снова появится в маркетплейсе у пользователей.'
         : 'Товар исчезнет из маркетплейса. Уведомления об ошибке загрузки показываться не будут.'
@@ -140,12 +140,12 @@ function StatixSettings() {
         is_active: Boolean(response.data?.is_active),
       }));
       showAlert(
-        nextActive ? 'Statix Bonus включён.' : 'Statix Bonus отключён.',
+        nextActive ? 'Teams Bonus включён.' : 'Teams Bonus отключён.',
         'success'
       );
       clearCache('market');
     } catch (error) {
-      showAlert(getApiErrorDetail(error, 'Не удалось изменить статус Statix Bonus.'), 'error');
+      showAlert(getApiErrorDetail(error, 'Не удалось изменить статус Teams Bonus.'), 'error');
     } finally {
       setToggling(false);
     }
@@ -157,7 +157,7 @@ function StatixSettings() {
     <div className={styles.card}>
       <h2>
         <FaCoins style={{ marginRight: '8px' }} />
-        Настройки Statix Bonus
+        Настройки Teams Bonus (магазин)
       </h2>
 
       <div
@@ -186,8 +186,8 @@ function StatixSettings() {
           {toggling
             ? 'Сохранение...'
             : isActive
-              ? 'Отключить Statix Bonus'
-              : 'Включить Statix Bonus'}
+              ? 'Отключить Teams Bonus'
+              : 'Включить Teams Bonus'}
         </button>
       </div>
 

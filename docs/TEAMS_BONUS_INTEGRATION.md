@@ -9,6 +9,7 @@
 
 - `GET /users/me/teams-bonus-card` — прокси карты (JWT пользователя).
 - Покупка в магазине (`POST /market/statix-bonus/purchase`) при `TEAMS_BONUS_ENABLED=true` вызывает Teams `POST /api/spasibo/redeem` с `spasibo_user_id = users.id`.
+- Привязка карты: админ «Спасибо» → пользователи → поле MR-… → Teams `POST /api/spasibo/link`. Массово — Excel «Коннект» в Teams HR.
 - UI: `TeamsBonusCard`, экран «Бонусная карта», блок магазина (бывший Statix).
 
 ### Env

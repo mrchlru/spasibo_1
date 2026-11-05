@@ -84,6 +84,33 @@ async def fetch_teams_bonus_partners() -> dict[str, Any]:
     return _parse_json_response(response, "Не удалось загрузить партнёров Teams Bonus")
 
 
+async def link_teams_bonus_holder(
+    spasibo_user_id: int,
+    teams_card: str,
+    *,
+    replace_conflicts: bool = True,
+) -> dict[str, Any]:
+    """Привязывает users.id «Спасибо» к карте Teams (MR-…, short code или token)."""
+    base_url = _base_url()
+    timeout = httpx.Timeout(settings.TEAMS_BONUS_TIMEOUT_SECONDS or 15)
+    payload = {
+        "spasibo_user_id": str(spasibo_user_id),
+        "teams_card": (teams_card or "").strip(),
+        "replace_conflicts": replace_conflicts,
+    }
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            response = await client.post(
+                f"{base_url}/api/spasibo/link",
+                json=payload,
+                headers=_auth_headers(),
+            )
+        except httpx.RequestError as exc:
+            logger.error("Teams Bonus link failed: %s", exc)
+            raise TeamsBonusError("Teams Bonus недоступен, попробуйте позже.") from exc
+    return _parse_json_response(response, "Не удалось привязать карту Teams")
+
+
 async def redeem_teams_bonus(
     spasibo_user_id: int,
     bonus_amount_rub: int,
