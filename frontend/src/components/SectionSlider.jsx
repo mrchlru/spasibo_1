@@ -13,7 +13,7 @@ const SECTIONS = [
  *
  * @param {{ activeSection: 'feed' | 'rating', onChange: (section: 'feed' | 'rating') => void }} props
  */
-function SectionSlider({ activeSection, onChange }) {
+function SectionSlider({ activeSection, onChange, className = '' }) {
   const assets = useResolvedSeasonAssets();
   const knobUrl = resolveShellDisplayUrl(assets.section_slider_knob);
   const isRating = activeSection === 'rating';
@@ -37,7 +37,7 @@ function SectionSlider({ activeSection, onChange }) {
   );
 
   return (
-    <div className={styles.wrapper} data-tour-anchor="feed-section">
+    <div className={`${styles.wrapper} ${className}`.trim()} data-tour-anchor="feed-section">
       <div className={styles.track} role="tablist" aria-label="Разделы ленты">
         <div className={styles.well}>
           <div

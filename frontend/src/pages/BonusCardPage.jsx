@@ -11,7 +11,8 @@ import { useModalAlert } from '../contexts/ModalAlertContext';
 import { useConfirmation } from '../contexts/ConfirmationContext';
 import { FaUpload, FaSpinner } from 'react-icons/fa';
 
-function BonusCardPage({ user, onBack, onUpdateUser }) {
+function BonusCardPage({ user, onBack, onUpdateUser, backLabel = 'profile' }) {
+  const backText = backLabel === 'feed' ? 'Назад в ленту' : 'Назад в профиль';
   const { confirm } = useConfirmation();
   const { showAlert } = useModalAlert();
   const [uploading, setUploading] = useState(false);
@@ -122,7 +123,7 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
     return (
       <PageLayout title="Бонусная карта">
         <button type="button" onClick={onBack} className={styles.backButton}>
-          &larr; Назад в профиль
+          &larr; {backText}
         </button>
         <p className={styles.infoText}>
           <FaSpinner className={styles.spinIcon} /> Проверяем настройки Teams Bonus…
@@ -135,7 +136,7 @@ function BonusCardPage({ user, onBack, onUpdateUser }) {
     <PageLayout title="Бонусная карта">
       <div className={teamsMode ? `${styles.pageTeams} teams-wallet-page teams-wallet-light` : undefined}>
         <button type="button" onClick={onBack} className={styles.backButton}>
-          &larr; Назад в профиль
+          &larr; {backText}
         </button>
 
         {teamsMode && teamsCard?.integration_error && !teamsCard?.linked && (

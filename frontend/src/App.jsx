@@ -827,7 +827,15 @@ function App() {
           />
         );
         case 'referral': return <ReferralPage onBack={() => navigate('profile')} />;
-        case 'bonus_card': return <BonusCardPage user={user} onBack={() => navigate('profile')} onUpdateUser={updateUser} />;
+        case 'bonus_card':
+          return (
+            <BonusCardPage
+              user={user}
+              onBack={() => navigate('home')}
+              backLabel="feed"
+              onUpdateUser={updateUser}
+            />
+          );
         case 'edit_profile': return <EditProfilePage user={user} onBack={() => navigate('profile')} onSaveSuccess={handleProfileSaveSuccess} />;
         case 'notifications': return <NotificationsPage user={user} onBack={() => navigate('profile')} />;
   case 'settings': 

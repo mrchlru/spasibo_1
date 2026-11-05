@@ -88,10 +88,19 @@
     gap: 14px;
   }
 
+  .userProfileAreaWithPlate {
+    margin-bottom: 14px;
+  }
+
   .userActionsCol {
     flex-direction: row;
     align-items: center;
   }
+}
+
+.homeSectionSliderTight {
+  margin-top: -6px;
+  margin-bottom: 14px;
 }
 
 @media (min-width: 1025px) {

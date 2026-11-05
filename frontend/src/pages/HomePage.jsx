@@ -754,7 +754,11 @@ function HomePage({
         <div className={isDesktop ? styles.headerDesktop : styles.header}></div>
       </div>
       <div className={styles.contentArea}>
-        <div className={styles.userProfileArea}>
+        <div
+          className={`${styles.userProfileArea}${
+            !isDesktop && showTeamsPlateBlock ? ` ${styles.userProfileAreaWithPlate}` : ''
+          }`}
+        >
           {isWinterTheme && <Garland />}
           <div className={styles.userProfileRow}>
             <div className={styles.userIdentity}>
@@ -789,7 +793,11 @@ function HomePage({
         </div>
 
         {!isDesktop && (
-          <SectionSlider activeSection={homeSection} onChange={handleSectionChange} />
+          <SectionSlider
+            activeSection={homeSection}
+            onChange={handleSectionChange}
+            className={showTeamsPlateBlock ? styles.homeSectionSliderTight : ''}
+          />
         )}
 
         {mainBanners.length > 0 && !isRatingSection && (

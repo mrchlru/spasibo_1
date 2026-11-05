@@ -4,7 +4,7 @@
   height: var(--home-action-btn-h, 50px);
   border: 0;
   border-radius: 999px;
-  background: #1f7f83;
+  background: #5ca14a;
   color: #fff;
   display: flex;
   align-items: center;
@@ -62,14 +62,14 @@
   padding: 0 14px 0 16px;
   border-radius: 999px;
   background: #fff;
-  color: #1f7f83;
+  color: #2f6b2a;
   font-size: 13px;
   font-weight: 800;
   flex: none;
 }
 
 .goTextChevron {
-  stroke: #1f7f83;
+  stroke: #2f6b2a;
 }
 
 .goIcon {
@@ -86,7 +86,7 @@
 .goIconChevron {
   width: 16px;
   height: 16px;
-  stroke: #1f7f83;
+  stroke: #2f6b2a;
 }
 
 @container (max-width: 219px) {
@@ -125,7 +125,7 @@
   width: 100%;
   height: var(--home-action-btn-h, 50px);
   border-radius: 999px;
-  background: rgba(31, 127, 131, 0.22);
+  background: rgba(92, 161, 74, 0.22);
   display: flex;
   align-items: center;
   gap: 10px;

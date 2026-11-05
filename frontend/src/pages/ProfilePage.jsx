@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import styles from './ProfilePage.module.css';
-import { FaCog, FaCreditCard, FaPencilAlt, FaBell } from 'react-icons/fa';
+import { FaCog, FaPencilAlt, FaBell } from 'react-icons/fa';
 import PageLayout from '../components/PageLayout';
 import { ProfileFavoritesStrip } from '../components/ProfileFavoritesStrip';
 import { ProfilePurchasesStrip } from '../components/ProfilePurchasesStrip';
@@ -125,10 +125,6 @@ function ProfilePage({ user, telegramPhotoUrl, onNavigate, onPurchaseSuccess, re
 
       <div className={styles.actionsGrid}>
         <button onClick={() => onNavigate('history')} className={styles.actionButton}>История транзакций</button>
-        <button onClick={() => onNavigate('bonus_card')} className={styles.actionButton}>
-          <FaCreditCard style={{ marginRight: '8px' }} />
-          Бонусная карта
-        </button>
         <button onClick={() => onNavigate('notifications')} className={styles.actionButton} style={{ position: 'relative' }}>
           <FaBell style={{ marginRight: '8px' }} />
           Уведомления
