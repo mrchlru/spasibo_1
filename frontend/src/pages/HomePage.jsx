@@ -5,6 +5,7 @@ import { FaPen, FaThumbtack, FaEye, FaPencil, FaBullhorn, FaCakeCandles } from '
 import {
   getFeed,
   getBanners,
+  getTeamsBonusCard,
   publishFeedPost,
   pinFeedPost,
   unpinFeedPost,
@@ -39,6 +40,9 @@ import {
   applyOptimisticReaction,
 } from '../utils/feedReactions';
 import { syncBannersCache, warmCachedBannerAssets } from '../pwa/bannerAssetCache';
+import TeamsBonusCardPlate, {
+  TeamsBonusCardPlateSkeleton,
+} from '../components/TeamsBonusCardPlate';
 
 function canManageFeedPosts(user) {
   return Boolean(user?.is_admin || user?.can_publish_feed_posts);
@@ -84,6 +88,8 @@ function HomePage({
   const autoSlideTimerRef = useRef(null);
   const viewedPostIdsRef = useRef(new Set());
   const reactionBusyRef = useRef(new Set());
+  const [teamsCardHome, setTeamsCardHome] = useState(null);
+  const [teamsCardHomeLoading, setTeamsCardHomeLoading] = useState(true);
 
   const patchFeedPost = useCallback((postId, patcher) => {
     setFeedEntries((prev) =>
@@ -247,6 +253,33 @@ function HomePage({
     warmCachedBannerAssets(initialBanners);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setTeamsCardHome(null);
+      setTeamsCardHomeLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setTeamsCardHomeLoading(true);
+    void getTeamsBonusCard()
+      .then((response) => {
+        if (cancelled) return;
+        setTeamsCardHome(response.data);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTeamsCardHome(null);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTeamsCardHomeLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -687,9 +720,32 @@ function HomePage({
   const streamDateKeys = Object.keys(groupedStream);
   const hasFeedContent = pinnedEntries.length > 0 || streamDateKeys.length > 0;
   const isRatingSection = !isDesktop && homeSection === 'rating';
+  const teamsPlateLinked = Boolean(teamsCardHome?.integration_enabled && teamsCardHome?.linked);
+  const showTeamsPlateSkeleton = teamsCardHomeLoading;
+  const showTeamsPlateBlock = showTeamsPlateSkeleton || teamsPlateLinked;
+  const teamsPlateLoadError = Boolean(
+    teamsPlateLinked && !String(teamsCardHome?.balance_rub || '').trim(),
+  );
 
   function handleSectionChange(section) {
     onHomeSectionChange?.(section);
+  }
+
+  function renderTeamsCardPlate() {
+    if (showTeamsPlateSkeleton) {
+      return <TeamsBonusCardPlateSkeleton />;
+    }
+    if (!teamsPlateLinked) {
+      return null;
+    }
+    return (
+      <TeamsBonusCardPlate
+        balanceRub={teamsCardHome?.balance_rub || ''}
+        discountPercent={teamsCardHome?.discount_percent || 0}
+        loadError={teamsPlateLoadError}
+        onClick={() => onNavigate('bonus_card')}
+      />
+    );
   }
 
   return (
@@ -698,26 +754,38 @@ function HomePage({
         <div className={isDesktop ? styles.headerDesktop : styles.header}></div>
       </div>
       <div className={styles.contentArea}>
-        <div className={styles.userBlock}>
+        <div className={styles.userProfileArea}>
           {isWinterTheme && <Garland />}
-          <img src={telegramPhotoUrl || 'placeholder.png'} alt="User" className={styles.userAvatar} />
-          <span className={styles.userName}>{user.first_name}</span>
-          <button
-            type="button"
-            className={styles.thankYouButton}
-            aria-label="Отправить спасибки"
-            onClick={() => onNavigate('transfer')}
-          >
-            <img
-              src={sendThanksImage}
-              alt=""
-              className={styles.thankYouButtonImg}
-              loading="eager"
-              fetchPriority="high"
-              decoding="async"
-              draggable={false}
-            />
-          </button>
+          <div className={styles.userProfileRow}>
+            <div className={styles.userIdentity}>
+              <img src={telegramPhotoUrl || 'placeholder.png'} alt="User" className={styles.userAvatar} />
+              <span className={styles.userName}>{user.first_name}</span>
+            </div>
+            <div className={styles.userActionsCol}>
+              <button
+                type="button"
+                className={styles.thankYouButton}
+                aria-label="Отправить спасибки"
+                onClick={() => onNavigate('transfer')}
+              >
+                <img
+                  src={sendThanksImage}
+                  alt=""
+                  className={styles.thankYouButtonImg}
+                  loading="eager"
+                  fetchPriority="high"
+                  decoding="async"
+                  draggable={false}
+                />
+              </button>
+              {isDesktop && showTeamsPlateBlock ? (
+                <div className={styles.cardPlateHost}>{renderTeamsCardPlate()}</div>
+              ) : null}
+            </div>
+          </div>
+          {!isDesktop && showTeamsPlateBlock ? (
+            <div className={styles.cardPlateHost}>{renderTeamsCardPlate()}</div>
+          ) : null}
         </div>
 
         {!isDesktop && (

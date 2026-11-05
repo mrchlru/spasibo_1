@@ -1,0 +1,183 @@
+.plate {
+  container-type: inline-size;
+  width: 100%;
+  height: var(--home-action-btn-h, 50px);
+  border: 0;
+  border-radius: 999px;
+  background: #1f7f83;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px 0 16px;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  font-family: Manrope, 'Segoe UI', Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.plate:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.barcodeIcon {
+  flex: none;
+}
+
+.copy {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.title {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.balanceLine {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.discount {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.goText {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 14px 0 16px;
+  border-radius: 999px;
+  background: #fff;
+  color: #1f7f83;
+  font-size: 13px;
+  font-weight: 800;
+  flex: none;
+}
+
+.goTextChevron {
+  stroke: #1f7f83;
+}
+
+.goIcon {
+  display: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #fff;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.goIconChevron {
+  width: 16px;
+  height: 16px;
+  stroke: #1f7f83;
+}
+
+@container (max-width: 219px) {
+  .goText {
+    display: none;
+  }
+
+  .goIcon {
+    display: flex;
+  }
+
+  .plate {
+    gap: 8px;
+    padding: 0 6px 0 14px;
+  }
+
+  .title {
+    font-size: 11px;
+  }
+
+  .balanceLine {
+    font-size: 15px;
+  }
+
+  .discount {
+    font-size: 11px;
+  }
+
+  .barcodeIcon {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+.skeleton {
+  width: 100%;
+  height: var(--home-action-btn-h, 50px);
+  border-radius: 999px;
+  background: rgba(31, 127, 131, 0.22);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px 0 16px;
+  box-sizing: border-box;
+  animation: teamsPlatePulse 1.2s ease-in-out infinite;
+}
+
+.skeletonIcon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.35);
+  flex: none;
+}
+
+.skeletonLines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skeletonLineShort {
+  width: 72px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.skeletonLineLong {
+  width: 120px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.skeletonGo {
+  width: 96px;
+  height: 38px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.4);
+  flex: none;
+}
+
+@keyframes teamsPlatePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.72;
+  }
+}

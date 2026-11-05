@@ -48,35 +48,82 @@
   overflow-x: hidden;
 }
 
-.userBlock {
-  display: flex;
-  align-items: center;
+.userProfileArea {
+  --home-action-btn-h: 50px;
   padding: 0 26px;
   margin-bottom: 30px;
   position: relative;
 }
 
-/* Адаптация блока пользователя для больших экранов */
+.userProfileRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.userIdentity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.userActionsCol {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.cardPlateHost {
+  width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .userProfileArea {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .userActionsCol {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
 @media (min-width: 1025px) {
-  .userBlock {
+  .userProfileArea {
     padding: 0 40px;
+  }
+
+  .userActionsCol {
+    min-width: 164px;
+  }
+
+  .userActionsCol .thankYouButton {
+    width: 100%;
+    display: flex;
+    justify-content: center;
   }
 }
 
 @media (min-width: 1440px) {
-  .userBlock {
+  .userProfileArea {
     padding: 0 50px;
   }
 }
 
 @media (min-width: 1920px) {
-  .userBlock {
+  .userProfileArea {
     padding: 0 60px;
   }
 }
 
 @media (min-width: 2560px) {
-  .userBlock {
+  .userProfileArea {
     padding: 0 80px;
   }
 }
@@ -116,7 +163,7 @@
 }
 
 .thankYouButton {
-  max-height: 50px;
+  max-height: var(--home-action-btn-h, 50px);
   width: auto;
   padding: 0;
   border: none;
@@ -138,7 +185,7 @@
 
 .thankYouButtonImg {
   display: block;
-  max-height: 50px;
+  max-height: var(--home-action-btn-h, 50px);
   width: auto;
   pointer-events: none;
   -webkit-user-select: none;
