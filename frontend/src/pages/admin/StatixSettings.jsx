@@ -45,6 +45,22 @@ function getApiErrorDetail(error, fallback) {
   if (typeof detail === 'string' && detail.trim()) {
     return detail;
   }
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0];
+    if (typeof first?.msg === 'string' && first.msg.trim()) {
+      return first.msg;
+    }
+  }
+  if (!error?.response) {
+    return 'Нет ответа от сервера. Проверьте сеть или повторите позже.';
+  }
+  const status = error.response?.status;
+  if (status === 401 || status === 403) {
+    return 'Нет доступа. Войдите в админ-панель заново.';
+  }
+  if (status === 503) {
+    return 'Сервис ещё запускается — повторите через минуту.';
+  }
   return fallback;
 }
 
@@ -83,7 +99,7 @@ function StatixSettings() {
         setStatixSettings(DEFAULT_STATIX);
         return;
       }
-      showAlert(getApiErrorDetail(error, 'Не удалось загрузить настройки Statix Bonus.'), 'error');
+      showAlert(getApiErrorDetail(error, 'Не удалось загрузить настройки Teams Bonus.'), 'error');
     } finally {
       setStatixLoading(false);
     }
@@ -108,7 +124,7 @@ function StatixSettings() {
         image_url: response.data?.image_url || '',
         is_active: Boolean(response.data?.is_active),
       });
-      showAlert('Настройки Statix Bonus обновлены!', 'success');
+      showAlert('Настройки Teams Bonus обновлены!', 'success');
       clearCache('market');
     } catch (error) {
       showAlert(getApiErrorDetail(error, 'Ошибка при обновлении настроек.'), 'error');

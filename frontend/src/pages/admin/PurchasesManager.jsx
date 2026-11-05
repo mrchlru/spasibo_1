@@ -19,14 +19,14 @@ const TYPE_FILTERS = [
   { key: null, label: 'Все типы' },
   { key: 'regular', label: 'Обычные' },
   { key: 'local', label: 'Локальные' },
-  { key: 'statix', label: 'Statix' },
+  { key: 'statix', label: 'Teams Bonus' },
   { key: 'shared', label: 'Совместные' },
 ];
 
 const TYPE_LABELS = {
   regular: 'Обычная',
   local: 'Локальная',
-  statix: 'Statix',
+  statix: 'Teams Bonus',
   shared: 'Совместная',
 };
 

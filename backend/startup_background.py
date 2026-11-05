@@ -14,6 +14,7 @@ from sqlalchemy import select, text
 
 from config import settings
 from database import Base, engine
+import models  # noqa: F401 — регистрация таблиц в Base.metadata перед create_all
 from redis_cache import redis_cache
 
 logger = logging.getLogger(__name__)

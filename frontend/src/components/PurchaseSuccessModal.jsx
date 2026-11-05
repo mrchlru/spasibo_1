@@ -47,7 +47,7 @@ function PurchaseSuccessModal({ item, onClose }) {
           {purchased_bonus_amount && (
             <div className={styles.bonusAmount}>
               <span className={styles.bonusNumber}>{purchased_bonus_amount}</span>
-              <span className={styles.bonusLabel}>бонусов Statix</span>
+              <span className={styles.bonusLabel}>бонусов Teams Bonus</span>
             </div>
           )}
         </div>

@@ -10,7 +10,7 @@ const ItemManager = () => {
   const [activeTab, setActiveTab] = useState('statix');
 
   const tabs = [
-    { id: 'statix', label: 'Настройки Statix Bonus', icon: <FaCoins /> },
+    { id: 'statix', label: 'Настройки Teams Bonus', icon: <FaCoins /> },
     { id: 'creation', label: 'Создание нового товара', icon: <FaPlus /> },
   ];
 

@@ -82,7 +82,7 @@ function BonusCardPage({ user, onBack, onUpdateUser, backLabel = 'profile' }) {
 
     const message = teamsMode
       ? `Здравствуйте! Нужна привязка карты Teams Bonus.\nID Спасибо: ${user.id}\nИмя: ${userName}\nТелефон: ${phoneNumber}`
-      : `Здравствуйте! Мне нужна карта Statix. Мои данные для выдачи:\n1. Имя Фамилия - ${userName}\n2. Номер телефона - ${phoneNumber}`;
+      : `Здравствуйте! Нужна карта Teams Bonus.\nID Спасибо: ${user.id}\nИмя: ${userName}\nТелефон: ${phoneNumber}`;
 
     const encodedMessage = encodeURIComponent(message);
     const url = `${supportUrl}?text=${encodedMessage}`;
@@ -197,7 +197,7 @@ function BonusCardPage({ user, onBack, onUpdateUser, backLabel = 'profile' }) {
 
         {!teamsMode && teamsCard?.integration_error === 'teams_not_configured' && user.card_barcode && (
           <p className={styles.hintBox}>
-            Показана старая карта Statix: на сервере «Спасибо» не включена интеграция Teams (
+            Показана резервная карта из профиля: на сервере «Спасибо» не включена интеграция Teams (
             <code>TEAMS_BONUS_ENABLED</code>, URL и ключ). После настройки и перезапуска backend откроется
             карта Teams.
           </p>
@@ -240,7 +240,7 @@ function BonusCardPage({ user, onBack, onUpdateUser, backLabel = 'profile' }) {
                 </>
               ) : (
                 <>
-                  <FaUpload style={{ marginRight: '8px' }} /> Загрузить карту Statix
+                  <FaUpload style={{ marginRight: '8px' }} /> Загрузить карту (.pkpass)
                 </>
               )}
             </button>

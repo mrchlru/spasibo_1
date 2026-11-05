@@ -4041,13 +4041,36 @@ async def generate_monthly_leaderboard_banners(db: AsyncSession):
     await db.commit()
     print("Monthly leaderboard banners generated successfully.")
 
-# --- CRUD ОПЕРАЦИИ ДЛЯ STATIX BONUS ---
+# --- CRUD ОПЕРАЦИИ ДЛЯ STATIX BONUS (витрина Teams Bonus) ---
+TEAMS_BONUS_SHOP_DEFAULTS: dict[str, object] = {
+    "name": "Бонусы Teams Bonus",
+    "description": "Обмен спасибок на бонусы карты Teams Bonus",
+    "thanks_to_statix_rate": 10,
+    "min_bonus_per_step": 100,
+    "max_bonus_per_step": 10000,
+    "bonus_step": 100,
+}
+
+
+def _patch_statix_bonus_timestamps(item: models.StatixBonusItem) -> models.StatixBonusItem:
+    """Гарантирует даты для сериализации API (старые строки БД могли быть без них)."""
+    now = datetime.utcnow()
+    if item.created_at is None:
+        item.created_at = now
+    if item.updated_at is None:
+        item.updated_at = now
+    return item
+
+
 async def get_statix_bonus_item(db: AsyncSession):
     """Получить активный товар Statix Bonus."""
     result = await db.execute(
         select(models.StatixBonusItem).where(models.StatixBonusItem.is_active == True)
     )
-    return result.scalars().first()
+    item = result.scalars().first()
+    if item is None:
+        return None
+    return _patch_statix_bonus_timestamps(item)
 
 
 async def get_any_statix_bonus_item(db: AsyncSession):
@@ -4055,16 +4078,34 @@ async def get_any_statix_bonus_item(db: AsyncSession):
     result = await db.execute(
         select(models.StatixBonusItem).order_by(models.StatixBonusItem.id.desc())
     )
-    return result.scalars().first()
+    item = result.scalars().first()
+    if item is None:
+        return None
+    return _patch_statix_bonus_timestamps(item)
 
 
 async def create_statix_bonus_item(db: AsyncSession, item_data: dict):
     """Создать товар Statix Bonus."""
-    db_item = models.StatixBonusItem(**item_data)
+    now = datetime.utcnow()
+    payload = {**item_data}
+    payload.setdefault("created_at", now)
+    payload.setdefault("updated_at", now)
+    db_item = models.StatixBonusItem(**payload)
     db.add(db_item)
     await db.commit()
     await db.refresh(db_item)
-    return db_item
+    return _patch_statix_bonus_timestamps(db_item)
+
+
+async def get_or_create_statix_bonus_settings(db: AsyncSession) -> models.StatixBonusItem:
+    """Настройки для админки: последняя запись или неактивный черновик по умолчанию."""
+    item = await get_any_statix_bonus_item(db)
+    if item:
+        return _patch_statix_bonus_timestamps(item)
+    return await create_statix_bonus_item(
+        db,
+        {**TEAMS_BONUS_SHOP_DEFAULTS, "is_active": False},
+    )
 
 
 async def update_statix_bonus_item(db: AsyncSession, item_id: int, item_data: dict):
@@ -4081,7 +4122,7 @@ async def update_statix_bonus_item(db: AsyncSession, item_id: int, item_data: di
 
     await db.commit()
     await db.refresh(db_item)
-    return db_item
+    return _patch_statix_bonus_timestamps(db_item)
 
 
 async def set_statix_bonus_active(db: AsyncSession, *, is_active: bool) -> models.StatixBonusItem:
@@ -4099,24 +4140,17 @@ async def set_statix_bonus_active(db: AsyncSession, *, is_active: bool) -> model
     if not items:
         return await create_statix_bonus_item(
             db,
-            {
-                "name": "Бонусы Teams Bonus",
-                "description": "Обмен спасибок на бонусы карты Teams Bonus",
-                "thanks_to_statix_rate": 10,
-                "min_bonus_per_step": 100,
-                "max_bonus_per_step": 10000,
-                "bonus_step": 100,
-                "is_active": is_active,
-            },
+            {**TEAMS_BONUS_SHOP_DEFAULTS, "is_active": is_active},
         )
 
     primary = items[0]
     for item in items:
         item.is_active = bool(is_active) if item.id == primary.id else False
 
+    primary.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(primary)
-    return primary
+    return _patch_statix_bonus_timestamps(primary)
 
 
 def _normalize_statix_phone(phone_number: Optional[str]) -> str:

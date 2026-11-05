@@ -51,7 +51,7 @@ function StatixBonusCard({ user, onPurchaseSuccess }) {
   };
 
   const teamsMode = Boolean(teamsCard?.integration_enabled);
-  const bonusProductLabel = teamsMode ? 'Teams Bonus' : 'Statix';
+  const bonusProductLabel = 'Teams Bonus';
 
   const handlePurchase = async () => {
     if (!statixItem) return;
@@ -124,7 +124,7 @@ function StatixBonusCard({ user, onPurchaseSuccess }) {
         <div className={styles.noCardWarning}>
           {teamsMode
             ? `⚠️ Привяжите карту Teams Bonus (ID Спасибо: ${user?.id}) через HR`
-            : '⚠️ Для покупки бонусов необходимо добавить карту Statix в профиль'}
+            : '⚠️ Для покупки бонусов привяжите карту Teams Bonus в профиле'}
         </div>
       )}
 

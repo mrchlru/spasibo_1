@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy import select, func, union_all, literal, case
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
@@ -1096,14 +1096,14 @@ async def get_statix_bonus_settings(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Настройки Statix Bonus для админки (включая неактивный товар)."""
-    item = await crud.get_any_statix_bonus_item(db)
-    if not item:
+    """Настройки Teams Bonus (магазин) для админки, включая выключенный товар."""
+    try:
+        return await crud.get_or_create_statix_bonus_settings(db)
+    except SQLAlchemyError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Statix Bonus товар ещё не создан",
-        )
-    return item
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Не удалось загрузить настройки Teams Bonus (ошибка БД).",
+        ) from exc
 
 
 @router.put("/statix-bonus", response_model=schemas.StatixBonusItemResponse)
@@ -1112,37 +1112,37 @@ async def update_statix_bonus_settings(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Обновить или создать товар Statix Bonus (в т.ч. включить/выключить)."""
+    """Обновить или создать товар Teams Bonus в магазине (в т.ч. включить/выключить)."""
     payload = item_data.model_dump(exclude_unset=True)
 
-    # Переключение только статуса — отдельный надёжный путь без лишних полей.
-    if set(payload.keys()) == {"is_active"}:
-        return await crud.set_statix_bonus_active(db, is_active=bool(payload["is_active"]))
+    try:
+        # Переключение только статуса — отдельный надёжный путь без лишних полей.
+        if set(payload.keys()) == {"is_active"}:
+            return await crud.set_statix_bonus_active(db, is_active=bool(payload["is_active"]))
 
-    existing_item = await crud.get_any_statix_bonus_item(db)
-    if existing_item:
-        updated_item = await crud.update_statix_bonus_item(db, existing_item.id, payload)
-        if not updated_item:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Statix Bonus товар не найден",
-            )
-        if "is_active" in payload:
-            updated_item = await crud.set_statix_bonus_active(
-                db, is_active=bool(payload["is_active"])
-            )
-        return updated_item
+        existing_item = await crud.get_any_statix_bonus_item(db)
+        if existing_item:
+            updated_item = await crud.update_statix_bonus_item(db, existing_item.id, payload)
+            if not updated_item:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Товар Teams Bonus не найден",
+                )
+            if "is_active" in payload:
+                updated_item = await crud.set_statix_bonus_active(
+                    db, is_active=bool(payload["is_active"])
+                )
+            return updated_item
 
-    default_data = {
-        "name": "Бонусы Statix",
-        "description": "Покупка бонусов для платформы Statix",
-        "thanks_to_statix_rate": 10,
-        "min_bonus_per_step": 100,
-        "max_bonus_per_step": 10000,
-        "bonus_step": 100,
-        "is_active": False,
-    }
-    return await crud.create_statix_bonus_item(db, {**default_data, **payload})
+        default_data = {**crud.TEAMS_BONUS_SHOP_DEFAULTS, "is_active": False}
+        return await crud.create_statix_bonus_item(db, {**default_data, **payload})
+    except HTTPException:
+        raise
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Не удалось сохранить настройки Teams Bonus (ошибка БД).",
+        ) from exc
 
 @router.post("/generate-leaderboard-banners", status_code=status.HTTP_201_CREATED)
 async def trigger_leaderboard_banner_generation(

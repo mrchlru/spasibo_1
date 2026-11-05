@@ -99,7 +99,7 @@ async def get_statix_bonus_item(db: AsyncSession = Depends(get_db)):
     if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Statix Bonus недоступен",
+            detail="Teams Bonus недоступен",
         )
     return item
 

@@ -208,7 +208,7 @@ class PendingUpdate(Base):
 class StatixBonusItem(Base):
     __tablename__ = "statix_bonus_items"
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, server_default="Бонусы Statix", default="Бонусы Statix", nullable=False)
+    name = Column(String, server_default="Бонусы Teams Bonus", default="Бонусы Teams Bonus", nullable=False)
     description = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
     is_active = Column(Boolean, server_default="true", default=True, nullable=False)
