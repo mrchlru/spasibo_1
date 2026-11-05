@@ -189,16 +189,18 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
     };
 
     const handleChangePassword = async () => {
-        if (!newPassword || newPassword.length < 6) {
+        const trimmedPassword = String(newPassword || '').trim();
+        if (!trimmedPassword || trimmedPassword.length < 6) {
             showAlert('Пароль должен содержать минимум 6 символов', 'error');
             return;
         }
+        // Показываем сам пароль в подтверждении — сразу видно, если браузер подставил ваш.
         const isConfirmed = await confirm(
             'Изменение пароля',
-            `Вы уверены, что хотите изменить пароль пользователя ${user.first_name}?`
+            `Установить пароль «${trimmedPassword}» пользователю ${user.first_name}?\n\nЕсли это ваш личный пароль из автозаполнения браузера — нажмите «Отмена» и введите другой.`
         );
         if (isConfirmed) {
-            onChangePassword(user.id, newPassword);
+            onChangePassword(user.id, trimmedPassword);
             setNewPassword('');
             setShowPasswordChange(false);
         }
@@ -213,6 +215,27 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
             onDeletePassword(user.id);
         }
     };
+
+    /**
+     * Сброс email отдельным запросом — без остальных полей формы и без autofill.
+     */
+    async function handleClearEmail() {
+        const currentEmail = (user.email || formData.email || '').trim();
+        if (!currentEmail) {
+            showAlert('Email уже пустой.', 'info');
+            return;
+        }
+        const isConfirmed = await confirm(
+            'Сбросить email',
+            `Убрать email «${currentEmail}» у пользователя ${user.first_name}?`
+        );
+        if (!isConfirmed) {
+            return;
+        }
+        setFormData((prev) => ({ ...prev, email: '' }));
+        setBaselineForm((prev) => ({ ...prev, email: '' }));
+        onSave(user.id, { email: null });
+    }
 
     return (
         <div className={userManagerStyles.modalBackdrop} onClick={onClose}>
@@ -328,19 +351,34 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
                                 <span>Режим администратора</span>
                             </label>
                         )}
-                        {formData.login && (
+                        {user.login && (
                             <div style={{ gridColumn: '1 / -1', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-                                💡 Текущий логин: <strong>{formData.login}</strong>
+                                💡 Текущий логин в БД: <strong>{user.login}</strong>
                             </div>
                         )}
-                        {formData.email && (
-                            <div style={{ gridColumn: '1 / -1', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-                                ✉️ Текущий email: <strong>{formData.email}</strong>
+                        {(user.email || formData.email) && (
+                            <div style={{ gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
+                                <span>
+                                    ✉️ Email в БД: <strong>{user.email || '—'}</strong>
+                                    {formData.email && formData.email !== (user.email || '') ? (
+                                        <> (в форме сейчас: <strong>{formData.email}</strong>)</>
+                                    ) : null}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        void handleClearEmail();
+                                    }}
+                                    className={`${userManagerStyles.modalButton} ${userManagerStyles.buttonRed}`}
+                                    style={{ padding: '6px 10px', fontSize: '12px' }}
+                                >
+                                    Сбросить email
+                                </button>
                             </div>
                         )}
                         {user.password_plain && (
                             <div style={{ gridColumn: '1 / -1', fontSize: '12px', color: '#666', fontStyle: 'italic', marginTop: '5px' }}>
-                                🔑 Текущий пароль: <strong style={{ fontFamily: 'monospace', backgroundColor: '#f0f0f0', padding: '2px 6px', borderRadius: '3px' }}>{user.password_plain}</strong>
+                                🔑 Текущий пароль в БД: <strong style={{ fontFamily: 'monospace', backgroundColor: '#f0f0f0', padding: '2px 6px', borderRadius: '3px' }}>{user.password_plain}</strong>
                             </div>
                         )}
                         {!user.password_plain && user.login && (
@@ -353,7 +391,10 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
                         <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '10px', marginTop: '10px' }}>
                             <button 
                                 type="button" 
-                                onClick={() => setShowPasswordChange(!showPasswordChange)}
+                                onClick={() => {
+                                    setNewPassword('');
+                                    setShowPasswordChange(!showPasswordChange);
+                                }}
                                 className={`${userManagerStyles.modalButton} ${styles.buttonGreen}`}
                                 style={{ flex: 1 }}
                             >
@@ -372,26 +413,33 @@ function EditUserModal({ user, canGrantAdmin, onClose, onSave, onDelete, onChang
                         </div>
                         
                         {showPasswordChange && (
-                            <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px' }}>
-                                <input 
-                                    type="password" 
-                                    value={newPassword} 
-                                    onChange={(e) => setNewPassword(e.target.value)} 
-                                    placeholder="Новый пароль (минимум 6 символов)" 
-                                    className={styles.input}
-                                    style={{ flex: 1 }}
-                                    minLength={6}
-                                    autoComplete="new-password"
-                                    data-lpignore="true"
-                                    data-1p-ignore="true"
-                                />
-                                <button 
-                                    type="button" 
-                                    onClick={handleChangePassword}
-                                    className={`${userManagerStyles.modalButton} ${styles.buttonGreen}`}
-                                >
-                                    Сохранить
-                                </button>
+                            <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                                <p style={{ margin: 0, fontSize: '12px', color: '#888' }}>
+                                    Поле обычным текстом — чтобы браузер не подставлял ваш пароль. Перед записью покажем его в подтверждении.
+                                </p>
+                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                    <input 
+                                        type="text"
+                                        name={`admin-set-password-${user.id}`}
+                                        value={newPassword} 
+                                        onChange={(e) => setNewPassword(e.target.value)} 
+                                        placeholder="Новый пароль сотрудника (минимум 6 символов)" 
+                                        className={styles.input}
+                                        style={{ flex: 1 }}
+                                        minLength={6}
+                                        autoComplete="off"
+                                        data-lpignore="true"
+                                        data-1p-ignore="true"
+                                        data-form-type="other"
+                                    />
+                                    <button 
+                                        type="button" 
+                                        onClick={handleChangePassword}
+                                        className={`${userManagerStyles.modalButton} ${styles.buttonGreen}`}
+                                    >
+                                        Сохранить
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
