@@ -474,19 +474,55 @@ function UserManager({ canGrantAdmin = false }) {
         fetchUsers();
     }, []);
 
-    const fetchUsers = async () => {
-        setLoading(true);
+    useEffect(() => {
+        function refreshUsersOnFocus() {
+            fetchUsers({ silent: true });
+        }
+        window.addEventListener('focus', refreshUsersOnFocus);
+        return () => window.removeEventListener('focus', refreshUsersOnFocus);
+    }, []);
+
+    /**
+     * Загружает список пользователей для админки.
+     * @param {{ silent?: boolean }} [options] - silent: без индикатора полной загрузки.
+     */
+    async function fetchUsers(options = {}) {
+        const silent = Boolean(options.silent);
+        if (!silent) {
+            setLoading(true);
+        }
         try {
             const response = await adminGetAllUsers();
-            // --- ВОТ ИСПРАВЛЕНИЕ: Добавляем "санитайзер" данных ---
             const cleanedUsers = response.data.filter(user => user && user.id && user.status !== 'deleted');
             setAllUsers(cleanedUsers);
         } catch (error) {
-            showAlert('Ошибка загрузки пользователей.', 'error');
+            if (!silent) {
+                showAlert('Ошибка загрузки пользователей.', 'error');
+            }
         } finally {
-            setLoading(false);
+            if (!silent) {
+                setLoading(false);
+            }
         }
-    };
+    }
+
+    /**
+     * Проверяет, подходит ли пользователь под строку поиска в админке.
+     */
+    function userMatchesAdminSearch(user, query) {
+        const haystacks = [
+            user.first_name,
+            user.last_name,
+            user.username,
+            user.login,
+            user.email,
+            user.phone_number,
+            user.department,
+            user.position,
+            user.id != null ? String(user.id) : '',
+        ];
+        return haystacks.some((value) => (value || '').toLowerCase().includes(query));
+    }
 
     const handleSaveUser = async (userId, userData) => {
         // Пароль из общей формы больше не принимаем (защита от autofill менеджера паролей).
@@ -577,11 +613,7 @@ function UserManager({ canGrantAdmin = false }) {
 
         if (searchQuery.length > 1) {
             const lowercasedQuery = searchQuery.toLowerCase();
-            users = users.filter(user =>
-                user.first_name?.toLowerCase().includes(lowercasedQuery) ||
-                user.last_name?.toLowerCase().includes(lowercasedQuery) ||
-                user.username?.toLowerCase().includes(lowercasedQuery)
-            );
+            users = users.filter((user) => userMatchesAdminSearch(user, lowercasedQuery));
         }
         return users;
     }, [allUsers, view, searchQuery]);
@@ -636,7 +668,7 @@ function UserManager({ canGrantAdmin = false }) {
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Начните вводить..."
+                    placeholder="Имя, фамилия, логин, email, телефон, ID..."
                     className={styles.input}
                 />
             </div>
