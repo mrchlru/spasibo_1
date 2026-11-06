@@ -1,8 +1,9 @@
 /* Service Worker «Спасибо»: кэш оболочки + Web Push */
 
-const CACHE_NAME = 'spasibo-shell-v8';
-const MEDIA_CACHE = 'spasibo-media-v4';
-const SHELL_URLS = ['/', '/index.html', '/site.webmanifest', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png'];
+// v9: не прекешируем index.html на install — иначе iOS PWA долго отдаёт старую оболочку.
+const CACHE_NAME = 'spasibo-shell-v9';
+const MEDIA_CACHE = 'spasibo-media-v5';
+const SHELL_URLS = ['/site.webmanifest', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -81,16 +82,9 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.pathname === '/index.html' || url.pathname === '/') {
+    // Документ всегда из сети (без записи в Cache) — тёплые деплои на iPhone PWA.
     event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response && response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
-          }
-          return response;
-        })
-        .catch(() => caches.match('/index.html')),
+      fetch(event.request, { cache: 'no-store' }).catch(() => caches.match('/index.html')),
     );
     return;
   }

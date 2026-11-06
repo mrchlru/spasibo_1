@@ -225,6 +225,19 @@ function App() {
     };
 
     fetchAppTheme();
+
+    // iOS PWA часто не перезапускается — при возврате на экран снова сверяем build id.
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        void fetchAppTheme();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onVisibilityChange);
+    };
   }, [applyAppSettingsPayload]);
 
   useEffect(() => {

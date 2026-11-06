@@ -47,10 +47,22 @@ logger = logging.getLogger(__name__)
 
 
 def _compute_frontend_build_id() -> str | None:
-    """Хеш index.html — меняется при каждом деплое фронта."""
+    """
+    Id сборки фронта для принудительного обновления PWA.
+
+    Берём имя бандла ``assets/index-*.js`` — его же читает клиент из
+    ``<script src>``. Так iPhone не помечает обновление «успешным», пока
+    реально крутится старый JS.
+    """
     if not settings.SERVE_SPA:
         return None
-    index = _static_root() / "index.html"
+    static_root = _static_root()
+    assets_dir = static_root / "assets"
+    if assets_dir.is_dir():
+        index_bundles = sorted(assets_dir.glob("index-*.js"))
+        if index_bundles:
+            return index_bundles[0].stem
+    index = static_root / "index.html"
     if not index.is_file():
         return None
     digest = hashlib.sha256(index.read_bytes()).hexdigest()
