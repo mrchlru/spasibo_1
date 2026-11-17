@@ -84,16 +84,14 @@
   font-weight: 700;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  color: #00b596;
+  color: #039980;
 }
 
-.teams-wallet-page .history-amount.minus {
-  color: #f5f5f5;
-}
-
-/* Светлая страница карты: сумма списания не должна становиться белой. */
-.teams-wallet-page.teams-wallet-light .history-amount.minus {
-  color: #202020;
+/* Страница карты в «Спасибо» всегда светлая — суммы списания тёмные. */
+.teams-wallet-page .history-amount.minus,
+.teams-wallet-page.teams-wallet-light .history-amount.minus,
+.teams-wallet-light .history-amount.minus {
+  color: #111111 !important;
 }
 
 .teams-wallet-page .history-more {

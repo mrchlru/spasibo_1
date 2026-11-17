@@ -49,7 +49,13 @@ function TeamsBonusHistory({ initialItems, initialHasMore, initialNextBefore }) 
               </div>
               {item.show_amount !== false && (item.amount_display || item.amount_rub) ? (
                 <div className="history-side">
-                  <p className={`history-amount${item.is_minus ? ' minus' : ''}`}>
+                  <p
+                    className={`history-amount${item.is_minus ? ' minus' : ''}`}
+                    style={{
+                      color: item.is_minus ? '#111111' : '#039980',
+                      fontWeight: 700,
+                    }}
+                  >
                     {item.is_minus ? '−' : ''}
                     {item.amount_display || item.amount_rub}
                   </p>
