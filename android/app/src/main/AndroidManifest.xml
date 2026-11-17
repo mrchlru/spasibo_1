@@ -42,5 +42,42 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".widget.BalanceWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_balance_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_balance_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.QuickTransferWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_transfer_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_transfer_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.TeamsCardWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_teams_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_teams_card_info" />
+        </receiver>
     </application>
 </manifest>
+

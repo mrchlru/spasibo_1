@@ -7,4 +7,12 @@
     <string name="download_failed">Не удалось начать загрузку</string>
     <string name="offline_message">Нет подключения к интернету. Проверьте сеть и попробуйте снова.</string>
     <string name="offline_retry">Попробовать снова</string>
+
+    <string name="widget_balance_title">Спасибки</string>
+    <string name="widget_balance_description">Баланс спасибок и лимит отправок на сегодня</string>
+    <string name="widget_transfer_title">Отправить спасибку</string>
+    <string name="widget_transfer_description">Быстрый переход к отправке спасибки</string>
+    <string name="widget_teams_title">Моя карта</string>
+    <string name="widget_teams_description">Баланс и скидка карты Teams Bonus</string>
 </resources>
+

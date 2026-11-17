@@ -13,6 +13,10 @@ import ru.spasibo.app.MainActivity
 import ru.spasibo.app.push.PushRegistrar
 import ru.spasibo.app.push.PushSession
 import ru.spasibo.app.push.PushSessionStore
+import ru.spasibo.app.widget.WidgetRefreshWorker
+import ru.spasibo.app.widget.WidgetSnapshot
+import ru.spasibo.app.widget.WidgetSnapshotStore
+import ru.spasibo.app.widget.WidgetUpdater
 
 /** JS-мост window.SpasiboAndroid для WebView. */
 class SpasiboWebAppBridge(
@@ -31,12 +35,22 @@ class SpasiboWebAppBridge(
         )
         activity.runOnUiThread {
             PushRegistrar.registerIfPossible(activity.applicationContext)
+            WidgetRefreshWorker.enqueueNow(activity.applicationContext)
         }
     }
 
     @JavascriptInterface
     fun clearSession() {
-        PushSessionStore(activity.applicationContext).clear()
+        val appContext = activity.applicationContext
+        PushSessionStore(appContext).clear()
+        WidgetSnapshotStore(appContext).save(
+            WidgetSnapshot(
+                loggedIn = false,
+                updatedAtMs = System.currentTimeMillis(),
+                error = "Войдите в приложение",
+            ),
+        )
+        WidgetUpdater.paintCached(appContext)
     }
 
     @JavascriptInterface
