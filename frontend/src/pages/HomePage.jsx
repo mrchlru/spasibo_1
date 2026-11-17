@@ -6,6 +6,7 @@ import {
   getFeed,
   getBanners,
   getTeamsBonusCard,
+  getNyState,
   publishFeedPost,
   pinFeedPost,
   unpinFeedPost,
@@ -41,6 +42,7 @@ import {
 } from '../utils/feedReactions';
 import { syncBannersCache, warmCachedBannerAssets } from '../pwa/bannerAssetCache';
 import TeamsBonusCardPlate from '../components/TeamsBonusCardPlate';
+import NewYearEventBanner from '../components/ny/NewYearEventBanner';
 
 function canManageFeedPosts(user) {
   return Boolean(user?.is_admin || user?.can_publish_feed_posts);
@@ -88,6 +90,7 @@ function HomePage({
   const reactionBusyRef = useRef(new Set());
   const [teamsCardHome, setTeamsCardHome] = useState(null);
   const [teamsCardHomeLoading, setTeamsCardHomeLoading] = useState(true);
+  const [nyBanner, setNyBanner] = useState(null);
 
   const patchFeedPost = useCallback((postId, patcher) => {
     setFeedEntries((prev) =>
@@ -272,6 +275,28 @@ function HomePage({
       .finally(() => {
         if (!cancelled) {
           setTeamsCardHomeLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setNyBanner(null);
+      return undefined;
+    }
+    let cancelled = false;
+    void getNyState()
+      .then((response) => {
+        if (!cancelled) {
+          setNyBanner(response.data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setNyBanner(null);
         }
       });
     return () => {
@@ -783,6 +808,12 @@ function HomePage({
           </div>
           {!isDesktop && showTeamsPlateBlock ? (
             <div className={styles.cardPlateHost}>{renderTeamsCardPlate()}</div>
+          ) : null}
+          {nyBanner?.banner_visible ? (
+            <NewYearEventBanner
+              subtitle={nyBanner.banner_subtitle}
+              onClick={() => onNavigate('ny_gift')}
+            />
           ) : null}
         </div>
 

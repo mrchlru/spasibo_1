@@ -484,3 +484,102 @@ class PasswordRecoveryChallenge(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+
+
+class NyEventSettings(Base):
+    """Глобальные настройки новогоднего ивента (одна рабочая запись)."""
+
+    __tablename__ = "ny_event_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    starts_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    taps_required: Mapped[int] = mapped_column(Integer, default=7, server_default="7", nullable=False)
+    photo_moderation_required: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    low_stock_threshold: Mapped[int] = mapped_column(Integer, default=20, server_default="20", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class NyCertificateBatch(Base):
+    """Пакет загрузки сертификатов в админке."""
+
+    __tablename__ = "ny_certificate_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_by: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    files_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class NyCertificate(Base):
+    """Подарочный сертификат (картинка + ссылка)."""
+
+    __tablename__ = "ny_certificates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("ny_certificate_batches.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    image_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    thumb_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    link_url: Mapped[str] = mapped_column(Text, nullable=False)
+    nominal: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="available", server_default="available", nullable=False)
+    issued_to_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    issued_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    image_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    created_by: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    issued_to_user = relationship("User", foreign_keys=[issued_to_user_id], lazy="selectin")
+
+
+class NyParticipant(Base):
+    """Участник ивента: фото и выданный сертификат."""
+
+    __tablename__ = "ny_participants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    photo_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    photo_thumb_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    photo_status: Mapped[str] = mapped_column(
+        String(20), default="visible", server_default="visible", nullable=False
+    )
+    photo_uploaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    gift_opened_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    certificate_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("ny_certificates.id", ondelete="SET NULL"), nullable=True, unique=True
+    )
+
+    user = relationship("User", lazy="selectin")
+    certificate = relationship("NyCertificate", lazy="selectin")
+
+
+class NyEventLog(Base):
+    """Аудит и статистика действий в новогоднем ивенте."""
+
+    __tablename__ = "ny_event_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)

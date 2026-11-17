@@ -28,6 +28,7 @@ from routers import (
     media_upload,
     media_raster,
     notifications,
+    ny_event,
     push,
     referral,
     roulette,
@@ -254,6 +255,8 @@ app.include_router(push.router)
 app.include_router(media_upload.router)
 app.include_router(media_raster.router)
 app.include_router(feed.router)
+app.include_router(ny_event.router)
+app.include_router(ny_event.admin_router)
 
 
 def _register_spa_assets() -> None:

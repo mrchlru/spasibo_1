@@ -22,6 +22,7 @@ import ReferralSettings from './admin/ReferralSettings';
 import EmailBroadcast from './admin/EmailBroadcast';
 import FeedPostManager from './admin/FeedPostManager';
 import FairPlayManager from './admin/FairPlayManager';
+import NewYearEventManager from './admin/NewYearEventManager';
 import { addPointsToAll, addTicketsToAll, adminGenerateLeaderboardBanners, adminGenerateTestLeaderboardBanners, resetDailyTransferLimits } from '../api';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 import { useConfirmation } from '../contexts/ConfirmationContext';
@@ -220,6 +221,9 @@ function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppS
           <button onClick={() => setActiveSection('referral')} className={styles.gridButton}>
             Реферальная акция
           </button>
+          <button onClick={() => setActiveSection('ny-event')} className={styles.gridButton}>
+            Новогодний ивент
+          </button>
           {isPrimaryAdmin ? (
             <button onClick={() => setActiveSection('android-release')} className={styles.gridButton}>
               Android-приложение
@@ -274,6 +278,8 @@ function AdminPage({ user, seasonTheme, themeAssets, onAppearanceUpdated, onAppS
         return <InstallPromoSettings onAppSettingsUpdated={onAppSettingsUpdated} />;
       case 'referral':
         return <ReferralSettings onAppSettingsUpdated={onAppSettingsUpdated} />;
+      case 'ny-event':
+        return <NewYearEventManager />;
       case 'android-release':
         if (!isPrimaryAdmin) {
           return null;

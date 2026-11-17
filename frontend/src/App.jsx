@@ -61,6 +61,7 @@ const FairPlayBlockedPage = lazy(() => import('./pages/FairPlayBlockedPage'));
 const TransferPage = lazy(() => import('./pages/TransferPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const ReferralPage = lazy(() => import('./pages/ReferralPage'));
+const NewYearGiftPage = lazy(() => import('./pages/NewYearGiftPage'));
 const OnboardingStories = lazy(() => import('./components/OnboardingStories'));
 import EmailPromptModal from './components/EmailPromptModal';
 import AndroidNativeSessionBridge from './pwa/AndroidNativeSessionBridge.jsx';
@@ -840,6 +841,13 @@ function App() {
           />
         );
         case 'referral': return <ReferralPage onBack={() => navigate('profile')} />;
+        case 'ny_gift':
+          return (
+            <NewYearGiftPage
+              onBack={() => navigate('home')}
+              initialOpenGift={Boolean(window.__nyOpenGift)}
+            />
+          );
         case 'bonus_card':
           return (
             <BonusCardPage
@@ -970,8 +978,10 @@ function App() {
   }, [user]); // Зависимость от user, чтобы перезапускать при изменении пользователя
 
   // Создаем переменные, которые четко определяют, когда показывать меню
-  const shouldShowSideNav = user && user.status === 'approved' && isDesktop && !isOnboardingVisible;
-  const shouldShowBottomNav = user && user.status === 'approved' && !isDesktop && !isOnboardingVisible;
+  const shouldShowSideNav =
+    user && user.status === 'approved' && isDesktop && !isOnboardingVisible && page !== 'ny_gift';
+  const shouldShowBottomNav =
+    user && user.status === 'approved' && !isDesktop && !isOnboardingVisible && page !== 'ny_gift';
   
   // Проверяем, показывается ли страница входа или регистрации (для веб-версии)
   const isLoginOrRegistrationPage = !isTelegramWebApp && !user;

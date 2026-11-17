@@ -75,6 +75,20 @@ function ProfilePage({ user, telegramPhotoUrl, onNavigate, onPurchaseSuccess, re
         </button>
       )}
 
+      <button
+        type="button"
+        className={styles.referralBanner}
+        onClick={() => {
+          window.__nyOpenGift = true;
+          onNavigate('ny_gift');
+        }}
+      >
+        <span className={styles.referralBannerTitle}>🎁 Мои подарки</span>
+        <span className={styles.referralBannerText}>
+          Новогодний подарок и стена фото коллег
+        </span>
+      </button>
+
       {/* --- 2. ИСПРАВЛЕНИЕ ВЕРСТКИ: Все <p> теперь внутри .card --- */}
       {hasLimit && (
         <div className={styles.fairPlayNotice}>

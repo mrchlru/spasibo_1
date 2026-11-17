@@ -862,3 +862,82 @@ export const getAllPurchases = (type = null, statusFilter = null, page = 1, perP
   if (statusFilter) params.status = statusFilter;
   return apiClient.get('/admin/purchases/all', { ...getAuthHeaders(), params });
 };
+
+// --- NEW YEAR EVENT ---
+export const getNyState = () => apiClient.get('/ny/state', getAuthHeaders());
+
+export const uploadNyPhoto = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiClient.post('/ny/photo', formData, {
+    headers: { ...getAuthHeaders().headers },
+    timeout: 60000,
+  });
+};
+
+export const openNyGift = () => apiClient.post('/ny/gift/open', {}, getAuthHeaders());
+
+export const getNyGift = () => apiClient.get('/ny/gift', getAuthHeaders());
+
+export const getNyWall = ({ cursor = 0, limit = 48, seed } = {}) =>
+  apiClient.get('/ny/wall', {
+    ...getAuthHeaders(),
+    params: { cursor, limit, ...(seed ? { seed } : {}) },
+  });
+
+/**
+ * Скачивает защищённый media-путь с auth-заголовками и отдаёт blob URL.
+ *
+ * @param {string} path
+ * @returns {Promise<string>}
+ */
+export async function fetchAuthedMediaUrl(path) {
+  const response = await apiClient.get(path, {
+    ...getAuthHeaders(),
+    responseType: 'blob',
+  });
+  return URL.createObjectURL(response.data);
+}
+
+export const getAdminNySettings = () => apiClient.get('/admin/ny/settings', getAuthHeaders());
+
+export const patchAdminNySettings = (payload) =>
+  apiClient.patch('/admin/ny/settings', payload, getAuthHeaders());
+
+export const uploadAdminNyCertificates = ({ files, linksJson, linksCsv, comment }) => {
+  const formData = new FormData();
+  (files || []).forEach((file) => formData.append('files', file));
+  formData.append('links_json', JSON.stringify(linksJson || {}));
+  if (linksCsv) {
+    formData.append('links_csv', linksCsv);
+  }
+  if (comment) {
+    formData.append('comment', comment);
+  }
+  return apiClient.post('/admin/ny/certificates/upload', formData, {
+    headers: { ...getAuthHeaders().headers },
+    timeout: 300000,
+  });
+};
+
+export const getAdminNyCertificates = (params = {}) =>
+  apiClient.get('/admin/ny/certificates', { ...getAuthHeaders(), params });
+
+export const patchAdminNyCertificate = (id, payload) =>
+  apiClient.patch(`/admin/ny/certificates/${id}`, payload, getAuthHeaders());
+
+export const deleteAdminNyCertificate = (id) =>
+  apiClient.delete(`/admin/ny/certificates/${id}`, getAuthHeaders());
+
+export const getAdminNyStats = () => apiClient.get('/admin/ny/stats', getAuthHeaders());
+
+export const exportAdminNyStatsCsv = () =>
+  apiClient.get('/admin/ny/stats/export.csv', {
+    ...getAuthHeaders(),
+    responseType: 'blob',
+  });
+
+export const getAdminNyPhotos = () => apiClient.get('/admin/ny/photos', getAuthHeaders());
+
+export const patchAdminNyPhoto = (userId, visible) =>
+  apiClient.patch(`/admin/ny/photos/${userId}`, { visible }, getAuthHeaders());

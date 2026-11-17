@@ -1,0 +1,74 @@
+.ny {
+  position: relative;
+  width: 100%;
+  border: 0;
+  border-radius: 26px;
+  padding: 16px 16px 16px 92px;
+  text-align: left;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  background: linear-gradient(120deg, #0a2417, #1d5a36);
+  box-shadow: 0 0 0 2px #ffd86b55, 0 10px 26px #0a241766;
+  animation: pulse 2.4s infinite;
+  margin: 0 0 14px;
+}
+
+.ny b {
+  display: block;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.ny em {
+  font-style: normal;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.giftSvg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 70px;
+  transform: translateY(-50%) rotate(-8deg);
+  animation: bob 2.4s ease-in-out infinite;
+}
+
+.star {
+  position: absolute;
+  color: #fff;
+  opacity: 0.7;
+  font-style: normal;
+  font-size: 10px;
+  animation: tw 2s infinite;
+  pointer-events: none;
+}
+
+@keyframes pulse {
+  50% {
+    box-shadow: 0 0 0 4px #ffd86b99, 0 10px 30px #ffd86b55;
+  }
+}
+
+@keyframes bob {
+  50% {
+    transform: translateY(-54%) rotate(6deg);
+  }
+}
+
+@keyframes tw {
+  50% {
+    opacity: 0.1;
+    transform: scale(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ny,
+  .giftSvg,
+  .star {
+    animation: none;
+  }
+}

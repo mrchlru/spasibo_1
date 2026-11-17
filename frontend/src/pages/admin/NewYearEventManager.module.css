@@ -1,0 +1,179 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tab {
+  border: 0;
+  border-radius: 16px;
+  padding: 10px 14px;
+  background: #e6f3e3;
+  color: #2d5a1e;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tabActive {
+  background: #3f7a2b;
+  color: #fff;
+}
+
+.form,
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.form input[type='datetime-local'],
+.form input[type='number'],
+.previewRow input,
+.filters input,
+.filters select {
+  border: 1px solid #c5d9bf;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.check {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.hint {
+  opacity: 0.75;
+  font-size: 13px;
+  margin: 0;
+}
+
+.previewList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.previewRow {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.report {
+  background: #fff8e8;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 13px;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.certGrid,
+.photoGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.certCard,
+.photoCard {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 10px;
+  background: #f4faf2;
+  border-radius: 16px;
+  padding: 10px;
+  align-items: start;
+}
+
+.certCard img,
+.photoCard img,
+.ph {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: #d7e8d1;
+}
+
+.certActions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.certActions button,
+.photoCard button,
+.filters button {
+  border: 0;
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: #3f7a2b;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.small {
+  font-size: 12px;
+  opacity: 0.8;
+  word-break: break-all;
+}
+
+.statCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.statCard {
+  background: #e6f3e3;
+  border-radius: 14px;
+  padding: 12px;
+  font-weight: 700;
+}
+
+.tableWrap {
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid #d7e8d1;
+  text-align: left;
+  padding: 8px 6px;
+}
