@@ -899,9 +899,15 @@ class TeamsBonusHistoryItem(BaseModel):
     id: int
     title: str
     meta: str
+    amount_kopecks: int = 0
+    amount_rub: str = ""
     amount_display: str = ""
     is_minus: bool = False
     show_amount: bool = True
+    restaurant: str = ""
+    order_ref: str = ""
+    comment: str = ""
+    created_at: str = ""
     cheque_detail: str = ""
     undone: bool = False
 
