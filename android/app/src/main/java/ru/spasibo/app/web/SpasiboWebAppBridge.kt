@@ -119,7 +119,11 @@ class SpasiboWebAppBridge(
             return
         }
         activity.runOnUiThread {
-            activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(trimmed)))
+            try {
+                activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(trimmed)))
+            } catch (_: Exception) {
+                // Нет почтового клиента / невалидная схема — не роняем WebView.
+            }
         }
     }
 

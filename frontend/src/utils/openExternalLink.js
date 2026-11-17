@@ -33,3 +33,27 @@ export function openExternalLink(url) {
 export function isHttpUrl(value) {
   return /^https?:\/\//i.test(String(value ?? '').trim());
 }
+
+/**
+ * Открывает mailto без ухода WebView на ERR_UNKNOWN_URL_SCHEME.
+ *
+ * @param {string} mailtoUrl
+ */
+export function openMailto(mailtoUrl) {
+  const trimmed = String(mailtoUrl ?? '').trim();
+  if (!trimmed) {
+    return;
+  }
+
+  if (isSpasiboAndroidApp() && window.SpasiboAndroid?.openExternalUrl) {
+    window.SpasiboAndroid.openExternalUrl(trimmed);
+    return;
+  }
+
+  const anchor = document.createElement('a');
+  anchor.href = trimmed;
+  anchor.rel = 'noopener noreferrer';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}

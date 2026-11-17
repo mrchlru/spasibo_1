@@ -6,6 +6,7 @@ import { loginUser } from '../api';
 import styles from './LoginPage.module.css';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
+import { openMailto } from '../utils/openExternalLink';
 
 function LoginPage({ onLoginSuccess, onAdminPanelLoginSuccess, onShowRegistration, telegramUser = null }) {
   const { showAlert } = useModalAlert();
@@ -68,7 +69,7 @@ function LoginPage({ onLoginSuccess, onAdminPanelLoginSuccess, onShowRegistratio
       `Должность: ${forgotPasswordData.position}\n` +
       `Примерное количество спасибок на балансе: ${forgotPasswordData.balance}`
     );
-    window.location.href = `mailto:masovroma@gmail.com?subject=${subject}&body=${body}`;
+    openMailto(`mailto:masovroma@gmail.com?subject=${subject}&body=${body}`);
   };
 
   const handleRegisterClick = (e) => {

@@ -2,7 +2,9 @@ package ru.spasibo.app.web
 
 import android.annotation.SuppressLint
 import android.app.DownloadManager
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.os.Build
@@ -285,7 +287,10 @@ fun WebAppScreen(
                             override fun shouldOverrideUrlLoading(
                                 view: WebView?,
                                 request: WebResourceRequest?,
-                            ): Boolean = false
+                            ): Boolean {
+                                val uri = request?.url ?: return false
+                                return openExternalUriIfNeeded(view?.context ?: context, uri)
+                            }
 
                             override fun onPageStarted(
                                 view: WebView?,
@@ -500,6 +505,35 @@ private fun logPageState(view: WebView?, url: String?, attempt: Int) {
             "});})()",
     ) { payload ->
         Log.i(MainActivity.LOG_TAG, "Page state #$attempt $payload url=$url")
+    }
+}
+
+/**
+ * Открывает mailto/tel/sms и прочие не-http схемы во внешнем приложении.
+ * Иначе WebView показывает net::ERR_UNKNOWN_URL_SCHEME и белый экран ошибки.
+ */
+private fun openExternalUriIfNeeded(context: Context, uri: Uri): Boolean {
+    val scheme = uri.scheme?.lowercase().orEmpty()
+    if (scheme.isEmpty() || scheme == "http" || scheme == "https" ||
+        scheme == "about" || scheme == "blob" || scheme == "data" || scheme == "file"
+    ) {
+        return false
+    }
+    return try {
+        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        true
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(
+            context,
+            "Не найдено приложение для открытия этой ссылки",
+            Toast.LENGTH_SHORT,
+        ).show()
+        true
+    } catch (_: Exception) {
+        true
     }
 }
 

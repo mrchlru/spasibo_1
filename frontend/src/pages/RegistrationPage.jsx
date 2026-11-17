@@ -13,6 +13,7 @@ import PageLayout from '../components/PageLayout';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 
 import { formatDateForApi } from '../utils/dateFormatter';
+import { openMailto } from '../utils/openExternalLink';
 import {
   captureReferralCodeFromLocation,
   getPendingReferralCode,
@@ -164,7 +165,7 @@ function RegistrationPage({ telegramUser, onRegistrationSuccess, isWebBrowser = 
         `Должность: ${formData.position}\n` +
         `Email: ${formData.email || 'не указан'}`
     );
-    window.location.href = `mailto:masovroma@gmail.com?subject=${subject}&body=${body}`;
+    openMailto(`mailto:masovroma@gmail.com?subject=${subject}&body=${body}`);
   };
 
   const handleSubmit = async (e) => {
