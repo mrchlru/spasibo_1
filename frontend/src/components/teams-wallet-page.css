@@ -91,8 +91,42 @@
   color: #f5f5f5;
 }
 
+/* Светлая страница карты: сумма списания не должна становиться белой. */
+.teams-wallet-page.teams-wallet-light .history-amount.minus {
+  color: #202020;
+}
+
 .teams-wallet-page .history-more {
   margin-top: 8px;
+}
+
+.teams-wallet-page .history-cheque {
+  margin-top: 8px;
+}
+
+.teams-wallet-page .history-cheque summary {
+  cursor: pointer;
+  color: #00b596;
+  font-size: 13px;
+  font-weight: 600;
+  list-style: none;
+}
+
+.teams-wallet-page .history-cheque summary::-webkit-details-marker {
+  display: none;
+}
+
+.teams-wallet-page .history-cheque-body {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.04);
+  color: #333;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .teams-wallet-page .text-link {

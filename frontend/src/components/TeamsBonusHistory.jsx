@@ -40,15 +40,21 @@ function TeamsBonusHistory({ initialItems, initialHasMore, initialNextBefore }) 
               <div>
                 <p className="history-title">{item.title}</p>
                 {item.meta && <p className="muted">{item.meta}</p>}
+                {item.cheque_detail ? (
+                  <details className="history-cheque">
+                    <summary>Детали заказа</summary>
+                    <pre className="history-cheque-body">{item.cheque_detail}</pre>
+                  </details>
+                ) : null}
               </div>
-              {item.show_amount && item.amount_display && (
+              {item.show_amount !== false && (item.amount_display || item.amount_rub) ? (
                 <div className="history-side">
                   <p className={`history-amount${item.is_minus ? ' minus' : ''}`}>
                     {item.is_minus ? '−' : ''}
-                    {item.amount_display}
+                    {item.amount_display || item.amount_rub}
                   </p>
                 </div>
-              )}
+              ) : null}
             </li>
           ))}
         </ul>
