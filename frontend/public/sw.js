@@ -1,7 +1,7 @@
 /* Service Worker «Спасибо»: кэш оболочки + Web Push */
 
 // v9: не прекешируем index.html на install — иначе iOS PWA долго отдаёт старую оболочку.
-const CACHE_NAME = 'spasibo-shell-v10';
+const CACHE_NAME = 'spasibo-shell-v11';
 const MEDIA_CACHE = 'spasibo-media-v5';
 const SHELL_URLS = ['/site.webmanifest', '/apple-touch-icon.png', '/icon-192.png', '/icon-512.png'];
 

@@ -1,8 +1,9 @@
 import React, { useCallback, useState } from 'react';
 import { getTeamsBonusHistory } from '../api';
+import styles from './TeamsBonusHistory.module.css';
 
 /**
- * Список операций по карте Teams (первая страница с карточки, далее — по кнопке).
+ * Список операций по карте Teams — как на public_card, цвета под белый фон «Спасибо».
  */
 function TeamsBonusHistory({ initialItems, initialHasMore, initialNextBefore }) {
   const [items, setItems] = useState(initialItems || []);
@@ -29,50 +30,56 @@ function TeamsBonusHistory({ initialItems, initialHasMore, initialNextBefore }) 
   }, [hasMore, loading, nextBefore]);
 
   return (
-    <section className="history">
+    <section className={styles.history}>
       <h2>Операции</h2>
       {items.length === 0 ? (
-        <p className="muted">Операций пока нет.</p>
+        <p className={styles.empty}>Операций пока нет.</p>
       ) : (
         <ul>
-          {items.map((item) => (
-            <li key={item.id} className={item.undone ? 'is-undone' : undefined}>
-              <div>
-                <p className="history-title">{item.title}</p>
-                {item.meta && <p className="muted">{item.meta}</p>}
-                {item.cheque_detail ? (
-                  <details className="history-cheque">
-                    <summary>Детали заказа</summary>
-                    <pre className="history-cheque-body">{item.cheque_detail}</pre>
-                  </details>
-                ) : null}
-              </div>
-              {item.show_amount !== false && (item.amount_display || item.amount_rub) ? (
-                <div className="history-side">
-                  <p
-                    className={`history-amount${item.is_minus ? ' minus' : ''}`}
-                    style={{
-                      color: item.is_minus ? '#111111' : '#039980',
-                      fontWeight: 700,
-                    }}
-                  >
-                    {item.is_minus ? '−' : ''}
-                    {item.amount_display || item.amount_rub}
-                  </p>
+          {items.map((item) => {
+            const amountText = item.amount_display || item.amount_rub || '';
+            const showAmount = item.show_amount !== false && Boolean(amountText);
+            const cheque = String(item.cheque_detail || '').trim();
+            return (
+              <li key={item.id} className={item.undone ? styles.isUndone : undefined}>
+                <div className={styles.main}>
+                  <p className={styles.title}>{item.title}</p>
+                  {item.meta ? <p className={styles.meta}>{item.meta}</p> : null}
+                  {cheque ? (
+                    <details className={styles.cheque}>
+                      <summary>Чек заказа</summary>
+                      <pre className={styles.chequeBody}>{cheque}</pre>
+                    </details>
+                  ) : null}
                 </div>
-              ) : null}
-            </li>
-          ))}
+                {showAmount ? (
+                  <div className={styles.side}>
+                    <p
+                      className={`${styles.amount}${item.is_minus ? ` ${styles.amountMinus}` : ''}`}
+                    >
+                      {item.is_minus ? '−' : ''}
+                      {amountText}
+                    </p>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
-      {hasMore && (
-        <div className="history-more">
-          <button type="button" className="text-link" onClick={loadMore} disabled={loading}>
+      {hasMore ? (
+        <div className={styles.more}>
+          <button
+            type="button"
+            className={styles.moreButton}
+            onClick={loadMore}
+            disabled={loading}
+          >
             {loading ? 'Загрузка…' : 'Показать ещё'}
           </button>
-          {error && <p className="muted">{error}</p>}
+          {error ? <p className={styles.moreError}>{error}</p> : null}
         </div>
-      )}
+      ) : null}
     </section>
   );
 }
