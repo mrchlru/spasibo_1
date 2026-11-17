@@ -213,9 +213,12 @@ async def admin_upload_certificates(
     except json.JSONDecodeError:
         links_by_name = {}
 
-    if links_csv is not None:
+    if links_csv is not None and (links_csv.filename or "").strip():
         csv_raw = await links_csv.read()
-        links_by_name.update(ny_event_service.parse_links_csv(csv_raw))
+        if csv_raw:
+            links_by_name.update(
+                ny_event_service.parse_links_table_file(links_csv.filename or "links.csv", csv_raw)
+            )
 
     return await ny_event_service.create_certificates_batch(
         db,

@@ -23,15 +23,17 @@ from object_storage import (
     is_object_storage_configured,
     upload_bytes,
 )
-from ny_event_image import encode_certificate_image, encode_participant_photo
+from ny_event_image import (
+    allowed_certificate_ext,
+    encode_participant_photo,
+    prepare_certificate_asset,
+)
 from security_hardening import LoginRateLimiter
 
 logger = logging.getLogger(__name__)
 
 ny_photo_rate_limiter = LoginRateLimiter(max_attempts=12, window_seconds=600)
 ny_gift_rate_limiter = LoginRateLimiter(max_attempts=20, window_seconds=300)
-
-_ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def _utcnow() -> datetime:
@@ -151,15 +153,17 @@ async def _upload_pair(
     prefix: str,
     full_bytes: bytes,
     thumb_bytes: bytes,
+    full_ext: str = "jpg",
+    full_content_type: str = "image/jpeg",
 ) -> tuple[str, str]:
     if not is_object_storage_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Хранилище файлов не настроено",
         )
-    full_key = generate_media_object_key(prefix=prefix, extension="jpg")
+    full_key = generate_media_object_key(prefix=prefix, extension=full_ext)
     thumb_key = generate_media_object_key(prefix=f"{prefix}-thumbs", extension="jpg")
-    upload_bytes(full_key, full_bytes, "image/jpeg")
+    upload_bytes(full_key, full_bytes, full_content_type)
     upload_bytes(thumb_key, thumb_bytes, "image/jpeg")
     return full_key, thumb_key
 
@@ -245,7 +249,9 @@ def serialize_gift(cert: models.NyCertificate) -> dict[str, Any]:
         "title": cert.title,
         "nominal": cert.nominal,
         "link_url": cert.link_url,
-        "image_url": f"/ny/gift/image",
+        "image_url": "/ny/gift/image",
+        "content_type": cert.content_type or "image/jpeg",
+        "original_filename": cert.original_filename,
         "issued_at": cert.issued_at,
     }
 
@@ -290,6 +296,8 @@ async def open_gift(db: AsyncSession, user: models.User, *, rate_key: str) -> di
             WHERE id = (
                 SELECT id FROM ny_certificates
                 WHERE status = 'available'
+                  AND link_url IS NOT NULL
+                  AND BTRIM(link_url) <> ''
                 ORDER BY random()
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
@@ -339,16 +347,21 @@ async def load_object_for_owner(
     *,
     kind: str,
 ) -> tuple[bytes, str]:
-    """Читает байты картинки подарка владельца."""
+    """Читает байты файла подарка владельца."""
     cert = await _fetch_certificate_for_user(db, user.id)
     if cert is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Подарок не найден")
-    key = cert.thumb_key if kind == "thumb" and cert.thumb_key else cert.image_key
+    if kind == "thumb" and cert.thumb_key:
+        key = cert.thumb_key
+        content_type = "image/jpeg"
+    else:
+        key = cert.image_key
+        content_type = cert.content_type or "image/jpeg"
     try:
         data = download_object_bytes(key)
     except RuntimeError as exc:
         raise HTTPException(status_code=404, detail="Файл не найден") from exc
-    return data, "image/jpeg"
+    return data, content_type
 
 
 def _seeded_shuffle(items: list[Any], seed: str) -> list[Any]:
@@ -475,14 +488,6 @@ async def update_settings(
     return settings
 
 
-def _file_ext(name: str) -> str:
-    lower = (name or "").lower()
-    for ext in _ALLOWED_IMAGE_EXT:
-        if lower.endswith(ext):
-            return ext
-    return ""
-
-
 async def create_certificates_batch(
     db: AsyncSession,
     admin: models.User,
@@ -491,15 +496,19 @@ async def create_certificates_batch(
     links_by_name: dict[str, dict[str, str]],
     comment: str | None = None,
 ) -> dict[str, Any]:
-    """Загружает пакет сертификатов; возвращает отчёт."""
-    settings_ok = is_object_storage_configured()
-    if not settings_ok:
+    """Загружает пакет сертификатов; ссылка необязательна (можно дописать позже)."""
+    if not is_object_storage_configured():
         raise HTTPException(status_code=503, detail="Хранилище файлов не настроено")
+
+    if not files:
+        raise HTTPException(status_code=400, detail="Не переданы файлы сертификатов")
 
     expanded: list[tuple[str, bytes]] = []
     for upload in files:
         name = (upload.filename or "file").strip()
         raw = await upload.read()
+        if not raw:
+            continue
         if name.lower().endswith(".zip"):
             try:
                 with zipfile.ZipFile(io.BytesIO(raw)) as zf:
@@ -507,7 +516,7 @@ async def create_certificates_batch(
                         if info.is_dir():
                             continue
                         base = info.filename.split("/")[-1]
-                        if not _file_ext(base):
+                        if not allowed_certificate_ext(base):
                             continue
                         expanded.append((base, zf.read(info)))
             except zipfile.BadZipFile as exc:
@@ -517,6 +526,13 @@ async def create_certificates_batch(
 
     errors: list[dict[str, str]] = []
     prepared: list[dict[str, Any]] = []
+    if not expanded:
+        return {
+            "created": 0,
+            "errors": [{"file_name": "-", "error": "Файлы пустые или не переданы"}],
+            "batch_id": None,
+            "message": "Нет корректных файлов для загрузки",
+        }
     seen_hashes: set[str] = set()
     seen_links: set[str] = set()
     existing_hashes = {
@@ -537,50 +553,58 @@ async def create_certificates_batch(
     }
 
     for filename, raw in expanded:
-        meta = links_by_name.get(filename) or links_by_name.get(filename.lower()) or {}
+        meta = lookup_link_meta(links_by_name, filename)
         link = (meta.get("link") or meta.get("link_url") or "").strip()
         nominal = (meta.get("nominal") or "").strip() or None
         title = (meta.get("title") or "").strip() or None
-        if not _file_ext(filename):
-            errors.append({"file_name": filename, "error": "Неподдерживаемый формат"})
-            continue
-        if not link:
-            errors.append({"file_name": filename, "error": "Нет ссылки"})
-            continue
-        if not _is_valid_http_url(link):
-            errors.append({"file_name": filename, "error": "Невалидный URL"})
-            continue
-        if link in seen_links or link in existing_links:
-            errors.append({"file_name": filename, "error": "Дубль ссылки"})
-            continue
+
+        if link:
+            if not _is_valid_http_url(link):
+                errors.append({"file_name": filename, "error": "Невалидный URL — файл пропущен"})
+                continue
+            if link in seen_links or link in existing_links:
+                errors.append({"file_name": filename, "error": "Дубль ссылки — файл пропущен"})
+                continue
+
         try:
-            full_bytes, thumb_bytes, digest = encode_certificate_image(raw)
+            asset = prepare_certificate_asset(raw, filename)
         except ValueError as exc:
             errors.append({"file_name": filename, "error": str(exc)})
             continue
+
+        digest = asset["digest"]
         if digest in seen_hashes or digest in existing_hashes:
-            errors.append({"file_name": filename, "error": "Дубль картинки"})
+            errors.append({"file_name": filename, "error": "Дубль файла"})
             continue
+
         seen_hashes.add(digest)
-        seen_links.add(link)
+        if link:
+            seen_links.add(link)
+
+        # Без ссылки файл всё равно сохраняем, но статус disabled — ссылку допишут в списке.
+        status = "available" if link else "disabled"
         prepared.append(
             {
                 "file_name": filename,
-                "full_bytes": full_bytes,
-                "thumb_bytes": thumb_bytes,
+                "full_bytes": asset["full_bytes"],
+                "thumb_bytes": asset["thumb_bytes"],
                 "digest": digest,
-                "link": link,
+                "link": link or None,
                 "nominal": nominal,
                 "title": title,
+                "status": status,
+                "content_type": asset["content_type"],
+                "extension": asset["extension"],
             }
         )
 
     if not prepared:
+        sample = "; ".join(f"{e['file_name']}: {e['error']}" for e in errors[:5]) or "файлы не распознаны"
         return {
             "created": 0,
             "errors": errors,
             "batch_id": None,
-            "message": "Нет корректных строк для загрузки",
+            "message": f"Нет корректных файлов для загрузки ({sample})",
         }
 
     batch = models.NyCertificateBatch(
@@ -592,16 +616,21 @@ async def create_certificates_batch(
     await db.flush()
 
     created = 0
+    without_link = 0
     for item in prepared:
         try:
             image_key, thumb_key = await _upload_pair(
                 prefix="ny-certificates",
                 full_bytes=item["full_bytes"],
                 thumb_bytes=item["thumb_bytes"],
+                full_ext=item["extension"],
+                full_content_type=item["content_type"],
             )
         except Exception as exc:  # noqa: BLE001
             errors.append({"file_name": item["file_name"], "error": f"Ошибка S3: {exc}"})
             continue
+        if not item["link"]:
+            without_link += 1
         db.add(
             models.NyCertificate(
                 batch_id=batch.id,
@@ -610,8 +639,10 @@ async def create_certificates_batch(
                 link_url=item["link"],
                 nominal=item["nominal"],
                 title=item["title"],
-                status="available",
+                status=item["status"],
                 image_hash=item["digest"],
+                content_type=item["content_type"],
+                original_filename=item["file_name"],
                 created_by=admin.id if admin.id > 0 else None,
             )
         )
@@ -625,11 +656,14 @@ async def create_certificates_batch(
         payload={"action": "upload_certificates", "batch_id": batch.id, "created": created},
     )
     await db.commit()
+    extra = ""
+    if without_link:
+        extra = f" Без ссылки: {without_link} (статус «отключён» — допишите ссылку в списке)."
     return {
         "created": created,
         "errors": errors,
         "batch_id": batch.id,
-        "message": f"К загрузке {created}, с ошибками {len(errors)}",
+        "message": f"Загружено {created}, с ошибками {len(errors)}.{extra}",
     }
 
 
@@ -712,9 +746,13 @@ async def patch_certificate(
                 detail="Выданный сертификат нельзя изменить так. Используйте аннулирование.",
             )
     if "link_url" in payload and payload["link_url"] is not None:
-        if not _is_valid_http_url(payload["link_url"]):
+        link = str(payload["link_url"]).strip()
+        if link and not _is_valid_http_url(link):
             raise HTTPException(status_code=400, detail="Невалидный URL")
-        cert.link_url = payload["link_url"].strip()
+        cert.link_url = link or None
+        # После добавления ссылки можно сразу сделать доступным.
+        if cert.link_url and cert.status == "disabled":
+            cert.status = "available"
     if "nominal" in payload:
         cert.nominal = (payload["nominal"] or None)
     if "title" in payload:
@@ -722,6 +760,8 @@ async def patch_certificate(
     if "status" in payload and payload["status"] in {"available", "disabled"}:
         if cert.status == "issued":
             raise HTTPException(status_code=400, detail="Нельзя сменить статус выданного сертификата")
+        if payload["status"] == "available" and not (cert.link_url or "").strip():
+            raise HTTPException(status_code=400, detail="Сначала укажите ссылку сертификата")
         cert.status = payload["status"]
     if payload.get("action") == "revoke" and cert.status == "issued":
         cert.status = "disabled"
@@ -1028,22 +1068,158 @@ async def load_admin_certificate_image(db: AsyncSession, cert_id: int, *, thumb:
     return data, "image/jpeg"
 
 
-def parse_links_csv(raw: bytes) -> dict[str, dict[str, str]]:
-    """Парсит CSV/простой текст с колонками file_name, link, nominal, title."""
-    text_data = raw.decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(io.StringIO(text_data))
+_NAME_HEADERS = {
+    "file_name",
+    "filename",
+    "file",
+    "name",
+    "image",
+    "img",
+    "файл",
+    "имя файла",
+    "имя",
+    "картинка",
+    "фото",
+}
+_LINK_HEADERS = {
+    "link",
+    "link_url",
+    "url",
+    "href",
+    "ссылка",
+    "url ссылка",
+}
+_NOMINAL_HEADERS = {"nominal", "amount", "value", "номинал", "сумма"}
+_TITLE_HEADERS = {"title", "name_title", "название", "заголовок"}
+
+
+def _normalize_header(value: str | None) -> str:
+    return " ".join(str(value or "").replace("\ufeff", "").strip().lower().split())
+
+
+def _basename_key(name: str) -> str:
+    """Имя файла без пути, в нижнем регистре."""
+    cleaned = (name or "").replace("\\", "/").strip().strip('"').strip("'")
+    base = cleaned.split("/")[-1].strip()
+    return base.lower()
+
+
+def _stem_key(name: str) -> str:
+    """Имя без расширения."""
+    base = _basename_key(name)
+    if "." in base:
+        return base.rsplit(".", 1)[0]
+    return base
+
+
+def _row_get(row: dict[str, Any], aliases: set[str]) -> str:
+    for key, value in row.items():
+        if _normalize_header(key) in aliases:
+            return str(value or "").strip()
+    return ""
+
+
+def _put_link_aliases(mapping: dict[str, dict[str, str]], file_name: str, meta: dict[str, str]) -> None:
+    """Кладёт meta под несколькими ключами имени файла для fuzzy-match."""
+    raw = (file_name or "").strip().strip('"').strip("'")
+    if not raw:
+        return
+    keys = {
+        raw,
+        raw.lower(),
+        _basename_key(raw),
+        _stem_key(raw),
+    }
+    # Иногда в CSV пишут имя без расширения, а файл — с .jpg
+    for key in keys:
+        if key:
+            mapping[key] = meta
+
+
+def lookup_link_meta(
+    links_by_name: dict[str, dict[str, str]],
+    filename: str,
+) -> dict[str, str]:
+    """Ищет ссылку по точному имени, basename или stem без расширения."""
+    candidates = [
+        filename,
+        filename.lower(),
+        _basename_key(filename),
+        _stem_key(filename),
+    ]
+    for key in candidates:
+        meta = links_by_name.get(key)
+        if meta and (meta.get("link") or meta.get("link_url")):
+            return meta
+    # Перебор: stem CSV == stem файла
+    file_stem = _stem_key(filename)
+    for key, meta in links_by_name.items():
+        if _stem_key(key) == file_stem and (meta.get("link") or meta.get("link_url")):
+            return meta
+    return {}
+
+
+def _mapping_from_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
     mapping: dict[str, dict[str, str]] = {}
-    if not reader.fieldnames:
-        return mapping
-    for row in reader:
-        name = (row.get("file_name") or row.get("filename") or row.get("file") or "").strip()
-        link = (row.get("link") or row.get("link_url") or row.get("url") or "").strip()
+    for row in rows:
+        name = _row_get(row, _NAME_HEADERS)
+        link = _row_get(row, _LINK_HEADERS)
+        if not name and not link:
+            # Fallback: первая колонка = файл, вторая = ссылка
+            values = [str(v or "").strip() for v in row.values()]
+            if len(values) >= 2:
+                name, link = values[0], values[1]
         if not name:
             continue
-        mapping[name] = {
+        meta = {
             "link": link,
-            "nominal": (row.get("nominal") or "").strip(),
-            "title": (row.get("title") or "").strip(),
+            "nominal": _row_get(row, _NOMINAL_HEADERS),
+            "title": _row_get(row, _TITLE_HEADERS),
         }
-        mapping[name.lower()] = mapping[name]
+        _put_link_aliases(mapping, name, meta)
     return mapping
+
+
+def parse_links_csv(raw: bytes) -> dict[str, dict[str, str]]:
+    """Парсит CSV (`,` или `;`) с колонками файла и ссылки."""
+    text_data = raw.decode("utf-8-sig", errors="replace").strip()
+    if not text_data:
+        return {}
+    # Excel в RU часто сохраняет CSV с разделителем `;`.
+    sample = text_data[:4096]
+    delimiter = ";" if sample.count(";") > sample.count(",") else ","
+    reader = csv.DictReader(io.StringIO(text_data), delimiter=delimiter)
+    if not reader.fieldnames:
+        return {}
+    rows = [dict(row) for row in reader]
+    return _mapping_from_rows(rows)
+
+
+def parse_links_table_file(filename: str, raw: bytes) -> dict[str, dict[str, str]]:
+    """Парсит CSV или XLSX со ссылками сертификатов."""
+    lower = (filename or "").lower()
+    if lower.endswith(".xlsx") or lower.endswith(".xlsm"):
+        try:
+            from openpyxl import load_workbook
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="Для XLSX нужен openpyxl на сервере",
+            ) from exc
+        wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        ws = wb.active
+        rows_iter = ws.iter_rows(values_only=True)
+        try:
+            header = next(rows_iter)
+        except StopIteration:
+            return {}
+        headers = [str(cell or "").strip() for cell in header]
+        rows: list[dict[str, Any]] = []
+        for values in rows_iter:
+            row = {
+                headers[i]: ("" if values[i] is None else str(values[i]).strip())
+                for i in range(len(headers))
+            }
+            rows.append(row)
+        return _mapping_from_rows(rows)
+    return parse_links_csv(raw)

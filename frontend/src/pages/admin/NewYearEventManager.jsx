@@ -118,7 +118,7 @@ function NewYearEventManager() {
 
   async function handleUpload() {
     if (!uploadFiles.length) {
-      showAlert('Выберите картинки или ZIP', 'error');
+      showAlert('Выберите файлы сертификатов (JPG/PNG/WEBP/PDF или ZIP)', 'error');
       return;
     }
     setUploading(true);
@@ -135,14 +135,21 @@ function NewYearEventManager() {
         comment: 'admin-upload',
       });
       setUploadReport(response.data);
-      showAlert(response.data.message || 'Загрузка завершена', 'success');
-      setUploadFiles([]);
-      setLinksCsv(null);
-      setManualLinks({});
-      await refreshCerts();
-      await refreshStats();
+      const created = Number(response.data?.created || 0);
+      showAlert(
+        response.data.message || (created > 0 ? 'Загрузка завершена' : 'Файлы не загружены'),
+        created > 0 ? 'success' : 'error',
+      );
+      if (created > 0) {
+        setUploadFiles([]);
+        setLinksCsv(null);
+        setManualLinks({});
+        await refreshCerts();
+        await refreshStats();
+      }
     } catch (error) {
-      showAlert(error.response?.data?.detail || 'Ошибка загрузки', 'error');
+      const detail = error.response?.data?.detail;
+      showAlert(typeof detail === 'string' ? detail : 'Ошибка загрузки', 'error');
     } finally {
       setUploading(false);
     }
@@ -273,26 +280,30 @@ function NewYearEventManager() {
       {tab === 'certificates' ? (
         <div className={localStyles.block}>
           <h3>Загрузка пакета</h3>
+          <p className={localStyles.hint}>
+            1) Выберите файлы сертификатов: JPG, PNG, WEBP, GIF, PDF или ZIP.
+            Ссылки можно не указывать сейчас — файлы сохранятся как «отключён», ссылку допишете в списке ниже.
+          </p>
           <input
             type="file"
-            accept="image/*,.zip"
+            accept="image/*,.pdf,application/pdf,.zip"
             multiple
             onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
           />
+          <p className={localStyles.hint}>
+            2) По желанию: CSV/XLSX со ссылками (колонки file_name, link) или ссылки вручную.
+          </p>
           <input
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={(e) => setLinksCsv(e.target.files?.[0] || null)}
           />
-          <p className={localStyles.hint}>
-            CSV: колонки file_name, link, nominal, title. Или укажите ссылки вручную ниже.
-          </p>
           <div className={localStyles.previewList}>
             {previewRows.map((row) => (
               <div key={row.file.name} className={localStyles.previewRow}>
                 <span>{row.file.name}</span>
                 <input
-                  placeholder="https://…"
+                  placeholder="ссылка (необязательно сейчас)"
                   value={row.link}
                   onChange={(e) =>
                     setManualLinks((prev) => ({ ...prev, [row.file.name]: e.target.value }))
@@ -302,7 +313,7 @@ function NewYearEventManager() {
             ))}
           </div>
           <button type="button" className={styles.gridButton} disabled={uploading} onClick={handleUpload}>
-            {uploading ? 'Загрузка…' : `Загрузить ${uploadFiles.length || 0} сертификатов`}
+            {uploading ? 'Загрузка…' : `Загрузить файлы (${uploadFiles.length || 0})`}
           </button>
           {uploadReport ? (
             <div className={localStyles.report}>

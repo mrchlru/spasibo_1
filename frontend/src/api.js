@@ -914,6 +914,7 @@ export const uploadAdminNyCertificates = ({ files, linksJson, linksCsv, comment 
   if (comment) {
     formData.append('comment', comment);
   }
+  // Не задаём Content-Type вручную — axios сам поставит multipart boundary.
   return apiClient.post('/admin/ny/certificates/upload', formData, {
     headers: { ...getAuthHeaders().headers },
     timeout: 300000,
