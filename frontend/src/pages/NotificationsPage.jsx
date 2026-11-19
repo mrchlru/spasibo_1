@@ -18,6 +18,7 @@ function NotificationsPage({ user, onBack }) {
     system: 'system',
     transfer: 'transfer',
     shared_gift: 'shared_gift',
+    ny_gift: 'ny_gift',
   };
 
   const loadNotifications = useCallback(async () => {
@@ -72,6 +73,8 @@ function NotificationsPage({ user, onBack }) {
         return <FaExchangeAlt className={styles.notificationIcon} />;
       case 'shared_gift':
         return <FaUsers className={styles.notificationIcon} />;
+      case 'ny_gift':
+        return <FaGift className={styles.notificationIcon} />;
       case 'system':
         return <FaInfoCircle className={styles.notificationIcon} />;
       default:
@@ -117,6 +120,7 @@ function NotificationsPage({ user, onBack }) {
     { key: 'profile', label: 'Профиль' },
     { key: 'transfer', label: 'Переводы' },
     { key: 'shared_gift', label: 'Совместные' },
+    { key: 'ny_gift', label: 'НГ подарок' },
     { key: 'system', label: 'Система' },
   ];
 

@@ -1,0 +1,91 @@
+.viewport {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.static {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.interactive {
+  opacity: 1;
+  cursor: grab;
+}
+
+.dragging {
+  cursor: grabbing;
+}
+
+.board {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+  background:
+    radial-gradient(120% 70% at 50% 40%, #16452b88, transparent 70%),
+    #0a2417;
+}
+
+.card {
+  position: absolute;
+  border: 0;
+  padding: 4px 4px 16px;
+  margin: 0;
+  background: #fff;
+  border-radius: 3px;
+  box-shadow: 0 5px 14px #0007;
+  color: #333;
+  font: inherit;
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
+  cursor: pointer;
+  transform-origin: center center;
+}
+
+.card:disabled {
+  cursor: default;
+}
+
+.cardMe {
+  outline: 3px solid #ffd86b;
+  z-index: 2;
+}
+
+.img {
+  display: block;
+  width: 100%;
+  height: calc(100% - 16px);
+  object-fit: cover;
+  background: #cfe6c7;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.name {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hint {
+  position: absolute;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  z-index: 3;
+  pointer-events: none;
+  padding: 6px 12px;
+  border-radius: 16px;
+  background: #0006;
+  color: #ffd86b;
+  font-size: 12px;
+  font-weight: 600;
+}

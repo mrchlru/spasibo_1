@@ -343,9 +343,12 @@ async def open_gift(db: AsyncSession, user: models.User, *, rate_key: str) -> di
 
     existing = await _fetch_certificate_for_user(db, user.id)
     if existing is not None:
+        first_open = participant.gift_opened_at is None
         participant.certificate_id = existing.id
         participant.gift_opened_at = existing.issued_at or _utcnow()
         await db.commit()
+        if first_open:
+            await _deliver_gift_notifications(db, user, existing)
         return serialize_gift(existing)
 
     # Атомарная выдача через SKIP LOCKED (PostgreSQL).
@@ -393,7 +396,75 @@ async def open_gift(db: AsyncSession, user: models.User, *, rate_key: str) -> di
     cert = await db.get(models.NyCertificate, cert_id)
     if cert is None:
         raise HTTPException(status_code=500, detail="Подарок не найден после выдачи")
+    await _deliver_gift_notifications(db, user, cert)
     return serialize_gift(cert)
+
+
+async def _deliver_gift_notifications(
+    db: AsyncSession,
+    user: models.User,
+    cert: models.NyCertificate,
+) -> None:
+    """Пишет уведомление и шлёт ссылку в Telegram/email (best-effort)."""
+    import crud
+    from bot import send_telegram_message
+    from email_service import is_valid_email, send_email
+
+    link = (cert.link_url or "").strip()
+    title = "Новогодний подарок"
+    if link:
+        message = (
+            "Твой новогодний подарок готов! Сохрани ссылку — она всегда будет в уведомлениях.\n"
+            f"[code]{link}[/code]"
+        )
+        tg_text = (
+            "🎁 <b>Твой новогодний подарок</b>\n\n"
+            f"Ссылка на сертификат:\n{link}"
+        )
+        mail_text = f"Твой новогодний подарок готов.\n\nСсылка: {link}\n"
+        mail_html = (
+            "<p>Твой новогодний подарок готов.</p>"
+            f'<p><a href="{link}">Открыть сертификат</a></p>'
+            f"<p style=\"word-break:break-all\">{link}</p>"
+        )
+    else:
+        message = "Твой новогодний подарок готов! Открой раздел «Новогодний подарок» в приложении."
+        tg_text = "🎁 Твой новогодний подарок готов! Открой его в приложении «Спасибо»."
+        mail_text = tg_text
+        mail_html = f"<p>{tg_text}</p>"
+
+    try:
+        await crud._create_notification(
+            db,
+            user.id,
+            "ny_gift",
+            title,
+            message,
+            click_url="/?open=ny_gift",
+            push_tag=f"ny-gift-{cert.id}",
+        )
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("NY gift notification failed for user %s: %s", user.id, exc)
+
+    telegram_id = getattr(user, "telegram_id", None)
+    if isinstance(telegram_id, int) and telegram_id > 0:
+        try:
+            await send_telegram_message(telegram_id, tg_text)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("NY gift telegram failed for user %s: %s", user.id, exc)
+
+    email = (getattr(user, "email", None) or "").strip()
+    if email and is_valid_email(email):
+        try:
+            await send_email(
+                to_email=email,
+                subject="Твой новогодний подарок — Спасибо",
+                body_html=mail_html,
+                body_text=mail_text,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("NY gift email failed for user %s: %s", user.id, exc)
 
 
 async def get_my_gift(db: AsyncSession, user: models.User) -> dict[str, Any]:
@@ -443,7 +514,7 @@ async def list_wall(
     seed: str | None = None,
 ) -> dict[str, Any]:
     """Страница стены фото со стабильным shuffle по seed сессии."""
-    limit = max(1, min(limit, 60))
+    limit = max(1, min(limit, 200))
     cursor = max(0, cursor)
     settings = await get_or_create_settings(db)
     moderation = settings.photo_moderation_required

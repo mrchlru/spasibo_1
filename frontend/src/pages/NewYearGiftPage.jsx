@@ -8,8 +8,14 @@ import {
   openNyGift,
   uploadNyPhoto,
 } from '../api';
+import NyMindBoard from '../components/ny/NyMindBoard';
 import { compressImageForNyUpload } from '../utils/nyImageCompress';
 import { openExternalLink } from '../utils/openExternalLink';
+import {
+  downloadBlobFile,
+  layoutNyWall,
+  renderNyWallPng,
+} from '../utils/nyWallLayout';
 import { useModalAlert } from '../contexts/ModalAlertContext';
 
 /**
@@ -25,22 +31,6 @@ function pluralRaz(n) {
   if (last === 1) return 'раз';
   if (last >= 2 && last <= 4) return 'раза';
   return 'раз';
-}
-
-/**
- * Стабильный «рандом» от id — без Math.random в рендере.
- *
- * @param {number|string} seed
- * @returns {number} 0..1
- */
-function unitFromSeed(seed) {
-  const text = String(seed ?? '');
-  let hash = 2166136261;
-  for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0) / 4294967296;
 }
 
 /**
@@ -81,13 +71,11 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
   const [giftImageUrl, setGiftImageUrl] = useState('');
   const [showCert, setShowCert] = useState(false);
   const [wallItems, setWallItems] = useState([]);
-  const [wallSeed, setWallSeed] = useState('');
-  const [wallCursor, setWallCursor] = useState(0);
-  const [wallHasMore, setWallHasMore] = useState(false);
   const [thumbUrls, setThumbUrls] = useState({});
   const [lightbox, setLightbox] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [errorCard, setErrorCard] = useState(null);
   const [noStock, setNoStock] = useState(false);
 
@@ -128,39 +116,50 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
     return data;
   }, [rememberBlob]);
 
-  const wallCursorRef = useRef(0);
   const wallSeedRef = useRef('');
 
-  const loadWall = useCallback(
-    async ({ reset = false, seed } = {}) => {
+  const loadWall = useCallback(async () => {
+    const collected = [];
+    const thumbs = {};
+    let cursor = 0;
+    let seed = wallSeedRef.current || undefined;
+    let hasMore = true;
+    let guard = 0;
+
+    while (hasMore && guard < 8) {
+      guard += 1;
       const response = await getNyWall({
-        cursor: reset ? 0 : wallCursorRef.current,
-        limit: 48,
-        seed: seed || wallSeedRef.current || undefined,
+        cursor,
+        limit: 100,
+        seed,
       });
       const data = response.data;
       const pageItems = Array.isArray(data?.items) ? data.items : [];
-      wallSeedRef.current = data?.seed || '';
-      wallCursorRef.current = data?.cursor || 0;
-      setWallSeed(wallSeedRef.current);
-      setWallHasMore(Boolean(data?.has_more));
-      setWallCursor(wallCursorRef.current);
-      setWallItems((prev) => (reset ? pageItems : [...prev, ...pageItems]));
-
-      const nextThumbs = {};
+      seed = data?.seed || seed;
+      wallSeedRef.current = seed || '';
+      hasMore = Boolean(data?.has_more);
+      cursor = data?.cursor ?? cursor + pageItems.length;
+      for (const item of pageItems) {
+        if (!collected.some((row) => row.user_id === item.user_id)) {
+          collected.push(item);
+        }
+      }
       await Promise.all(
         pageItems.map(async (item) => {
+          if (thumbs[item.user_id]) return;
           try {
-            nextThumbs[item.user_id] = rememberBlob(await fetchAuthedMediaUrl(item.thumb_url));
+            thumbs[item.user_id] = rememberBlob(await fetchAuthedMediaUrl(item.thumb_url));
           } catch {
             /* ignore */
           }
         }),
       );
-      setThumbUrls((prev) => (reset ? nextThumbs : { ...prev, ...nextThumbs }));
-    },
-    [rememberBlob],
-  );
+      if (!hasMore || pageItems.length === 0) break;
+    }
+
+    setWallItems(collected);
+    setThumbUrls(thumbs);
+  }, [rememberBlob]);
 
   const bootstrap = useCallback(async () => {
     setLoading(true);
@@ -173,9 +172,9 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
       const userState = data.user_state || 'not_started';
       if (userState === 'gift_opened') {
         setPhase('done');
-        setHint(`Участников: ${data.participants_count || 0}. Нажми на фото, чтобы рассмотреть`);
+        setHint(`Участников: ${data.participants_count || 0}. Тяни доску и нажимай на фото`);
         await loadGiftCard();
-        await loadWall({ reset: true });
+        await loadWall();
         if (initialOpenGift) {
           setShowCert(true);
           window.__nyOpenGift = false;
@@ -183,11 +182,11 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
       } else if (userState === 'photo_uploaded') {
         setPhase('photo_uploaded');
         setHint(`Нажимай на подарок! Осталось нажать: ${data.taps_required || 7} раз`);
-        await loadWall({ reset: true });
+        await loadWall();
       } else {
         setPhase('not_started');
         setHint('Загрузи новогоднее фото — и сможешь открыть подарок');
-        await loadWall({ reset: true });
+        await loadWall();
       }
     } catch (error) {
       setErrorCard({
@@ -330,7 +329,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
       setPhase('photo_uploaded');
       setTaps(0);
       setHint(`Нажимай на подарок! Осталось нажать: ${tapsRequired} раз`);
-      await loadWall({ reset: true });
+      await loadWall();
       showAlert('Фото загружено! Нажимай на подарок.', 'success');
     } catch (error) {
       const detail = error.response?.data?.detail || 'Не удалось загрузить фото';
@@ -432,7 +431,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
         setNoStock(true);
         setPhase('done');
         setHint('Подарки закончились. Твоё фото останется на стене коллег');
-        await loadWall({ reset: true });
+        await loadWall();
       } else {
         setErrorCard({
           message: detailToMessage(detail, 'Не удалось открыть подарок. Попробуй ещё раз.'),
@@ -500,6 +499,24 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
     }
   }
 
+  async function exportWallPng() {
+    if (!wallItems.length) {
+      showAlert('Пока нет фото для сохранения', 'error');
+      return;
+    }
+    setExporting(true);
+    try {
+      const layout = layoutNyWall(wallItems, { cardW: 92, cardH: 114 });
+      const blob = await renderNyWallPng(layout, thumbUrls);
+      downloadBlobFile(blob, 'novogodnyaya-stena.png');
+      showAlert('Стена сохранена на устройство', 'success');
+    } catch (error) {
+      showAlert(error?.message || 'Не удалось сохранить стену', 'error');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function saveGiftImage() {
     if (!giftImageUrl) {
       showAlert('Картинка ещё не загружена', 'error');
@@ -538,78 +555,54 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
   const stepIndex =
     phase === 'not_started' ? 0 : phase === 'photo_uploaded' || phase === 'opening' ? 1 : 2;
 
-  const wallPositions = useMemo(() => {
-    const items = Array.isArray(wallItems) ? wallItems : [];
-    const ww = typeof window !== 'undefined' ? window.innerWidth : 400;
-    const hh = typeof window !== 'undefined' ? window.innerHeight : 820;
-    const pw = phase === 'done' ? 92 : 76;
-    const cardH = pw + 18;
-    const cols = 4;
-    const rows = Math.max(1, Math.ceil(items.length / cols));
-    const cw = cols > 1 ? (ww - pw) / (cols - 1) : 0;
-    const ch = Math.max(cardH, (hh - 170 - cardH - 40) / rows);
-    return items.map((item, i) => {
-      const jitterX = unitFromSeed(`${item.user_id}-x`) - 0.5;
-      const jitterY = unitFromSeed(`${item.user_id}-y`);
-      const rot = Math.round(unitFromSeed(`${item.user_id}-r`) * 28 - 14);
-      const x = Math.max(0, Math.min(ww - pw, (i % cols) * cw + jitterX * cw * 0.5));
-      const y = 170 + Math.floor(i / cols) * ch + jitterY * Math.max(0, ch - cardH);
-      return {
-        ...item,
-        style: {
-          left: x,
-          top: y,
-          '--r': `${rot}deg`,
-          '--d': `${i * 40}ms`,
-        },
-      };
-    });
-  }, [wallItems, phase]);
+  const boardInteractive = phase === 'done';
 
   return (
     <div className={rootClass} id="ny-root">
       <button type="button" className={styles.back} onClick={onBack} aria-label="Назад">
         ‹
       </button>
+      {boardInteractive ? (
+        <button
+          type="button"
+          className={styles.exportBtn}
+          onClick={() => void exportWallPng()}
+          disabled={exporting}
+          aria-label="Сохранить стену"
+          title="Сохранить стену на устройство"
+        >
+          {exporting ? '…' : '⇩'}
+        </button>
+      ) : null}
       <div className={styles.title}>
         <h2>{phase === 'done' ? 'Фото коллег' : 'Новогодний подарок'}</h2>
         <p>{hint}</p>
       </div>
 
-      <div className={styles.wall}>
-        {wallPositions.map((item) => (
-          <button
-            type="button"
-            key={item.user_id}
-            className={`${styles.wp}${item.is_me ? ` ${styles.wpMe}` : ''}`}
-            style={item.style}
-            onClick={() => openLightbox(item)}
-          >
-            {thumbUrls[item.user_id] ? (
-              <img className={styles.wpImg} src={thumbUrls[item.user_id]} alt="" loading="lazy" />
-            ) : (
-              <div className={styles.wpImg} />
-            )}
-            {item.display_name}
-          </button>
-        ))}
-      </div>
+      <NyMindBoard
+        items={wallItems}
+        thumbUrls={thumbUrls}
+        interactive={boardInteractive}
+        onPhotoClick={(item) => void openLightbox(item)}
+      />
 
-      {wallHasMore && phase === 'done' ? (
-        <button
-          type="button"
-          className={`${styles.btn} ${styles.btnGhost} ${styles.moreWall}`}
-          onClick={() => loadWall({ reset: false })}
-        >
-          Показать другие
-        </button>
-      ) : null}
-
-      <div className={styles.lb + (lightbox ? ` ${styles.lbOn}` : '')} onClick={() => setLightbox(null)}>
+      <div
+        className={`${styles.lb}${lightbox ? ` ${styles.lbOn}` : ''}`}
+        onClick={() => setLightbox(null)}
+        role="presentation"
+      >
         {lightbox ? (
-          <div className={styles.lbCard} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.lbCard} onClick={(e) => e.stopPropagation()} role="dialog">
+            <button
+              type="button"
+              className={styles.lbClose}
+              onClick={() => setLightbox(null)}
+              aria-label="Закрыть"
+            >
+              ×
+            </button>
             <img src={lightbox.fullUrl} alt="" />
-            {lightbox.display_name}
+            <span>{lightbox.display_name}</span>
           </div>
         ) : null}
       </div>
@@ -712,9 +705,9 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
                 setShowCert(false);
                 setPhase('done');
                 setHint(
-                  `Участников: ${stateInfo?.participants_count || wallItems.length}. Нажми на фото, чтобы рассмотреть`,
+                  `Участников: ${stateInfo?.participants_count || wallItems.length}. Тяни доску и нажимай на фото`,
                 );
-                await loadWall({ reset: true });
+                await loadWall();
               }}
             >
               Смотреть стену фото
