@@ -7,7 +7,7 @@ import io
 import logging
 import random
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -63,6 +63,15 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
     return value
+
+
+def _as_naive_utc(value: Any) -> Any:
+    """Убирает tzinfo: колонки TIMESTAMP WITHOUT TIME ZONE ждут naive datetime."""
+    if not isinstance(value, datetime):
+        return value
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _resolve_certificate_link_and_title(
@@ -524,8 +533,15 @@ async def update_settings(
         "photo_moderation_required",
         "low_stock_threshold",
     ):
-        if field in payload and payload[field] is not None:
-            setattr(settings, field, payload[field])
+        if field not in payload:
+            continue
+        value = payload[field]
+        if field in {"starts_at", "ends_at"}:
+            # null сбрасывает дату; aware ISO из фронта → naive UTC под колонку БД.
+            setattr(settings, field, None if value is None else _as_naive_utc(value))
+            continue
+        if value is not None:
+            setattr(settings, field, value)
     if settings.taps_required < 1:
         settings.taps_required = 1
     if settings.low_stock_threshold < 0:

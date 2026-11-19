@@ -181,7 +181,8 @@ function NewYearEventManager() {
       setSettings(response.data);
       showAlert('Настройки сохранены', 'success');
     } catch (error) {
-      showAlert(error.response?.data?.detail || 'Не удалось сохранить', 'error');
+      const detail = error.response?.data?.detail;
+      showAlert(typeof detail === 'string' ? detail : 'Не удалось сохранить', 'error');
     } finally {
       setSavingSettings(false);
     }
