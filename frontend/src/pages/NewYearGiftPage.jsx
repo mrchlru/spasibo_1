@@ -14,6 +14,7 @@ import { openExternalLink } from '../utils/openExternalLink';
 import {
   downloadBlobFile,
   layoutNyWall,
+  mapWithConcurrency,
   renderNyWallPng,
 } from '../utils/nyWallLayout';
 import { useModalAlert } from '../contexts/ModalAlertContext';
@@ -120,7 +121,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
 
   const loadWall = useCallback(async () => {
     const collected = [];
-    const thumbs = {};
+    const seen = new Set();
     let cursor = 0;
     let seed = wallSeedRef.current || undefined;
     let hasMore = true;
@@ -139,26 +140,39 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
       wallSeedRef.current = seed || '';
       hasMore = Boolean(data?.has_more);
       cursor = data?.cursor ?? cursor + pageItems.length;
+
       for (const item of pageItems) {
-        if (!collected.some((row) => row.user_id === item.user_id)) {
-          collected.push(item);
-        }
+        if (seen.has(item.user_id)) continue;
+        seen.add(item.user_id);
+        collected.push(item);
       }
-      await Promise.all(
-        pageItems.map(async (item) => {
-          if (thumbs[item.user_id]) return;
-          try {
-            thumbs[item.user_id] = rememberBlob(await fetchAuthedMediaUrl(item.thumb_url));
-          } catch {
-            /* ignore */
-          }
-        }),
-      );
+      // Сразу рисуем карточки-заглушки, не ждём blob'и.
+      setWallItems(collected.slice());
+
+      let pending = {};
+      let pendingCount = 0;
+      function flushThumbs() {
+        if (!pendingCount) return;
+        const chunk = pending;
+        pending = {};
+        pendingCount = 0;
+        setThumbUrls((prev) => ({ ...prev, ...chunk }));
+      }
+
+      await mapWithConcurrency(pageItems, 8, async (item) => {
+        try {
+          const url = rememberBlob(await fetchAuthedMediaUrl(item.thumb_url));
+          pending[item.user_id] = url;
+          pendingCount += 1;
+          if (pendingCount >= 8) flushThumbs();
+        } catch {
+          /* ignore */
+        }
+      });
+      flushThumbs();
+
       if (!hasMore || pageItems.length === 0) break;
     }
-
-    setWallItems(collected);
-    setThumbUrls(thumbs);
   }, [rememberBlob]);
 
   const bootstrap = useCallback(async () => {
@@ -173,8 +187,9 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
       if (userState === 'gift_opened') {
         setPhase('done');
         setHint('');
+        // Стену грузим в фоне — не держим «Загрузка…» на 150 blob'ах.
+        void loadWall();
         await loadGiftCard();
-        await loadWall();
         if (initialOpenGift) {
           setShowCert(true);
           window.__nyOpenGift = false;
@@ -182,11 +197,11 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
       } else if (userState === 'photo_uploaded') {
         setPhase('photo_uploaded');
         setHint(`Нажимай на подарок! Осталось нажать: ${data.taps_required || 7} раз`);
-        await loadWall();
+        void loadWall();
       } else {
         setPhase('not_started');
         setHint('Загрузи новогоднее фото — и сможешь открыть подарок');
-        await loadWall();
+        void loadWall();
       }
     } catch (error) {
       setErrorCard({
@@ -329,7 +344,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
       setPhase('photo_uploaded');
       setTaps(0);
       setHint(`Нажимай на подарок! Осталось нажать: ${tapsRequired} раз`);
-      await loadWall();
+      void loadWall();
       showAlert('Фото загружено! Нажимай на подарок.', 'success');
     } catch (error) {
       const detail = error.response?.data?.detail || 'Не удалось загрузить фото';
@@ -431,7 +446,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
         setNoStock(true);
         setPhase('done');
         setHint('Подарки закончились. Твоё фото останется на стене коллег');
-        await loadWall();
+        void loadWall();
       } else {
         setErrorCard({
           message: detailToMessage(detail, 'Не удалось открыть подарок. Попробуй ещё раз.'),
@@ -506,8 +521,26 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
     }
     setExporting(true);
     try {
-      const layout = layoutNyWall(wallItems, { cardW: 92, cardH: 114 });
-      const blob = await renderNyWallPng(layout, thumbUrls);
+      const exportThumbs = { ...thumbUrls };
+      const missing = wallItems.filter((item) => !exportThumbs[item.user_id] && item.thumb_url);
+      await mapWithConcurrency(missing, 8, async (item) => {
+        try {
+          const url = rememberBlob(await fetchAuthedMediaUrl(item.thumb_url));
+          exportThumbs[item.user_id] = url;
+          setThumbUrls((prev) => (prev[item.user_id] ? prev : { ...prev, [item.user_id]: url }));
+        } catch {
+          /* ignore */
+        }
+      });
+
+      // Плотная раскладка без minBoard — холст по содержимому, не «пустое поле».
+      const layout = layoutNyWall(wallItems, {
+        cardW: wallItems.length <= 12 ? 132 : 104,
+        cardH: wallItems.length <= 12 ? 164 : 128,
+        gap: wallItems.length <= 12 ? 20 : 14,
+        pad: 36,
+      });
+      const blob = await renderNyWallPng(layout, exportThumbs, { title: 'Фото коллег' });
       downloadBlobFile(blob, 'novogodnyaya-stena.png');
       showAlert('Стена сохранена на устройство', 'success');
     } catch (error) {
@@ -705,7 +738,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
                 setShowCert(false);
                 setPhase('done');
                 setHint('');
-                await loadWall();
+                void loadWall();
               }}
             >
               Смотреть стену фото

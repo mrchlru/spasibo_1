@@ -19,10 +19,37 @@ export function unitFromSeed(seed) {
 }
 
 /**
+ * Выполняет mapper по элементам с ограничением параллелизма.
+ *
+ * @template T, R
+ * @param {T[]} items
+ * @param {number} limit
+ * @param {(item: T, index: number) => Promise<R>} mapper
+ * @returns {Promise<R[]>}
+ */
+export async function mapWithConcurrency(items, limit, mapper) {
+  const list = Array.isArray(items) ? items : [];
+  const results = new Array(list.length);
+  let next = 0;
+  const workers = Math.max(1, Math.min(limit || 1, list.length || 1));
+
+  async function worker() {
+    while (next < list.length) {
+      const index = next;
+      next += 1;
+      results[index] = await mapper(list[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return results;
+}
+
+/**
  * Раскладывает фото по сетке с лёгким джиттером без пересечений.
  *
  * @param {Array<{user_id: number, display_name?: string, is_me?: boolean}>} items
- * @param {{ cardW?: number, cardH?: number, gap?: number, pad?: number }} [options]
+ * @param {{ cardW?: number, cardH?: number, gap?: number, pad?: number, minBoardW?: number, minBoardH?: number }} [options]
  * @returns {{ boardW: number, boardH: number, cardW: number, cardH: number, placed: Array<object> }}
  */
 export function layoutNyWall(items, options = {}) {
@@ -34,12 +61,23 @@ export function layoutNyWall(items, options = {}) {
   const minBoardW = options.minBoardW ?? 0;
   const minBoardH = options.minBoardH ?? 0;
   const n = list.length;
-  const cols = Math.max(3, Math.ceil(Math.sqrt(Math.max(n, 1) * 1.25)));
-  const rows = Math.max(1, Math.ceil(Math.max(n, 1) / cols));
+  if (n === 0) {
+    return {
+      boardW: Math.max(minBoardW, pad * 2),
+      boardH: Math.max(minBoardH, pad * 2),
+      cardW,
+      cardH,
+      placed: [],
+    };
+  }
+
+  // Плотная почти-квадратная сетка без пустых «зарезервированных» колонок.
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n * 1.1)));
+  const rows = Math.max(1, Math.ceil(n / cols));
   const cellW = cardW + gap;
   const cellH = cardH + gap;
-  const contentW = pad * 2 + cols * cellW;
-  const contentH = pad * 2 + rows * cellH;
+  const contentW = pad * 2 + cols * cellW - gap;
+  const contentH = pad * 2 + rows * cellH - gap;
   const boardW = Math.max(minBoardW, contentW);
   const boardH = Math.max(minBoardH, contentH);
   const originX = Math.max(pad, (boardW - (cols * cellW - gap)) / 2);
@@ -74,38 +112,93 @@ export function layoutNyWall(items, options = {}) {
  *
  * @param {{ boardW: number, boardH: number, cardW: number, cardH: number, placed: Array<object> }} layout
  * @param {Record<string|number, string>} thumbUrls
+ * @param {{ title?: string }} [options]
  * @returns {Promise<Blob>}
  */
-export async function renderNyWallPng(layout, thumbUrls) {
+export async function renderNyWallPng(layout, thumbUrls, options = {}) {
+  const title = options.title || 'Фото коллег';
+  const titleBand = 56;
+  const pad = 28;
+  const placed = layout.placed || [];
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = 0;
+  let maxY = 0;
+  for (const card of placed) {
+    const extent = Math.max(card.w, card.h) * 0.2;
+    minX = Math.min(minX, card.x - extent);
+    minY = Math.min(minY, card.y - extent);
+    maxX = Math.max(maxX, card.x + card.w + extent);
+    maxY = Math.max(maxY, card.y + card.h + extent);
+  }
+  if (!placed.length) {
+    minX = 0;
+    minY = 0;
+    maxX = 320;
+    maxY = 240;
+  }
+
+  const contentW = Math.max(280, maxX - minX);
+  const contentH = Math.max(200, maxY - minY);
+  const boardW = contentW + pad * 2;
+  const boardH = contentH + pad * 2 + titleBand;
+  const offsetX = pad - minX;
+  const offsetY = pad + titleBand - minY;
+
   const scale = 2;
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(layout.boardW * scale));
-  canvas.height = Math.max(1, Math.round(layout.boardH * scale));
+  canvas.width = Math.max(1, Math.round(boardW * scale));
+  canvas.height = Math.max(1, Math.round(boardH * scale));
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     throw new Error('Canvas недоступен');
   }
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  ctx.fillStyle = '#0a2417';
-  ctx.fillRect(0, 0, layout.boardW, layout.boardH);
 
-  // Лёгкий градиент «ёлки»
   const gradient = ctx.createRadialGradient(
-    layout.boardW * 0.5,
-    layout.boardH * 0.35,
-    40,
-    layout.boardW * 0.5,
-    layout.boardH * 0.5,
-    Math.max(layout.boardW, layout.boardH) * 0.7,
+    boardW * 0.5,
+    boardH * 0.32,
+    30,
+    boardW * 0.5,
+    boardH * 0.55,
+    Math.max(boardW, boardH) * 0.72,
   );
-  gradient.addColorStop(0, '#16452b');
-  gradient.addColorStop(1, '#0a2417');
+  gradient.addColorStop(0, '#1a5334');
+  gradient.addColorStop(0.55, '#0f3422');
+  gradient.addColorStop(1, '#071a10');
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, layout.boardW, layout.boardH);
+  ctx.fillRect(0, 0, boardW, boardH);
 
-  for (const card of layout.placed) {
-    await _drawWallCard(ctx, card, thumbUrls[card.user_id] || '');
-  }
+  _drawExportSnow(ctx, boardW, boardH);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '700 22px "Segoe UI", "Helvetica Neue", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(title, boardW / 2, titleBand * 0.55);
+
+  ctx.fillStyle = '#ffd86bcc';
+  ctx.font = '600 12px "Segoe UI", "Helvetica Neue", sans-serif';
+  ctx.fillText(`${placed.length} на стене`, boardW / 2, titleBand * 0.88);
+
+  const images = await mapWithConcurrency(placed, 8, async (card) => {
+    const url = thumbUrls[card.user_id] || '';
+    if (!url) return null;
+    try {
+      return await _loadImage(url);
+    } catch {
+      return null;
+    }
+  });
+
+  placed.forEach((card, index) => {
+    _drawWallCard(ctx, {
+      ...card,
+      x: card.x + offsetX,
+      y: card.y + offsetY,
+    }, images[index]);
+  });
 
   const blob = await new Promise((resolve, reject) => {
     canvas.toBlob((result) => {
@@ -134,13 +227,33 @@ export function downloadBlobFile(blob, filename) {
 }
 
 /**
+ * Рисует декоративные «снежинки» на экспорте.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} boardW
+ * @param {number} boardH
+ */
+function _drawExportSnow(ctx, boardW, boardH) {
+  const count = Math.min(90, Math.round((boardW * boardH) / 18000));
+  for (let i = 0; i < count; i += 1) {
+    const x = unitFromSeed(`snow-x-${i}`) * boardW;
+    const y = unitFromSeed(`snow-y-${i}`) * boardH;
+    const r = 0.6 + unitFromSeed(`snow-r-${i}`) * 1.8;
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(255,255,255,${0.18 + unitFromSeed(`snow-a-${i}`) * 0.35})`;
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/**
  * Рисует одну карточку на canvas.
  *
  * @param {CanvasRenderingContext2D} ctx
  * @param {object} card
- * @param {string} thumbUrl
+ * @param {HTMLImageElement|null} image
  */
-async function _drawWallCard(ctx, card, thumbUrl) {
+function _drawWallCard(ctx, card, image) {
   const { x, y, w, h, rot, display_name: name, is_me: isMe } = card;
   ctx.save();
   ctx.translate(x + w / 2, y + h / 2);
@@ -164,24 +277,43 @@ async function _drawWallCard(ctx, card, thumbUrl) {
 
   const imgH = h - 22;
   const imgPad = 4;
+  const imgW = w - imgPad * 2;
   ctx.fillStyle = '#cfe6c7';
-  ctx.fillRect(imgPad, imgPad, w - imgPad * 2, imgH);
+  ctx.fillRect(imgPad, imgPad, imgW, imgH);
 
-  if (thumbUrl) {
-    try {
-      const image = await _loadImage(thumbUrl);
-      ctx.drawImage(image, imgPad, imgPad, w - imgPad * 2, imgH);
-    } catch {
-      /* заглушка уже нарисована */
-    }
+  if (image) {
+    _drawImageCover(ctx, image, imgPad, imgPad, imgW, imgH);
   }
 
   ctx.fillStyle = '#333';
-  ctx.font = '10px sans-serif';
+  ctx.font = '600 11px "Segoe UI", "Helvetica Neue", sans-serif';
   ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
   const label = String(name || 'Участник').slice(0, 16);
   ctx.fillText(label, w / 2, h - 6);
   ctx.restore();
+}
+
+/**
+ * Рисует изображение с object-fit: cover.
+ *
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {HTMLImageElement} image
+ * @param {number} x
+ * @param {number} y
+ * @param {number} w
+ * @param {number} h
+ */
+function _drawImageCover(ctx, image, x, y, w, h) {
+  const iw = image.naturalWidth || image.width;
+  const ih = image.naturalHeight || image.height;
+  if (!iw || !ih) return;
+  const scale = Math.max(w / iw, h / ih);
+  const sw = w / scale;
+  const sh = h / scale;
+  const sx = (iw - sw) / 2;
+  const sy = (ih - sh) / 2;
+  ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);
 }
 
 /**
