@@ -172,7 +172,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
       const userState = data.user_state || 'not_started';
       if (userState === 'gift_opened') {
         setPhase('done');
-        setHint(`Участников: ${data.participants_count || 0}. Тяни доску и нажимай на фото`);
+        setHint('');
         await loadGiftCard();
         await loadWall();
         if (initialOpenGift) {
@@ -576,7 +576,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
       ) : null}
       <div className={styles.title}>
         <h2>{phase === 'done' ? 'Фото коллег' : 'Новогодний подарок'}</h2>
-        <p>{hint}</p>
+        {phase !== 'done' && hint ? <p>{hint}</p> : null}
       </div>
 
       <NyMindBoard
@@ -704,9 +704,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
               onClick={async () => {
                 setShowCert(false);
                 setPhase('done');
-                setHint(
-                  `Участников: ${stateInfo?.participants_count || wallItems.length}. Тяни доску и нажимай на фото`,
-                );
+                setHint('');
                 await loadWall();
               }}
             >

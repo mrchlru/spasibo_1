@@ -18,29 +18,55 @@ function NyMindBoard({ items, thumbUrls, interactive, onPhotoClick }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
 
-  const layout = useMemo(
-    () => layoutNyWall(items, { cardW: interactive ? 92 : 76, cardH: interactive ? 114 : 96 }),
-    [items, interactive],
-  );
+  const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
 
   useEffect(() => {
     const viewport = viewportRef.current;
-    if (!viewport) return;
-    const vw = viewport.clientWidth;
-    const vh = viewport.clientHeight;
+    if (!viewport) return undefined;
+    function measure() {
+      setViewportSize({
+        w: viewport.clientWidth,
+        h: viewport.clientHeight,
+      });
+    }
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (ro) ro.observe(viewport);
+    else window.addEventListener('resize', measure);
+    return () => {
+      if (ro) ro.disconnect();
+      else window.removeEventListener('resize', measure);
+    };
+  }, []);
+
+  const layout = useMemo(
+    () =>
+      layoutNyWall(items, {
+        cardW: interactive ? 92 : 76,
+        cardH: interactive ? 114 : 96,
+        // Не меньше экрана — иначе виден «тёмный лист» доски на фоне.
+        minBoardW: Math.max(viewportSize.w, 360),
+        minBoardH: Math.max(viewportSize.h, 640),
+      }),
+    [items, interactive, viewportSize.w, viewportSize.h],
+  );
+
+  useEffect(() => {
+    const vw = viewportSize.w;
+    const vh = viewportSize.h;
+    if (!vw || !vh) return;
     if (interactive) {
       setOffset({
         x: Math.min(0, (vw - layout.boardW) / 2),
-        y: Math.min(40, (vh - layout.boardH) / 2),
+        y: Math.min(0, (vh - layout.boardH) / 2),
       });
     } else {
-      // Статичный кадр: чуть смещаем, края обрезаны.
       setOffset({
-        x: Math.min(-40, (vw - layout.boardW) * 0.15),
-        y: Math.min(-20, (vh - layout.boardH) * 0.1),
+        x: Math.min(-24, (vw - layout.boardW) * 0.12),
+        y: Math.min(-16, (vh - layout.boardH) * 0.08),
       });
     }
-  }, [layout.boardW, layout.boardH, interactive, items.length]);
+  }, [layout.boardW, layout.boardH, interactive, items.length, viewportSize.w, viewportSize.h]);
 
   function clampOffset(nextX, nextY) {
     const viewport = viewportRef.current;
@@ -133,7 +159,6 @@ function NyMindBoard({ items, thumbUrls, interactive, onPhotoClick }) {
           </button>
         ))}
       </div>
-      {interactive ? <div className={styles.hint}>Тяни доску пальцем или мышью</div> : null}
     </div>
   );
 }

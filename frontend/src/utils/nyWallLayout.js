@@ -31,13 +31,19 @@ export function layoutNyWall(items, options = {}) {
   const cardH = options.cardH ?? 114;
   const gap = options.gap ?? 16;
   const pad = options.pad ?? 48;
+  const minBoardW = options.minBoardW ?? 0;
+  const minBoardH = options.minBoardH ?? 0;
   const n = list.length;
   const cols = Math.max(3, Math.ceil(Math.sqrt(Math.max(n, 1) * 1.25)));
   const rows = Math.max(1, Math.ceil(Math.max(n, 1) / cols));
   const cellW = cardW + gap;
   const cellH = cardH + gap;
-  const boardW = pad * 2 + cols * cellW;
-  const boardH = pad * 2 + rows * cellH;
+  const contentW = pad * 2 + cols * cellW;
+  const contentH = pad * 2 + rows * cellH;
+  const boardW = Math.max(minBoardW, contentW);
+  const boardH = Math.max(minBoardH, contentH);
+  const originX = Math.max(pad, (boardW - (cols * cellW - gap)) / 2);
+  const originY = Math.max(pad, (boardH - (rows * cellH - gap)) / 2);
   const maxJitter = Math.min(gap * 0.35, 6);
 
   const ordered = list
@@ -52,8 +58,8 @@ export function layoutNyWall(items, options = {}) {
     const rot = Math.round(unitFromSeed(`${entry.item.user_id}-r`) * 18 - 9);
     return {
       ...entry.item,
-      x: pad + col * cellW + jx,
-      y: pad + row * cellH + jy,
+      x: originX + col * cellW + jx,
+      y: originY + row * cellH + jy,
       w: cardW,
       h: cardH,
       rot,
