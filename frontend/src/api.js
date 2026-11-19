@@ -942,3 +942,6 @@ export const getAdminNyPhotos = () => apiClient.get('/admin/ny/photos', getAuthH
 
 export const patchAdminNyPhoto = (userId, visible) =>
   apiClient.patch(`/admin/ny/photos/${userId}`, { visible }, getAuthHeaders());
+
+export const resetAdminNyParticipant = (userId) =>
+  apiClient.post(`/admin/ny/photos/${userId}/reset`, {}, getAuthHeaders());

@@ -142,6 +142,10 @@
   cursor: pointer;
 }
 
+.dangerBtn {
+  background: #8b3a2f !important;
+}
+
 .small {
   font-size: 12px;
   opacity: 0.8;

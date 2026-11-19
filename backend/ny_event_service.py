@@ -262,7 +262,7 @@ async def upload_participant_photo(
         thumb_bytes=thumb_bytes,
     )
 
-    photo_status = "hidden" if settings.photo_moderation_required else "visible"
+    photo_status = "pending" if settings.photo_moderation_required else "visible"
     old_keys: list[str] = []
     if participant is None:
         participant = models.NyParticipant(
@@ -522,16 +522,18 @@ async def list_wall(
     query: Select[tuple[models.NyParticipant]] = select(models.NyParticipant).where(
         models.NyParticipant.photo_status == "visible"
     )
-    if moderation:
-        # Скрытые модератором уже отфильтрованы; свои фото показываем всегда.
-        pass
 
     result = await db.execute(query.order_by(models.NyParticipant.id.asc()))
     rows = list(result.scalars().all())
 
-    # Добавляем своё фото даже если оно hidden (модерация).
+    # Pending (ожидает модерации) показываем только себе; admin-hidden — никому.
     mine = await get_participant(db, user.id)
-    if mine and all(p.user_id != user.id for p in rows):
+    if (
+        mine
+        and mine.photo_status == "pending"
+        and moderation
+        and all(p.user_id != user.id for p in rows)
+    ):
         rows.append(mine)
 
     session_seed = (seed or f"u{user.id}").strip() or f"u{user.id}"
@@ -575,7 +577,13 @@ async def load_wall_photo(
         raise HTTPException(status_code=404, detail="Фото не найдено")
     is_owner = requester.id == target_user_id
     is_admin = bool(getattr(requester, "is_admin", False))
-    if participant.photo_status != "visible" and not is_owner and not is_admin:
+    status = participant.photo_status
+    # visible — всем; pending — владельцу и админу; hidden — только админу.
+    if status == "hidden" and not is_admin:
+        raise HTTPException(status_code=404, detail="Фото не найдено")
+    if status == "pending" and not is_owner and not is_admin:
+        raise HTTPException(status_code=404, detail="Фото не найдено")
+    if status not in {"visible", "pending", "hidden"} and not is_admin:
         raise HTTPException(status_code=404, detail="Фото не найдено")
     key = (
         participant.photo_thumb_key
@@ -1207,6 +1215,59 @@ async def set_photo_visibility(
     )
     await db.commit()
     return {"ok": True, "user_id": user_id, "photo_status": participant.photo_status}
+
+
+async def reset_participant(
+    db: AsyncSession,
+    admin: models.User,
+    user_id: int,
+) -> dict[str, Any]:
+    """Сброс участия: удаляет фото, сертификат возвращает в банк, путь ивента с нуля."""
+    participant = await get_participant(db, user_id)
+    if participant is None:
+        raise HTTPException(status_code=404, detail="Участник не найден")
+
+    cert_id = participant.certificate_id
+    photo_key = participant.photo_key
+    thumb_key = participant.photo_thumb_key
+
+    certs_to_return: list[models.NyCertificate] = []
+    if cert_id:
+        linked = await db.get(models.NyCertificate, cert_id)
+        if linked is not None:
+            certs_to_return.append(linked)
+    issued = await _fetch_certificate_for_user(db, user_id)
+    if issued is not None and all(c.id != issued.id for c in certs_to_return):
+        certs_to_return.append(issued)
+
+    for cert in certs_to_return:
+        cert.issued_to_user_id = None
+        cert.issued_at = None
+        # В банк (available), если есть ссылка; иначе disabled.
+        cert.status = "available" if (cert.link_url or "").strip() else "disabled"
+        if cert_id is None:
+            cert_id = cert.id
+
+    participant.certificate_id = None
+    participant.gift_opened_at = None
+    await db.delete(participant)
+    await _write_log(
+        db,
+        user_id=admin.id if admin.id > 0 else None,
+        event_type="admin_action",
+        payload={
+            "action": "reset_participant",
+            "user_id": user_id,
+            "certificate_id": cert_id,
+        },
+    )
+    await db.commit()
+
+    for key in (photo_key, thumb_key or ""):
+        if key:
+            delete_object_key(key)
+
+    return {"ok": True, "user_id": user_id, "certificate_id": cert_id}
 
 
 async def load_admin_certificate_image(db: AsyncSession, cert_id: int, *, thumb: bool) -> tuple[bytes, str]:

@@ -12,6 +12,7 @@ import {
   patchAdminNyCertificate,
   patchAdminNyPhoto,
   patchAdminNySettings,
+  resetAdminNyParticipant,
   uploadAdminNyCertificates,
 } from '../../api';
 import { useModalAlert } from '../../contexts/ModalAlertContext';
@@ -492,16 +493,48 @@ function NewYearEventManager() {
               <div>
                 <b>{photo.name}</b>
                 <div className={localStyles.small}>{photo.photo_status}</div>
+                {photo.gift_opened ? (
+                  <div className={localStyles.small}>подарок открыт</div>
+                ) : null}
               </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  await patchAdminNyPhoto(photo.user_id, photo.photo_status !== 'visible');
-                  await refreshPhotos();
-                }}
-              >
-                {photo.photo_status === 'visible' ? 'Скрыть со стены' : 'Вернуть'}
-              </button>
+              <div className={localStyles.certActions}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await patchAdminNyPhoto(photo.user_id, photo.photo_status !== 'visible');
+                      await refreshPhotos();
+                    } catch {
+                      showAlert('Не удалось изменить видимость', 'error');
+                    }
+                  }}
+                >
+                  {photo.photo_status === 'visible' ? 'Скрыть со стены' : 'Вернуть на стену'}
+                </button>
+                <button
+                  type="button"
+                  className={localStyles.dangerBtn}
+                  onClick={async () => {
+                    const ok = window.confirm(
+                      `Сбросить участие «${photo.name}»?\nФото удалится, сертификат вернётся в банк, пользователь сможет пройти ивент заново.`,
+                    );
+                    if (!ok) return;
+                    try {
+                      await resetAdminNyParticipant(photo.user_id);
+                      await refreshPhotos();
+                      showAlert('Участие сброшено', 'success');
+                    } catch (error) {
+                      const detail = error?.response?.data?.detail;
+                      showAlert(
+                        typeof detail === 'string' ? detail : 'Не удалось сбросить участие',
+                        'error',
+                      );
+                    }
+                  }}
+                >
+                  Сбросить участие
+                </button>
+              </div>
             </div>
           ))}
         </div>

@@ -354,6 +354,16 @@ async def admin_ny_photo_visibility(
     )
 
 
+@admin_router.post("/photos/{user_id}/reset")
+async def admin_ny_reset_participant(
+    user_id: int,
+    admin: models.User = Depends(get_current_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Сброс участия: удаляет фото и подарок, сертификат возвращает в пул."""
+    return await ny_event_service.reset_participant(db, admin, user_id)
+
+
 @admin_router.get("/photos/{user_id}/thumb")
 async def admin_ny_photo_thumb(
     user_id: int,
