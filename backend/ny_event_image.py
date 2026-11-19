@@ -50,6 +50,17 @@ def _open_image(raw: bytes) -> Image.Image:
 def encode_jpeg(raw: bytes, *, max_side: int, quality: int = _JPEG_QUALITY) -> bytes:
     """Перекодирует картинку в JPEG без EXIF, ограничивая длинную сторону."""
     img = _open_image(raw)
+    # JPEG не умеет альфу — RGBA/LA/P с прозрачностью сводим к RGB.
+    if img.mode not in {"RGB", "L"}:
+        if img.mode in {"RGBA", "LA"} or (img.mode == "P" and "transparency" in img.info):
+            rgba = img.convert("RGBA")
+            background = Image.new("RGB", rgba.size, (255, 255, 255))
+            background.paste(rgba, mask=rgba.split()[-1])
+            img = background
+        else:
+            img = img.convert("RGB")
+    elif img.mode == "L":
+        img = img.convert("RGB")
     img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
     out = io.BytesIO()
     img.save(out, format="JPEG", quality=quality, optimize=True)

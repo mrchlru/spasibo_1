@@ -54,6 +54,17 @@ def _is_valid_http_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
+def _json_safe(value: Any) -> Any:
+    """Приводит datetime и вложенные структуры к JSON-сериализуемому виду."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def _resolve_certificate_link_and_title(
     *,
     meta_link: str,
@@ -524,7 +535,7 @@ async def update_settings(
         db,
         user_id=admin.id if admin.id > 0 else None,
         event_type="admin_action",
-        payload={"action": "update_settings", "data": payload},
+        payload={"action": "update_settings", "data": _json_safe(payload)},
     )
     await db.commit()
     await db.refresh(settings)
