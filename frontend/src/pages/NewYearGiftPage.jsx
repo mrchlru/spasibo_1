@@ -28,6 +28,38 @@ function pluralRaz(n) {
 }
 
 /**
+ * Стабильный «рандом» от id — без Math.random в рендере.
+ *
+ * @param {number|string} seed
+ * @returns {number} 0..1
+ */
+function unitFromSeed(seed) {
+  const text = String(seed ?? '');
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967296;
+}
+
+/**
+ * Приводит detail API к строке для UI.
+ *
+ * @param {unknown} detail
+ * @param {string} fallback
+ * @returns {string}
+ */
+function detailToMessage(detail, fallback) {
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.message === 'string' && detail.message.trim()) return detail.message;
+    if (typeof detail.detail === 'string' && detail.detail.trim()) return detail.detail;
+  }
+  return fallback;
+}
+
+/**
  * Экран новогоднего подарка: фото → тапы → сертификат → стена.
  *
  * @param {{ onBack: () => void, initialOpenGift?: boolean }} props
@@ -107,16 +139,17 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
         seed: seed || wallSeedRef.current || undefined,
       });
       const data = response.data;
-      wallSeedRef.current = data.seed || '';
-      wallCursorRef.current = data.cursor || 0;
+      const pageItems = Array.isArray(data?.items) ? data.items : [];
+      wallSeedRef.current = data?.seed || '';
+      wallCursorRef.current = data?.cursor || 0;
       setWallSeed(wallSeedRef.current);
-      setWallHasMore(Boolean(data.has_more));
+      setWallHasMore(Boolean(data?.has_more));
       setWallCursor(wallCursorRef.current);
-      setWallItems((prev) => (reset ? data.items : [...prev, ...data.items]));
+      setWallItems((prev) => (reset ? pageItems : [...prev, ...pageItems]));
 
       const nextThumbs = {};
       await Promise.all(
-        (data.items || []).map(async (item) => {
+        pageItems.map(async (item) => {
           try {
             nextThumbs[item.user_id] = rememberBlob(await fetchAuthedMediaUrl(item.thumb_url));
           } catch {
@@ -158,7 +191,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
       }
     } catch (error) {
       setErrorCard({
-        message: error.response?.data?.detail || 'Не удалось загрузить ивент',
+        message: detailToMessage(error.response?.data?.detail, 'Не удалось загрузить ивент'),
         retry: bootstrap,
       });
     } finally {
@@ -175,23 +208,29 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return undefined;
     let frame = 0;
     let width = 0;
     let height = 0;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let ro = null;
 
     function size() {
       const rect = canvas.getBoundingClientRect();
-      width = rect.width;
-      height = rect.height;
+      width = Math.max(1, rect.width);
+      height = Math.max(1, rect.height);
       canvas.width = width * dpr;
       canvas.height = height * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0);
     }
 
     size();
-    const ro = new ResizeObserver(size);
-    ro.observe(canvas);
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(size);
+      ro.observe(canvas);
+    } else {
+      window.addEventListener('resize', size);
+    }
 
     snowRef.current = reduceMotion
       ? []
@@ -240,7 +279,11 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
     frame = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(frame);
-      ro.disconnect();
+      if (ro) {
+        ro.disconnect();
+      } else {
+        window.removeEventListener('resize', size);
+      }
     };
   }, [reduceMotion]);
 
@@ -391,9 +434,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
         await loadWall({ reset: true });
       } else {
         setErrorCard({
-          message:
-            (typeof detail === 'object' ? detail.message : detail) ||
-            'Не удалось открыть подарок. Попробуй ещё раз.',
+          message: detailToMessage(detail, 'Не удалось открыть подарок. Попробуй ещё раз.'),
           retry: () => requestGift(cx, cy),
         });
         setPhase('photo_uploaded');
@@ -497,29 +538,31 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
     phase === 'not_started' ? 0 : phase === 'photo_uploaded' || phase === 'opening' ? 1 : 2;
 
   const wallPositions = useMemo(() => {
+    const items = Array.isArray(wallItems) ? wallItems : [];
     const ww = typeof window !== 'undefined' ? window.innerWidth : 400;
     const hh = typeof window !== 'undefined' ? window.innerHeight : 820;
     const pw = phase === 'done' ? 92 : 76;
     const cardH = pw + 18;
     const cols = 4;
-    const rows = Math.max(1, Math.ceil(wallItems.length / cols));
+    const rows = Math.max(1, Math.ceil(items.length / cols));
     const cw = cols > 1 ? (ww - pw) / (cols - 1) : 0;
     const ch = Math.max(cardH, (hh - 170 - cardH - 40) / rows);
-    return wallItems.map((item, i) => {
-      const x = Math.max(0, Math.min(ww - pw, (i % cols) * cw + (Math.random() - 0.5) * cw * 0.5));
-      const y = 170 + Math.floor(i / cols) * ch + Math.random() * Math.max(0, ch - cardH);
+    return items.map((item, i) => {
+      const jitterX = unitFromSeed(`${item.user_id}-x`) - 0.5;
+      const jitterY = unitFromSeed(`${item.user_id}-y`);
+      const rot = Math.round(unitFromSeed(`${item.user_id}-r`) * 28 - 14);
+      const x = Math.max(0, Math.min(ww - pw, (i % cols) * cw + jitterX * cw * 0.5));
+      const y = 170 + Math.floor(i / cols) * ch + jitterY * Math.max(0, ch - cardH);
       return {
         ...item,
         style: {
           left: x,
           top: y,
-          '--r': `${Math.round(Math.random() * 28 - 14)}deg`,
+          '--r': `${rot}deg`,
           '--d': `${i * 40}ms`,
         },
       };
     });
-    // positions only when items length / phase change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallItems, phase]);
 
   return (
@@ -536,7 +579,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
         {wallPositions.map((item) => (
           <button
             type="button"
-            key={`${item.user_id}-${item.style.left}`}
+            key={item.user_id}
             className={`${styles.wp}${item.is_me ? ` ${styles.wpMe}` : ''}`}
             style={item.style}
             onClick={() => openLightbox(item)}
@@ -614,9 +657,6 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
               <stop offset=".5" stopColor="#fff0a0" />
               <stop offset="1" stopColor="#d9981a" />
             </linearGradient>
-            <filter id="ny-bl">
-              <feGaussianBlur stdDeviation="5" />
-            </filter>
           </defs>
           <ellipse cx="120" cy="224" rx="92" ry="11" fill="#0007" />
           <rect x="42" y="112" width="156" height="108" rx="10" fill="url(#ny-rd)" />
@@ -628,7 +668,6 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
             width="148"
             height="10"
             fill="#fff3b0"
-            filter="url(#ny-bl)"
             opacity="0"
           />
           <g ref={lidRef}>
@@ -696,7 +735,7 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
           </li>
         </ol>
         <div className={styles.pips}>
-          {Array.from({ length: tapsRequired }, (_, i) => (
+          {Array.from({ length: Math.max(1, Math.min(Number(tapsRequired) || 7, 50)) }, (_, i) => (
             <u key={i} className={`${styles.pip}${i < taps ? ` ${styles.pipFilled}` : ''}`} />
           ))}
         </div>

@@ -97,13 +97,14 @@
   overflow: visible;
   cursor: pointer;
   touch-action: manipulation;
-  filter: saturate(0.55) brightness(0.7);
-  transition: filter 0.6s;
+  /* Без тяжёлых CSS/SVG filter — на WebView они роняют GPU-процесс. */
+  opacity: 0.72;
+  transition: opacity 0.6s;
 }
 
 .ready .giftSvg,
 .opened .giftSvg {
-  filter: none;
+  opacity: 1;
 }
 
 .ready .giftSvg {

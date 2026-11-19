@@ -12,7 +12,14 @@
   background: linear-gradient(120deg, #0a2417, #1d5a36);
   box-shadow: 0 0 0 2px #ffd86b55, 0 10px 26px #0a241766;
   animation: pulse 2.4s infinite;
-  margin: 0 0 14px;
+  /* На ПК плашка «Моя карта» в правом столбце — нужен зазор сверху, чтобы не слипались. */
+  margin: 18px 0 14px;
+}
+
+@media (min-width: 1025px) {
+  .ny {
+    margin-top: 28px;
+  }
 }
 
 .ny b {

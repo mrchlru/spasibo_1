@@ -105,6 +105,9 @@
 
 @media (min-width: 1025px) {
   .userProfileArea {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     padding: 0 40px;
   }
 

@@ -39,6 +39,8 @@ import { ThemeAssetsProvider } from './contexts/ThemeAssetsContext';
 import BottomNav from './components/BottomNav';
 import SideNav from './components/SideNav';
 import LoadingScreen from './components/LoadingScreen'; // Страница загрузки
+import NyGiftErrorBoundary from './components/ny/NyGiftErrorBoundary';
+import EmailPromptModal from './components/EmailPromptModal';
 
 // Lazy loading страниц - загружаются только при необходимости
 const RegistrationPage = lazy(() => import('./pages/RegistrationPage'));
@@ -63,7 +65,6 @@ const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const ReferralPage = lazy(() => import('./pages/ReferralPage'));
 const NewYearGiftPage = lazy(() => import('./pages/NewYearGiftPage'));
 const OnboardingStories = lazy(() => import('./components/OnboardingStories'));
-import EmailPromptModal from './components/EmailPromptModal';
 import AndroidNativeSessionBridge from './pwa/AndroidNativeSessionBridge.jsx';
 import MobileWelcomeGuide from './components/MobileWelcomeGuide.jsx';
 import PushEnablePrompt from './components/PushEnablePrompt.jsx';
@@ -843,10 +844,12 @@ function App() {
         case 'referral': return <ReferralPage onBack={() => navigate('profile')} />;
         case 'ny_gift':
           return (
-            <NewYearGiftPage
-              onBack={() => navigate('home')}
-              initialOpenGift={Boolean(window.__nyOpenGift)}
-            />
+            <NyGiftErrorBoundary onBack={() => navigate('home')}>
+              <NewYearGiftPage
+                onBack={() => navigate('home')}
+                initialOpenGift={Boolean(window.__nyOpenGift)}
+              />
+            </NyGiftErrorBoundary>
           );
         case 'bonus_card':
           return (
