@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -216,9 +216,20 @@ async def admin_upload_certificates(
     if links_csv is not None and (links_csv.filename or "").strip():
         csv_raw = await links_csv.read()
         if csv_raw:
-            links_by_name.update(
-                ny_event_service.parse_links_table_file(links_csv.filename or "links.csv", csv_raw)
-            )
+            try:
+                links_by_name.update(
+                    ny_event_service.parse_links_table_file(
+                        links_csv.filename or "links.csv",
+                        csv_raw,
+                    )
+                )
+            except HTTPException:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Не удалось прочитать файл ссылок: {exc}",
+                ) from exc
 
     return await ny_event_service.create_certificates_batch(
         db,

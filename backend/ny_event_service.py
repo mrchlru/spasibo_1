@@ -17,9 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from object_storage import (
+    build_public_url,
     delete_object_key,
     download_object_bytes,
     generate_media_object_key,
+    generate_ny_certificate_object_keys,
     is_object_storage_configured,
     upload_bytes,
 )
@@ -50,6 +52,24 @@ def _display_name(user: models.User | None) -> str:
 def _is_valid_http_url(value: str) -> bool:
     parsed = urlparse((value or "").strip())
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _resolve_certificate_link_and_title(
+    *,
+    meta_link: str,
+    meta_title: str,
+) -> tuple[str | None, str | None]:
+    """Разбирает поле ссылки: URL оставляем, иначе считаем названием."""
+    link = (meta_link or "").strip()
+    title = (meta_title or "").strip() or None
+    if not link:
+        return None, title
+    if _is_valid_http_url(link):
+        return link, title
+    # Вручную часто пишут название подарка вместо URL — файл не отбрасываем.
+    if not title:
+        title = link
+    return None, title
 
 
 async def _write_log(
@@ -166,6 +186,29 @@ async def _upload_pair(
     upload_bytes(full_key, full_bytes, full_content_type)
     upload_bytes(thumb_key, thumb_bytes, "image/jpeg")
     return full_key, thumb_key
+
+
+async def _upload_certificate_pair(
+    *,
+    filename: str,
+    full_bytes: bytes,
+    thumb_bytes: bytes,
+    full_ext: str,
+    full_content_type: str,
+) -> tuple[str, str, str]:
+    """Сохраняет сертификат в S3-папку по имени файла и возвращает ключи + публичный URL."""
+    if not is_object_storage_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Хранилище файлов не настроено",
+        )
+    full_key, thumb_key = generate_ny_certificate_object_keys(
+        filename,
+        extension=full_ext,
+    )
+    file_url = upload_bytes(full_key, full_bytes, full_content_type)
+    upload_bytes(thumb_key, thumb_bytes, "image/jpeg")
+    return full_key, thumb_key, file_url
 
 
 async def upload_participant_photo(
@@ -554,17 +597,15 @@ async def create_certificates_batch(
 
     for filename, raw in expanded:
         meta = lookup_link_meta(links_by_name, filename)
-        link = (meta.get("link") or meta.get("link_url") or "").strip()
+        link, title = _resolve_certificate_link_and_title(
+            meta_link=(meta.get("link") or meta.get("link_url") or ""),
+            meta_title=(meta.get("title") or ""),
+        )
         nominal = (meta.get("nominal") or "").strip() or None
-        title = (meta.get("title") or "").strip() or None
 
-        if link:
-            if not _is_valid_http_url(link):
-                errors.append({"file_name": filename, "error": "Невалидный URL — файл пропущен"})
-                continue
-            if link in seen_links or link in existing_links:
-                errors.append({"file_name": filename, "error": "Дубль ссылки — файл пропущен"})
-                continue
+        if link and (link in seen_links or link in existing_links):
+            errors.append({"file_name": filename, "error": "Дубль ссылки — файл пропущен"})
+            continue
 
         try:
             asset = prepare_certificate_asset(raw, filename)
@@ -581,18 +622,15 @@ async def create_certificates_batch(
         if link:
             seen_links.add(link)
 
-        # Без ссылки файл всё равно сохраняем, но статус disabled — ссылку допишут в списке.
-        status = "available" if link else "disabled"
         prepared.append(
             {
                 "file_name": filename,
                 "full_bytes": asset["full_bytes"],
                 "thumb_bytes": asset["thumb_bytes"],
                 "digest": digest,
-                "link": link or None,
+                "link": link,
                 "nominal": nominal,
                 "title": title,
-                "status": status,
                 "content_type": asset["content_type"],
                 "extension": asset["extension"],
             }
@@ -616,30 +654,45 @@ async def create_certificates_batch(
     await db.flush()
 
     created = 0
-    without_link = 0
+    auto_linked = 0
     for item in prepared:
         try:
-            image_key, thumb_key = await _upload_pair(
-                prefix="ny-certificates",
+            image_key, thumb_key, file_url = await _upload_certificate_pair(
+                filename=item["file_name"],
                 full_bytes=item["full_bytes"],
                 thumb_bytes=item["thumb_bytes"],
                 full_ext=item["extension"],
                 full_content_type=item["content_type"],
             )
         except Exception as exc:  # noqa: BLE001
+            logger.exception("NY certificate S3 upload failed for %s", item["file_name"])
             errors.append({"file_name": item["file_name"], "error": f"Ошибка S3: {exc}"})
             continue
+
+        link_url = item["link"] or file_url
         if not item["link"]:
-            without_link += 1
+            if link_url in seen_links or link_url in existing_links:
+                errors.append(
+                    {
+                        "file_name": item["file_name"],
+                        "error": "Дубль автоссылки на файл — пропущен",
+                    }
+                )
+                delete_object_key(image_key)
+                delete_object_key(thumb_key)
+                continue
+            seen_links.add(link_url)
+            auto_linked += 1
+
         db.add(
             models.NyCertificate(
                 batch_id=batch.id,
                 image_key=image_key,
                 thumb_key=thumb_key,
-                link_url=item["link"],
+                link_url=link_url,
                 nominal=item["nominal"],
                 title=item["title"],
-                status=item["status"],
+                status="available",
                 image_hash=item["digest"],
                 content_type=item["content_type"],
                 original_filename=item["file_name"],
@@ -657,8 +710,8 @@ async def create_certificates_batch(
     )
     await db.commit()
     extra = ""
-    if without_link:
-        extra = f" Без ссылки: {without_link} (статус «отключён» — допишите ссылку в списке)."
+    if auto_linked and created:
+        extra = f" Ссылка на файл в S3 проставлена автоматически: {auto_linked}."
     return {
         "created": created,
         "errors": errors,
@@ -717,6 +770,8 @@ async def list_certificates(
                 "batch_id": cert.batch_id,
                 "status": cert.status,
                 "link_url": cert.link_url,
+                "file_url": build_public_url(cert.image_key) if cert.image_key else "",
+                "original_filename": cert.original_filename,
                 "nominal": cert.nominal,
                 "title": cert.title,
                 "issued_to_user_id": cert.issued_to_user_id,

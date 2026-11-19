@@ -149,7 +149,17 @@ function NewYearEventManager() {
       }
     } catch (error) {
       const detail = error.response?.data?.detail;
-      showAlert(typeof detail === 'string' ? detail : 'Ошибка загрузки', 'error');
+      let message = 'Ошибка загрузки';
+      if (typeof detail === 'string') {
+        message = detail;
+      } else if (Array.isArray(detail)) {
+        message = detail
+          .map((item) => item?.msg || item?.detail || JSON.stringify(item))
+          .join('; ');
+      } else if (error.message) {
+        message = error.message;
+      }
+      showAlert(message, 'error');
     } finally {
       setUploading(false);
     }
@@ -282,7 +292,7 @@ function NewYearEventManager() {
           <h3>Загрузка пакета</h3>
           <p className={localStyles.hint}>
             1) Выберите файлы сертификатов: JPG, PNG, WEBP, GIF, PDF или ZIP.
-            Ссылки можно не указывать сейчас — файлы сохранятся как «отключён», ссылку допишете в списке ниже.
+            Файл уходит в S3 в папку по имени; если ссылку не указать — в системе появится ссылка на сам файл.
           </p>
           <input
             type="file"
@@ -291,7 +301,8 @@ function NewYearEventManager() {
             onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
           />
           <p className={localStyles.hint}>
-            2) По желанию: CSV/XLSX со ссылками (колонки file_name, link) или ссылки вручную.
+            2) По желанию: CSV/XLSX со ссылками (колонки file_name, link) или https-ссылка вручную.
+            Текст без http:// будет сохранён как название, а не как ссылка.
           </p>
           <input
             type="file"
@@ -303,7 +314,7 @@ function NewYearEventManager() {
               <div key={row.file.name} className={localStyles.previewRow}>
                 <span>{row.file.name}</span>
                 <input
-                  placeholder="ссылка (необязательно сейчас)"
+                  placeholder="https://… (необязательно)"
                   value={row.link}
                   onChange={(e) =>
                     setManualLinks((prev) => ({ ...prev, [row.file.name]: e.target.value }))
@@ -349,8 +360,11 @@ function NewYearEventManager() {
                 {thumbMap[cert.id] ? <img src={thumbMap[cert.id]} alt="" /> : <div className={localStyles.ph} />}
                 <div>
                   <b>#{cert.id}</b> · {cert.status}
-                  <div>{cert.nominal || '—'}</div>
-                  <div className={localStyles.small}>{cert.link_url}</div>
+                  <div>{cert.title || cert.original_filename || cert.nominal || '—'}</div>
+                  <div className={localStyles.small}>{cert.link_url || '—'}</div>
+                  {cert.file_url && cert.file_url !== cert.link_url ? (
+                    <div className={localStyles.small}>{cert.file_url}</div>
+                  ) : null}
                   {cert.issued_to_name ? (
                     <div className={localStyles.small}>
                       → {cert.issued_to_name}

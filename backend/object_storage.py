@@ -81,6 +81,23 @@ def generate_media_object_key(prefix: str = "media", extension: str = "avif") ->
     return f"{prefix}/{now:%Y/%m}/{unique}.{extension}"
 
 
+def generate_ny_certificate_object_keys(
+    filename: str,
+    *,
+    extension: str = "jpg",
+) -> tuple[str, str]:
+    """Ключи полного файла и превью в папке сертификата (по имени файла)."""
+    stem = (filename or "").replace("\\", "/").split("/")[-1].strip()
+    if "." in stem:
+        stem = stem.rsplit(".", 1)[0]
+    slug = slugify_prize_folder(stem) or "cert"
+    unique = uuid.uuid4().hex
+    ext = (extension or "jpg").lstrip(".") or "jpg"
+    full_key = f"ny-certificates/{slug}/{unique}.{ext}"
+    thumb_key = f"ny-certificates/{slug}/thumbs/{unique}.jpg"
+    return full_key, thumb_key
+
+
 def generate_avatar_object_key(user_id: int) -> str:
     """Ключ для аватара пользователя в S3."""
     unique = uuid.uuid4().hex
@@ -105,7 +122,7 @@ def public_url_to_object_key(url: str) -> str | None:
             return suffix or None
 
     path = unquote(urlparse(normalized).path or "")
-    for marker in ("/feed-posts/", "/market-prizes/", "/media/"):
+    for marker in ("/feed-posts/", "/market-prizes/", "/media/", "/ny-certificates/", "/ny-photos/"):
         idx = path.find(marker)
         if idx >= 0:
             return path[idx + 1 :].lstrip("/") or None
@@ -113,7 +130,7 @@ def public_url_to_object_key(url: str) -> str | None:
     if bucket and path.startswith(f"{bucket}/"):
         return path[len(bucket) + 1 :]
     # Локальная статика сборки (/assets/…) и прочие URL не считаем ключами S3.
-    known_prefixes = ("media/", "feed-posts/", "market-prizes/")
+    known_prefixes = ("media/", "feed-posts/", "market-prizes/", "ny-certificates/", "ny-photos/")
     if any(path.startswith(prefix) for prefix in known_prefixes):
         return path
     return None
