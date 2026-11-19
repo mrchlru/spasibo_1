@@ -221,7 +221,8 @@ function NewYearGiftPage({ onBack, initialOpenGift = false }) {
       height = Math.max(1, rect.height);
       canvas.width = width * dpr;
       canvas.height = height * dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0);
+      // setTransform(a, b, c, d, e, f) — нужны все 6 чисел, иначе Chromium падает с DOMMatrixInit.
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
     size();
